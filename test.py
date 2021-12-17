@@ -1,48 +1,44 @@
 from math import factorial
 import numpy as np
-from sympy import symbols, latex, Dummy
+from sympy import symbols, latex, Dummy, Rational
 from sympy.core.function import diff
 from indices import pretty_indices
 from sympy.physics.secondquant import AntiSymmetricTensor, contraction, substitute_dummies, wicks, NO, Fd, F, evaluate_deltas
 
-p, q, r, s = symbols('p,q,r,s', cls=Dummy)
+i, j, k, l, m, n, o = symbols('i,j,k,l,m,n,o', below_fermi=True, cls=Dummy)
+a, b, c, d, e, f, g = symbols('a,b,c,d,e,f,g', above_fermi=True, cls=Dummy)
 
-print(latex(wicks(NO(Fd(p) * Fd(q) * F(s) * F(r)), keep_only_fully_contracted=True)))
+bra1 = Rational(1, 4) * AntiSymmetricTensor('t1_cc', (c, d), (k, l)) * \
+    NO(Fd(k) * Fd(l) * F(d) * F(c))
+ket1 = Rational(1, 4) * AntiSymmetricTensor('t1', (e, f), (m, n)) * \
+    NO(Fd(e) * Fd(f) * F(n) * F(m))
 
-i, j = symbols('i,j', below_fermi=True, cls=Dummy)
-a, b = symbols('a,b', above_fermi=True, cls=Dummy)
+psi0ket = NO(Fd(b) * F(j))
+psi0bra = NO(Fd(i) * F(a))
+psi1ket = NO(Fd(b) * F(j)) * ket1
+psi1bra = bra1 * NO(Fd(i) * F(a))
 
-S = NO(Fd(i) * F(a)) * NO(Fd(b) * F(j))
-psi = Fd(a) * F(i)
-isr = S * psi
+for arg in psi1ket.free_symbols:
+    print(arg)
 
-wick = wicks(isr, keep_only_fully_contracted=True)
-wick = evaluate_deltas(wick)
-print("gesamt ausdruck auswerten: ", latex(wick))
+S0 = psi0bra * psi0ket
+S1 = psi1bra * psi0ket + psi0bra * psi1ket
 
-wick = wicks(S, keep_only_fully_contracted=True)
-ges = wick * psi
-ges = evaluate_deltas(ges)
-ges = substitute_dummies(ges)
-print("einzeln wicks fuer S: ", latex(ges))
+s0 = wicks(S0, keep_only_fully_contracted=True,
+           simplify_kronecker_deltas=True,
+           simplify_dummies=True)
+print("S0: ", latex(s0))
 
+s1 = wicks(S1, keep_only_fully_contracted=True,
+           simplify_kronecker_deltas=True,
+           simplify_dummies=True)
+print("s1: ", latex(s1))
 
+isr0 = psi0ket * s0
+isr0 = evaluate_deltas(isr0)
+print("irs0: ", latex(isr0))
 
-wick = wicks(S, keep_only_fully_contracted=True)
-wick = evaluate_deltas(wick)
-wick = substitute_dummies(wick)  # , new_indices=True, pretty_indices=indices)
-print(latex(wick))
-ges = wick * psi
-ges = substitute_dummies(ges, new_indices=True, pretty_indices=pretty_indices)
-ges = evaluate_deltas(ges)
-print("evaluate_deltas einzeln: ", latex(ges))
-
-test = NO(Fd(j) * F(a))
-test = wicks(test, keep_only_fully_contracted=True)
-print(latex(test))
-test = substitute_dummies(test)
-print(latex(test))
-
-delta = contraction(Fd(p), F(q))
-delta = evaluate_deltas(delta * AntiSymmetricTensor('f', (p,), (q,)))
-print(latex(delta))
+isr1 = psi0ket * s1 + s0 * psi1ket
+print("before deltas: ", latex(isr1))
+isr1 = evaluate_deltas(isr1)
+print("isr1: ", latex(isr1))

@@ -100,15 +100,13 @@ class indices:
                         # constructing first order after second order ket)
                         # -> reuse indices from used_groundstate
                         if n <= len(self.used_groundstate[space][ov]):
-                            av_idx = self.used_groundstate[space][ov][:n]
-                            ret[ov] = self.__make_symbol(*av_idx)
+                            ret[ov] = self.used_groundstate[space][ov][:n]
                         # requesting more indices than available (e.g. when
                         # constructing second order after first order ket)
                         # -> use self.occ/virt list
                         elif n > len(self.used_groundstate[space][ov]):
-                            av_idx = self.used_groundstate[space][ov]
+                            ret[ov] = self.used_groundstate[space][ov].copy()
                             # print("reuse indices: ", av_idx)
-                            ret[ov] = self.__make_symbol(*av_idx)
                             needed = n - len(self.used_groundstate[space][ov])
                             idict = {ov: needed}
                             i1 = self.__get_indices_from_default(
@@ -129,19 +127,16 @@ class indices:
                             least_idx_space, **idict
                         )
                         ret[ov] = i1[ov]
-                        self.remove(space, *ret[ov])
                 # some indices may be reused from other gs wfns of same type
                 elif space in self.used_groundstate:
                     ret = {}
                     for ov, n in kwargs.items():
                         # all indices may be reused
                         if n <= len(self.used_groundstate[space][ov]):
-                            av_idx = self.used_groundstate[space][ov][:n]
-                            ret[ov] = self.__make_symbol(*av_idx)
+                            ret[ov] = self.used_groundstate[space][ov][:n]
                         # some indices need to be obtained from least_idx_space
                         elif n > len(self.used_groundstate[space][ov]):
-                            av_idx = self.used_groundstate[space][ov]
-                            ret[ov] = self.__make_symbol(*av_idx)
+                            ret[ov] = self.used_groundstate[space][ov].copy()
                             needed = n - len(self.used_groundstate[space][ov])
                             least_idx_space = self.__get_smallest(ov)
                             idict = {locals()["ov"]: needed}
@@ -149,7 +144,6 @@ class indices:
                                 least_idx_space, **idict
                             )
                             ret[ov].extend(i1[ov])
-                            self.remove(space, *i1[ov])
         # requesting for ISR states
         # here it is way easier since the indices clearly belong to a space
         else:
@@ -157,38 +151,46 @@ class indices:
             for ov, n in kwargs.items():
                 # reuse all indices
                 if n <= len(self.used_indices[space][ov]):
-                    av_idx = self.used_indices[space][ov][:n]
-                    ret[ov] = self.__make_symbol(*av_idx)
+                    ret[ov] = self.used_indices[space][ov][:n]
                 elif n > len(self.used_indices[space][ov]):
                     needed = n - len(self.used_indices[space][ov])
                     # needed = n if no indices have been used previously
                     if needed == n:
-                        idict = {ov: n}
+                        idict = {locals()["ov"]: n}
                         i1 = self.__get_indices_from_space(space, **idict)
                         ret[ov] = i1[ov]
-                        self.remove(space, *ret[ov])
                     else:
-                        av_idx = self.used_indices[space][ov]
-                        ret[ov] = self.__make_symbol(*av_idx)
-                        idict = {ov: needed}
+                        ret[ov] = self.used_indices[space][ov].copy()
+                        idict = {locals()["ov"]: needed}
                         i1 = self.__get_indices_from_space(space, **idict)
                         ret[ov].extend(i1[ov])
-                        self.remove(space, *i1[ov])
         return ret
 
     def __get_indices_from_default(self, braket, **kwargs):
         ret = {}
+        if braket not in self.used_groundstate:
+            self.used_groundstate[braket] = {}
         # print("Grab from self.occ/virt: ", kwargs)
         for ov, n in kwargs.items():
             ret[ov] = []
             if ov == "occ":
                 idx = self.occ[:n]
                 # print(f"grabbing from self.occ {idx}")
-                ret[ov].extend(self.__make_symbol(*idx))
+                symbol = self.__make_symbol(*idx)
+                ret[ov].extend(symbol)
+                # attach symbols to used list
+                if "occ" not in self.used_groundstate:
+                    self.used_groundstate[braket]["occ"] = []
+                self.used_groundstate[braket]["occ"].extend(symbol)
             elif ov == "virt":
                 idx = self.virt[:n]
                 # print(f"grabbing from self.virt {idx}")
-                ret[ov].extend(self.__make_symbol(*idx))
+                symbol = self.__make_symbol(*idx)
+                ret[ov].extend(symbol)
+                # attach symbols to used list
+                if "virt" not in self.used_groundstate[braket]:
+                    self.used_groundstate[braket]["virt"] = []
+                self.used_groundstate[braket]["virt"].extend(symbol)
             self.remove(braket, *ret[ov])
         return ret
 
@@ -196,9 +198,10 @@ class indices:
         ret = {}
         # print(f"Grab from space {space}")
         for ov, n in kwargs.items():
-            ret[ov] = []
             idx = self.available_indices[space][ov][:n]
-            ret[ov].extend(self.__make_symbol(*idx))
+            ret[ov] = self.__make_symbol(*idx)
+            self.used_indices[space][ov].extend(ret[ov])
+            self.remove(space, *ret[ov])
         return ret
 
     def __get_smallest(self, ov):
@@ -251,13 +254,8 @@ class indices:
                       "ground state.")
                 exit()
             if space in ["ket", "bra"]:
-                if space not in self.used_groundstate:
-                    self.used_groundstate[space] = {}
                 if to_remove in self.occ:
                     # print(f"found {to_remove} in self.occ for removing")
-                    if "occ" not in self.used_groundstate[space]:
-                        self.used_groundstate[space]["occ"] = []
-                    self.used_groundstate[space]["occ"].append(to_remove)
                     # remove from default list so new spaces will start without
                     # the ground state indices
                     self.occ.remove(to_remove)
@@ -272,9 +270,6 @@ class indices:
                                   f"from space {space}, but could not find it")
                 elif to_remove in self.virt:
                     # print(f"found {to_remove} in self.virt for removing")
-                    if "virt" not in self.used_groundstate[space]:
-                        self.used_groundstate[space]["virt"] = []
-                    self.used_groundstate[space]["virt"].append(to_remove)
                     self.virt.remove(to_remove)
                     for indices in self.available_indices.values():
                         if to_remove in indices["virt"]:
@@ -290,10 +285,8 @@ class indices:
             elif space in self.available_indices:
                 if to_remove in self.occ:
                     self.available_indices[space]["occ"].remove(to_remove)
-                    self.used_indices[space]["occ"].append(to_remove)
                 elif to_remove in self.virt:
                     self.available_indices[space]["virt"].remove(to_remove)
-                    self.used_indices[space]["virt"].append(to_remove)
                 else:
                     print("Could not find index in availale_indices for",
                           f"space {space}")

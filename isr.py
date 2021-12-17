@@ -1,6 +1,6 @@
 from sympy.core.function import diff
 from sympy.physics.secondquant import (
-    F, Fd, evaluate_deltas, wicks, substitute_dummies
+    F, Fd, evaluate_deltas, wicks, substitute_dummies, NO
 )
 from sympy import symbols, latex, nsimplify
 
@@ -17,7 +17,6 @@ class intermediate_states:
         self.indices = mp.indices
         self.invoked_spaces = mp.indices.invoked_spaces
         # {order: {'excitation_space': {"ket/bra": x}}}
-        # not stored in their pretty form!!!
         self.precursor = {}
         # {order: {'excitation_space': x}}
         self.overlap = {}
@@ -108,17 +107,17 @@ class intermediate_states:
 
         # <S# = <S* - <S*|0><0
         if "bra" in sorted_args:
-            singles = Fd(idx["occ"][0]) * F(idx["virt"][0])
+            singles = NO(Fd(idx["occ"][0]) * F(idx["virt"][0]))
 
-            res = singles * mp[order]["bra"]
+            res = mp[order]["bra"] * singles
             for term in orders:
                 intermediate = mp[term[0]]["bra"] * \
                     singles * mp[term[1]]["ket"]
                 intermediate = wicks(
-                    intermediate, keep_only_fully_contracted=True
+                    intermediate, keep_only_fully_contracted=True,
+                    simplify_kronecker_deltas=True,
+                    simplify_dummies=True
                 )
-                intermediate = evaluate_deltas(intermediate)
-                intermediate = substitute_dummies(intermediate)
                 intermediate *= mp[term[2]]["bra"]
                 res -= intermediate
             self.precursor[order]["ph"]["bra"] = res
@@ -126,24 +125,21 @@ class intermediate_states:
 
         # S#> = S> - 0><0|S>
         if "ket" in sorted_args:
-            singles = Fd(idx["virt"][1]) * F(idx["occ"][1])
+            singles = NO(Fd(idx["virt"][1]) * F(idx["occ"][1]))
 
             res = singles * mp[order]["ket"]
             for term in orders:
                 intermediate = mp[term[1]]["bra"] * \
                                   singles * mp[term[2]]["ket"]
                 intermediate = wicks(
-                    intermediate, keep_only_fully_contracted=True
+                    intermediate, keep_only_fully_contracted=True,
+                    simplify_kronecker_deltas=True,
+                    simplify_dummies=True
                 )
-                intermediate = evaluate_deltas(intermediate)
-                intermediate = substitute_dummies(intermediate)
                 intermediate *= mp[term[0]]["ket"]
                 res -= intermediate
             self.precursor[order]["ph"]["ket"] = res
             print(f"S#>_{order} = {latex(res)}\n\n")
-
-#    def build_precursor_pphh(self, order, *args):
-#        pass
 
     def get_overlap_precursor(self, order, **kwargs):
         """Returns precursor overlap matrix of a given order
@@ -196,14 +192,14 @@ class intermediate_states:
         for excitation_space in spaces:
             res = 0
             for term in orders:
-                i1 = precursor[term[0]][excitation_space]["bra"] * \
-                    precursor[term[1]][excitation_space]["ket"]
-                i1 = wicks(i1, keep_only_fully_contracted=True)
-                i1 = evaluate_deltas(i1)
-                i1 = substitute_dummies(i1)
-                # print(f"{term} i1 = ", latex(i1))
-                res += i1
-            # res = substitute_dummies(res)
+                res += precursor[term[0]][excitation_space]["bra"] * \
+                       precursor[term[1]][excitation_space]["ket"]
+            res = wicks(res, keep_only_fully_contracted=True,
+                        simplify_kronecker_deltas=True)
+            #            simplify_dummies=True)
+            # substitute dummies required for expression to be correct,
+            # but if substituting the dummies here, the indices of the deltas
+            # change and then will not match with indices at a later point.
             self.overlap[order][excitation_space] = res
             print(f"build S_{excitation_space}^({order}) = {latex(res)}\n\n")
 
@@ -256,7 +252,6 @@ class intermediate_states:
             overlap[o] = self.get_overlap_precursor(o, **spaces)
         if order < 2:
             for space in spaces:
-                # necessary to change for order 0 to 1 instead of the deltas?
                 self.S_root[order][space] = overlap[order][space]
                 print(f"Build S_root_{space}^({order}) = ",
                       f"{latex(overlap[order][space])}\n\n")
@@ -270,7 +265,7 @@ class intermediate_states:
                         for i in range(len(term)):
                             res += prefactors[exponent] * \
                                 overlap[term[i]][excitation_space]
-                res = substitute_dummies(res)
+                # res = substitute_dummies(res)
                 self.S_root[order][excitation_space] = res
                 print(f"Build S_root_{excitation_space}^({order}) = ",
                       f"{latex(res)}\n\n")
@@ -340,29 +335,20 @@ class intermediate_states:
             if "ket" in braket:
                 res = 0
                 for term in orders:
-                    i1 = s_root[term[0]][space] * \
-                            precursor[term[1]][space]["ket"]
-                    print(f"i1 for orders {term}: {latex(i1)}")
-                    i1 = evaluate_deltas(i1)
-                    print(f"evaluated deltas: {latex(i1)}")
-                    i1 = substitute_dummies(i1)
-                    res += i1
-                res = substitute_dummies(
-                    res  # , new_indices=True, pretty_indices=pretty_indices
-                )
+                    res += s_root[term[0]][space] * \
+                         precursor[term[1]][space]["ket"]
+                res = substitute_dummies(res)
+                res = evaluate_deltas(res)
+                res = substitute_dummies(res)
                 self.isr[order][space]["ket"] = res
-                print(f"ISR_{space}^({order}) ket = {latex(res)}\n\n")
+                print(f"ISR_{space}^({order}) ket = ",
+                      f"{latex(self.make_pretty(res))}\n\n")
             if "bra" in braket:
                 res = 0
                 for term in orders:
-                    i1 = s_root[term[0]][space] * \
-                        precursor[term[1]][space]["bra"]
-                    i1 = evaluate_deltas(i1)
-                    i1 = substitute_dummies(i1)
-                    res += i1
-                res = substitute_dummies(
-                    res, new_indices=True, pretty_indices=pretty_indices
-                )
+                    res += s_root[term[0]][space] * \
+                         precursor[term[1]][space]["bra"]
+                res = evaluate_deltas(res)
                 self.isr[order][space]["bra"] = res
                 print(f"ISR_{space}^({order}) bra = {latex(res)}\n\n")
 
@@ -460,5 +446,5 @@ isr = intermediate_states(mp)
 # a = isr.get_overlap_precursor(2, ph=True)  # , pphh=True)
 # a = isr.get_S_root(2, ph=True)
 # a = isr.get_intermediate_states(1, ph=["ket", "bra"])
-b = isr.get_intermediate_states(1, ph=["ket"])
+b = isr.get_intermediate_states(2, ph=["ket"])
 # c = isr.get_intermediate_states(2, ph=["ket"])

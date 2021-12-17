@@ -16,7 +16,7 @@ class Hamiltonian:
         p = symbols('p', cls=Dummy)
         q = symbols('q', cls=Dummy)
         f = AntiSymmetricTensor('f', (p,), (q,))
-        pq = NO(Fd(p) * F(q))
+        pq = Fd(p) * F(q)
         H0 = f * pq
         print("H0 = ", latex(H0))
         return H0
@@ -29,9 +29,9 @@ class Hamiltonian:
         p, q, r, s = symbols('p,q,r,s', cls=Dummy)
         m = symbols('m', below_fermi=True, cls=Dummy)
         v1 = AntiSymmetricTensor('V', (p, m), (q, m))
-        pq = NO(Fd(p) * F(q))
+        pq = Fd(p) * F(q)
         v2 = AntiSymmetricTensor('V', (p, q), (r, s))
-        pqsr = NO(Fd(p) * Fd(q) * F(s) * F(r))
+        pqsr = Fd(p) * Fd(q) * F(s) * F(r)
         H1 = -v1 * pq + Rational(1, 4) * v2 * pqsr
         print("H1 = ", latex(H1))
         return H1.expand()
@@ -91,6 +91,7 @@ class ground_state:
 
     def build_E0(self):
         p, q = symbols('p,q', cls=Dummy)
+        # instead use function... does it make any difference?
         f = AntiSymmetricTensor('f', (p,), (q,))
         pq = contraction(Fd(p), F(q))
         E0 = f * pq
@@ -149,7 +150,7 @@ class ground_state:
                 for symbol in reversed(idx["virt"]):
                     operators *= F(symbol)
                 prefactor = Rational(1, factorial(excitation) ** 2)
-                psi += prefactor * t * operators  # NO(operators)
+                psi += prefactor * t * NO(operators)
             self.wfn[order]["bra"] = psi
             print(f"<Psi^({order})| = ", latex(psi))
         if "ket" in args:
@@ -167,7 +168,7 @@ class ground_state:
                 for symbol in reversed(idx["occ"]):
                     operators *= F(symbol)
                 prefactor = Rational(1, factorial(excitation) ** 2)
-                psi += prefactor * t * operators   # NO(operators)
+                psi += prefactor * t * NO(operators)
             self.wfn[order]["ket"] = psi
             print(f"|Psi^({order})> = {latex(psi)}\n\n")
 
@@ -180,8 +181,6 @@ class ground_state:
                 print(f"<Psi^(0)| = {self.wfn[0][braket]}\n\n")
 
     def build_psi1(self, *args):
-        # currently only Psi1 includes the minus sign from swapping
-        # the denominator
         if "bra" in args:
             idx = self.indices.get_indices("bra", occ=2, virt=2)
             t = AntiSymmetricTensor(
@@ -193,7 +192,7 @@ class ground_state:
             for symbol in reversed(idx["virt"]):
                 operators *= F(symbol)
             prefactor = Rational(1, 4)
-            psi = - prefactor * t * operators  # NO(operators)
+            psi = prefactor * t * NO(operators)
             self.wfn[1]["bra"] = psi
             print("<Psi^(1)| = ", latex(psi))
         if "ket" in args:
@@ -207,7 +206,7 @@ class ground_state:
             for symbol in reversed(idx["occ"]):
                 operators *= F(symbol)
             prefactor = Rational(1, 4)
-            psi = - prefactor * t * operators  # NO(operators)
+            psi = prefactor * t * NO(operators)
             self.wfn[1]["ket"] = psi
             print(f"|Psi^(1)>  = {latex(psi)}\n\n")
 
