@@ -25,9 +25,12 @@ class indices:
     def __init__(self):
         # dict {'space': {'occ': [idx]}}
         self.available_indices = {}
-        # additionally separation according to bra/ket
+
         # {space: {bra: {occ: []}}}
+        # only the ground state has the additional splitting
+        # according to bra/ket
         self.used_indices = {}
+
         # list with possible indices
         # only indices of type i1/a1 etc are used for ground state currently
         self.gs_occ = ['i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1', 'i2', 'j2',
@@ -71,9 +74,9 @@ class indices:
         else:
             self.__set_default(space)
             self.invoked_spaces.append(space)
-            self.used_indices[space] = {}
-            for braket in ["bra", "ket"]:
-                self.used_indices[space][braket] = {"occ": [], "virt": []}
+            self.used_indices[space] = {"occ": [], "virt": []}
+            # for braket in ["bra", "ket"]:
+            #     self.used_indices[space][braket] = {"occ": [], "virt": []}
 
     def get_gs_indices(self, braket, **kwargs):
         """Returns indices as sympy symbols in form of a dict, sorted
@@ -115,7 +118,7 @@ class indices:
                     }
                     idx = get_default[ov][:needed].copy()
                     ret[ov].extend(
-                        [self.__get_new_symbol("gs", braket, ov, idxstr)
+                        [self.__get_new_symbol("gs", ov, idxstr, braket=braket)
                          for idxstr in idx]
                     )
                 else:
@@ -124,12 +127,12 @@ class indices:
                     common = self.__get_common_indices(ov)
                     idx = [av for av in common if len(av) > 1][:needed]
                     ret[ov].extend(
-                        [self.__get_new_symbol("gs", braket, ov, idxstr)
+                        [self.__get_new_symbol("gs", ov, idxstr, braket=braket)
                          for idxstr in idx]
                     )
         return ret
 
-    def get_indices(self, space, braket, indices):
+    def get_indices(self, space, indices):
         """Returns indices as sympy symbols in form of a dict, sorted
            by the keys 'occ' and 'virt'.
            New indices are taken from the available list of the respective
@@ -141,24 +144,24 @@ class indices:
         # space: ph/pphh or gs
         # indices: str of indices, e.g. "ai"
 
-        if not isinstance(space, str) or not isinstance(braket, str):
+        if not isinstance(space, str):  # or not isinstance(braket, str):
             print(f"Trying to get indices with space of type {type(space)}",
-                  f"and bra/ket of type {type(braket)}. Only string allowed.")
+                  "Only string allowed.")
             exit()
         if space == "gs":
             print("Indices for the ground state should be obtained with",
                   "get_gs_indices instead.")
             exit()
-        if braket not in ["bra", "ket"]:
-            print(f"Can only get indices for 'bra' or 'ket' ,not {braket}")
-            exit()
+        # if braket not in ["bra", "ket"]:
+        #     print(f"Can only get indices for 'bra' or 'ket' ,not {braket}")
+        #     exit()
         if not isinstance(indices, str):
             print("Requested indices need to be of type str (e.g. 'ai'), not",
                   type(indices))
             exit()
 
         ret = {}
-        used = self.used_indices[space][braket]
+        used = self.used_indices[space]  # [braket]
         for idx in indices:
             ov = self.__assign_index(idx)
             if ov not in ret:
@@ -172,11 +175,11 @@ class indices:
             # create new symbol
             if not found:
                 ret[ov].append(
-                    self.__get_new_symbol(space, braket, ov, idx)
+                    self.__get_new_symbol(space, ov, idx)
                     )
         return ret
 
-    def __get_new_symbol(self, space, braket, ov, idx):
+    def __get_new_symbol(self, space, ov, idx, braket=None):
         if not self.available_indices[space][ov]:
             print(f"No indices for space {ov} {space} available anymore.")
             exit()
@@ -229,14 +232,15 @@ class indices:
             exit()
         idx = symbol.name
         available = self.available_indices[space][ov]
-        used = self.used_indices[space][braket][ov]
         if space == "gs":
+            used = self.used_indices[space][braket][ov]
             available.remove(idx)
             used.append(symbol)
             for space in self.invoked_spaces:
                 self.available_indices[space][ov].remove(idx)
         # remove from ph/pphh space
         else:
+            used = self.used_indices[space][ov]
             available.remove(idx)
             used.append(symbol)
 

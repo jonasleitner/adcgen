@@ -18,7 +18,7 @@ class intermediate_states:
         self.invoked_spaces = mp.indices.invoked_spaces
         # {order: {'excitation_space': {"ket/bra": {indices: }}}}
         self.precursor = {}
-        # {order: {'excitation_space': x}}
+        # {order: {'excitation_space': {'indices': x}}}
         self.overlap = {}
         self.S_root = {}
         # {order: {'excitation_space': {"ket/bra": x}}}
@@ -34,70 +34,6 @@ class intermediate_states:
             "pphh": {"bra": "ijab", "ket": "klcd"},
             "ppphhh": {"bra": "ijkabc", "ket": "lmndef"}
         }
-
-    def get_precursor_old(self, order, **kwargs):
-        """Returns the Precursor states of a given order as dict.
-           Requires to specify whether Bra, Ket or both of a given
-           excitation space are desired.
-           E.g. get_precursor(2, ph=["bra", "ket"]) returns the second
-           order ph precursor states as {"ph": {"ket": x, "bra": y}}.
-           """
-
-        if len(kwargs) == 0:
-            print("Need to provide the excitation space and wheter",
-                  "bra and/or ket precursor state are requested.",
-                  "(e.g. ph='bra')")
-            exit()
-        convertor = {
-            str: lambda braket: [braket],
-            list: lambda braket: braket,
-            dict: lambda braket: [
-                key for key, v in braket.items() if v and isinstance(v, bool)
-            ]
-        }
-        request = {}
-        for excitation_space, braket in kwargs.items():
-            conversion = convertor.get(type(braket), False)
-            if not conversion:
-                raise TypeError("The definition wheter the precursor Ket or",
-                                "Bra is requested needs to be of type str,",
-                                f"list or dict. Not of {type(braket)}")
-            for ele in conversion(braket):
-                if ele not in ["bra", "ket"]:
-                    raise ValueError("Precursor state must be either bra",
-                                     f"or ket, not {ele}")
-            try:
-                callback = getattr(
-                    self, "_build_precursor_" + excitation_space
-                )
-            except AttributeError:
-                print("Precursor states for excitation space",
-                      f"{excitation_space} not implemented.")
-                exit()
-            if len(conversion(braket)) == 0:
-                print(f"{kwargs} is not a valid input for obtaining a ",
-                      "Bra/Ket Precursor state. Use 'space'='ket',",
-                      "'space'=['ket', 'bra'] or 'space'=dict('bra': True).")
-                exit()
-            request[excitation_space] = (callback, conversion(braket))
-
-        if not self.precursor.get(order, False):
-            self.precursor[order] = {}
-
-        for excitation_space, value in request.items():
-            callback = value[0]
-            braket = value[1]
-            # invoke space for indices if not created before
-            if excitation_space not in self.invoked_spaces:
-                self.indices.create_space(excitation_space)
-
-            if excitation_space not in self.precursor[order]:
-                self.precursor[order][excitation_space] = {}
-                callback(order, *braket)
-            else:
-                [callback(order, bk) for bk in braket if
-                    bk not in self.precursor[order][excitation_space]]
-        return self.precursor[order]
 
     def get_precursor(self, order, space, braket, indices=None):
         # input order, space, bra/ket, indices="ia" o.ä.
@@ -129,6 +65,12 @@ class intermediate_states:
                 exit()
 
         indices = "".join(sorted(indices))
+        # only works if namin spaces ph, pphh etc.
+        if len(indices) != len(space):
+            print(f"{indices} are not adequate for space {space}.",
+                  "Too much or few indices provded")
+            exit()
+
         if space not in self.invoked_spaces:
             self.indices.invoke_space(space)
         if indices not in self.precursor[order][space][braket]:
@@ -136,7 +78,7 @@ class intermediate_states:
         return self.precursor[order][space][braket][indices]
 
     def __build_precursor(self, order, space, braket, indices):
-        idx = self.indices.get_indices(space, braket, indices)
+        idx = self.indices.get_indices(space, indices)
         # import all bra and ket gs wavefunctions up to requested order
         # for nicer indices iterate first over bk
         isr = {}
@@ -183,66 +125,22 @@ class intermediate_states:
                     i1, keep_only_fully_contracted=True,
                     simplify_kronecker_deltas=True,
                 )
-                # simplify_dummies=True  # no idea if this is good in wicks.
+                # simplify_dummies=True  # no idea if this is good here.
                 # try without first
                 res -= i1 * lower_isr[term[0]]["".join(bk('ket'))]
         self.precursor[order][space][braket][indices] = res
         print(f"Build {space}_({indices})^({order}) {braket}:", latex(res))
 
-    def _build_precursor_ph_old(self, order, *args):
-        # sort the args (bra, ket) so that bra get the lower indices.
-        sorted_args = list(args)
-        sorted_args.sort()
+    def get_overlap(self, order, space, indices=None):
+        if not indices:
+            print("Indices are required when requesting precursor overlap",
+                  "matrix")
+            exit()
+        if order not in self.overlap:
+            self.overlap[order] = {}
+        pass
 
-        # generate indices and build all the ground state wavefunctions.
-        mp = {}
-        idx = self.indices.get_indices("ph", occ=2, virt=2)
-
-        for braket in ["bra", "ket"]:
-            bk = {braket: True}
-            for o in range(order + 1):
-                mp[o] = self.gs.get_psi(o, **bk)
-
-        # get all possible combinations for 0><0|s|0> of order n
-        orders = get_orders_three(order)
-
-        # <S# = <S* - <S*|0><0
-        if "bra" in sorted_args:
-            singles = NO(Fd(idx["occ"][0]) * F(idx["virt"][0]))
-
-            res = mp[order]["bra"] * singles
-            for term in orders:
-                intermediate = mp[term[0]]["bra"] * \
-                    singles * mp[term[1]]["ket"]
-                intermediate = wicks(
-                    intermediate, keep_only_fully_contracted=True,
-                    simplify_kronecker_deltas=True,
-                    simplify_dummies=True
-                )
-                intermediate *= mp[term[2]]["bra"]
-                res -= intermediate
-            self.precursor[order]["ph"]["bra"] = res
-            print(f"<S#_{order} = {latex(res)}\n\n")
-
-        # S#> = S> - 0><0|S>
-        if "ket" in sorted_args:
-            singles = NO(Fd(idx["virt"][1]) * F(idx["occ"][1]))
-
-            res = singles * mp[order]["ket"]
-            for term in orders:
-                intermediate = mp[term[1]]["bra"] * \
-                                  singles * mp[term[2]]["ket"]
-                intermediate = wicks(
-                    intermediate, keep_only_fully_contracted=True,
-                    simplify_kronecker_deltas=True,
-                    simplify_dummies=True
-                )
-                intermediate *= mp[term[0]]["ket"]
-                res -= intermediate
-            self.precursor[order]["ph"]["ket"] = res
-            print(f"S#>_{order} = {latex(res)}\n\n")
-
-    def get_overlap_precursor(self, order, **kwargs):
+    def get_overlap_precursor_old(self, order, **kwargs):
         """Returns precursor overlap matrix of a given order
            for all provided spaces.
            E.g. get_overlap_precursor(2, ph=True) returns the second
