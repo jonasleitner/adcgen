@@ -16,15 +16,26 @@ class intermediate_states:
         self.gs = mp
         self.indices = mp.indices
         self.invoked_spaces = mp.indices.invoked_spaces
-        # {order: {'excitation_space': {"ket/bra": x}}}
+        # {order: {'excitation_space': {"ket/bra": {indices: }}}}
         self.precursor = {}
         # {order: {'excitation_space': x}}
         self.overlap = {}
         self.S_root = {}
         # {order: {'excitation_space': {"ket/bra": x}}}
         self.isr = {}
+        self.order_spaces = {
+            "gs": 0,
+            "ph": 1,
+            "pphh": 2,
+            "ppphhh": 3,
+        }
+        self.default_indices = {
+            "ph": {"bra": "ia", "ket": "jb"},
+            "pphh": {"bra": "ijab", "ket": "klcd"},
+            "ppphhh": {"bra": "ijkabc", "ket": "lmndef"}
+        }
 
-    def get_precursor(self, order, **kwargs):
+    def get_precursor_old(self, order, **kwargs):
         """Returns the Precursor states of a given order as dict.
            Requires to specify whether Bra, Ket or both of a given
            excitation space are desired.
@@ -88,7 +99,97 @@ class intermediate_states:
                     bk not in self.precursor[order][excitation_space]]
         return self.precursor[order]
 
-    def _build_precursor_ph(self, order, *args):
+    def get_precursor(self, order, space, braket, indices=None):
+        # input order, space, bra/ket, indices="ia" o.ä.
+        # order: int, space: ph/pphh etc, braket: bra or ket, indices: iajb
+
+        if space not in self.order_spaces:
+            print(f"{space} is not a valid space. Valid spaces need to be",
+                  f"in the self.order_spaces dict: {self.order_spaces}")
+            exit()
+        if braket not in ["bra", "ket"]:
+            print(f"Unknown precursor wavefuntion type {braket}.",
+                  "Only 'bra' and 'ket' are valid.")
+            exit()
+
+        if order not in self.precursor:
+            self.precursor[order] = {}
+        if space not in self.precursor[order]:
+            self.precursor[order][space] = {}
+        if braket not in self.precursor[order][space]:
+            self.precursor[order][space][braket] = {}
+
+        if not indices:
+            try:
+                indices = self.default_indices[space][braket]
+            except KeyError:
+                print(f"No default indices available for space {space}",
+                      f"{braket}. Either add some default indices or",
+                      "provide another space.")
+                exit()
+
+        indices = "".join(sorted(indices))
+        if space not in self.invoked_spaces:
+            self.indices.invoke_space(space)
+        if indices not in self.precursor[order][space][braket]:
+            self.__build_precursor(order, space, braket, indices)
+        return self.precursor[order][space][braket][indices]
+
+    def __build_precursor(self, order, space, braket, indices):
+        idx = self.indices.get_indices(space, braket, indices)
+        # import all bra and ket gs wavefunctions up to requested order
+        # for nicer indices iterate first over bk
+        isr = {}
+        mp = {}
+        for bk in ["bra", "ket"]:
+            for o in range(order + 1):
+                if o not in mp:
+                    mp[o] = {}
+                mp[o][bk] = self.gs.get_psi(o, bk)
+        isr["gs"] = mp
+        orders = get_orders_three(order)
+
+        get_ov = {
+            'ket': lambda ov: ov,
+            'bra': lambda ov: [other for other in ["occ", "virt"]
+                               if other != ov]
+        }
+        get_bk = {
+            'ket': lambda bk: bk,
+            'bra': lambda bk: [other for other in ["bra", "ket"]
+                               if other != bk]
+        }
+        ov = get_ov[braket]
+        bk = get_bk[braket]
+
+        operators = 1
+        for symbol in idx["".join(ov('virt'))]:
+            operators *= Fd(symbol)
+        for symbol in reversed(idx["".join(ov('occ'))]):
+            operators *= F(symbol)
+        res = NO(operators) * mp[order][braket]
+        # iterate over lower excitatied spaces (including gs)
+        for lower_space in self.order_spaces:
+            if space == lower_space:
+                break
+            if lower_space != "gs":
+                print("not implemented")
+                exit()
+            lower_isr = isr[lower_space]
+            for term in orders:
+                i1 = lower_isr[term[1]]["bra"] * \
+                    NO(operators) * lower_isr[term[2]]["ket"]
+                i1 = wicks(
+                    i1, keep_only_fully_contracted=True,
+                    simplify_kronecker_deltas=True,
+                )
+                # simplify_dummies=True  # no idea if this is good in wicks.
+                # try without first
+                res -= i1 * lower_isr[term[0]]["".join(bk('ket'))]
+        self.precursor[order][space][braket][indices] = res
+        print(f"Build {space}_({indices})^({order}) {braket}:", latex(res))
+
+    def _build_precursor_ph_old(self, order, *args):
         # sort the args (bra, ket) so that bra get the lower indices.
         sorted_args = list(args)
         sorted_args.sort()
@@ -442,9 +543,6 @@ mp = ground_state(h)
 # mp.get_energy(order=1)
 # mp.get_psi(2, bra=True)
 isr = intermediate_states(mp)
-# a = isr.get_precursor(2, ph={"bra": True, "ket": True})
+a = isr.get_precursor(2, "ph", "ket", indices="jb")
 # a = isr.get_overlap_precursor(2, ph=True)  # , pphh=True)
 # a = isr.get_S_root(2, ph=True)
-# a = isr.get_intermediate_states(1, ph=["ket", "bra"])
-b = isr.get_intermediate_states(2, ph=["ket"])
-# c = isr.get_intermediate_states(2, ph=["ket"])

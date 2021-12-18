@@ -58,36 +58,27 @@ class ground_state:
                 exit()
         return self.energy[order]
 
-    def get_psi(self, order, **kwargs):
+    def get_psi(self, order, braket):
         """Retuns the ground state wavefunction of the requested order.
            The type (Bra or Ket) of the requested wavefunction may be
            provided as ket=True and/or bra=True.
            Returns a dict
            By default only the Ket is build and returned."""
 
-        request = []
-        if len(kwargs) > 0:
-            for key, value in kwargs.items():
-                if key not in ["ket", "bra"]:
-                    raise ValueError("only possible to build bra or ket",
-                                     f"wavefunction. Not {key}")
-                if value and isinstance(value, bool):
-                    request.append(key)
-        else:
-            request = ["ket"]
+        if braket not in ["ket", "bra"]:
+            print("Only possible to build 'bra' or 'ket' gs wavefunction",
+                  f"{braket} is not valid")
+
         if not self.wfn.get(order, False):
             self.wfn[order] = {}
-        to_evaluate = []
-        for braket in request:
-            if braket not in self.wfn[order]:
-                to_evaluate.append(braket)
-        if to_evaluate:
+
+        if braket not in self.wfn[order]:
             if order in [0, 1]:
-                callback = getattr(self, "build_psi" + str(order))
-                callback(*to_evaluate)
+                callback = getattr(self, "_build_psi" + str(order))
+                callback(braket)
             else:
-                self.build_psi(order, *to_evaluate)
-        return self.wfn[order]
+                self.__build_psi(order, braket)
+        return self.wfn[order][braket]
 
     def build_E0(self):
         p, q = symbols('p,q', cls=Dummy)
@@ -132,14 +123,14 @@ class ground_state:
         print("E2 = ", latex(E2))
         self.energy[2] = E2
 
-    def build_psi(self, order, *args):
+    def __build_psi(self, order, *args):
         # generalize the gs wavefunction generation
         # currently only used for second oder +
         if "bra" in args:
             psi = 0
             for excitation in range(1, 2 * order + 1):
-                idx = self.indices.get_indices(
-                    "bra", occ=excitation, virt=excitation
+                idx = self.indices.get_gs_indices(
+                    "bra", n_occ=excitation, n_virt=excitation
                 )
                 t = AntiSymmetricTensor(
                     f"t{order}_cc", tuple(idx["virt"]), tuple(idx["occ"])
@@ -156,8 +147,8 @@ class ground_state:
         if "ket" in args:
             psi = 0
             for excitation in range(1, 2 * order + 1):
-                idx = self.indices.get_indices(
-                    "ket", occ=excitation, virt=excitation
+                idx = self.indices.get_gs_indices(
+                    "ket", n_occ=excitation, n_virt=excitation
                 )
                 t = AntiSymmetricTensor(
                     f"t{order}", tuple(idx["virt"]), tuple(idx["occ"])
@@ -172,7 +163,7 @@ class ground_state:
             self.wfn[order]["ket"] = psi
             print(f"|Psi^({order})> = {latex(psi)}\n\n")
 
-    def build_psi0(self, *args):
+    def _build_psi0(self, *args):
         for braket in args:
             self.wfn[0][braket] = 1
             if braket == "ket":
@@ -180,9 +171,9 @@ class ground_state:
             if braket == "bra":
                 print(f"<Psi^(0)| = {self.wfn[0][braket]}\n\n")
 
-    def build_psi1(self, *args):
+    def _build_psi1(self, *args):
         if "bra" in args:
-            idx = self.indices.get_indices("bra", occ=2, virt=2)
+            idx = self.indices.get_gs_indices("bra", n_occ=2, n_virt=2)
             t = AntiSymmetricTensor(
                 "t1_cc", tuple(idx["virt"]), tuple(idx["occ"])
             )
@@ -196,7 +187,7 @@ class ground_state:
             self.wfn[1]["bra"] = psi
             print("<Psi^(1)| = ", latex(psi))
         if "ket" in args:
-            idx = self.indices.get_indices("ket", occ=2, virt=2)
+            idx = self.indices.get_gs_indices("ket", n_occ=2, n_virt=2)
             t = AntiSymmetricTensor(
                 "t1", tuple(idx["virt"]), tuple(idx["occ"])
             )

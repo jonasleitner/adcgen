@@ -37,13 +37,6 @@ class indices:
         self.occ = ['i', 'j', 'k', 'l', 'm', 'n', 'o'] + self.gs_occ
         self.virt = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] + self.gs_virt
         self.invoked_spaces = []
-
-        # some default indices for the ADC spaces
-        self.default_indices = {
-            "ph": {"bra": "ia", "ket": "jb"},
-            "pphh": {"bra": "ijab", "ket": "klcd"},
-            "ppphhh": {"bra": "ijkabc", "ket": "lmndef"}
-        }
         self.__setup_gs()
 
     def __setup_gs(self):
@@ -206,7 +199,7 @@ class indices:
             for space in self.available_indices:
                 if space != "gs" and idx in self.available_indices[space][ov]:
                     indicator.append(True)
-            if all(indicator):
+            if all(indicator) and indicator:
                 common.append(idx)
         return common
 
