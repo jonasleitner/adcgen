@@ -168,6 +168,10 @@ class intermediate_states:
         sorted_idx = []
         for idxstring in splitted:
             sorted_idx.append("".join(sorted(idxstring)))
+        if sorted_idx[0] == sorted_idx[1]:
+            print("Indices for overlap matrix should not be equal.",
+                  "Use e.g. ia,jb and not ia,ia.")
+            exit()
         indices = ",".join(sorted_idx)
 
         if order not in self.overlap:
@@ -324,87 +328,71 @@ class intermediate_states:
             self.get_S_root(order, space, indices=indices[space])
         )
 
-    def get_intermediate_states(self, order, **kwargs):
-        """Input: order, ph=['ket', 'bra']"""
-        if len(kwargs) == 0:
-            print("It is necessary to define the excitation space",
-                  "and wheter Bra or Ket should be computed when",
-                  "requesting intermediate states. E.g. ph='ket'")
-        convertor = {
-            str: lambda braket: [braket],
-            list: lambda braket: braket,
-            dict: lambda braket: [
-                key for key, v in braket.items() if v and isinstance(v, bool)
-            ]
-        }
-        request = {}
-        for excitation_space, braket in kwargs.items():
-            conversion = convertor.get(type(braket), False)
-            if not conversion:
-                raise TypeError("The definition wheter the precursor Ket or",
-                                "Bra is requested needs to be of type str,",
-                                f"list or dict. Not of {type(braket)}")
-            for ele in conversion(braket):
-                if ele not in ["bra", "ket"]:
-                    raise ValueError("Precursor state must be either bra",
-                                     f"or ket, not {ele}")
-            if len(conversion(braket)) == 0:
-                print(f"{kwargs} is not a valid input for obtaining a ",
-                      "Bra/Ket Precursor state. Use 'space'='ket',",
-                      "'space'=['ket', 'bra'] or 'space'=dict('bra': True).")
-                exit()
-            request[excitation_space] = conversion(braket)
-        to_evaluate = {}
-        if not self.isr.get(order, False):
+    def get_is(self, order, space, braket, idx_is=None, idx_pre=None):
+        # idx_is='ia', idx_pre='jb'
+        # target indices, second indices for precursor and overlap
+        # if bra: S_{ia,jb} * <jb|
+        # elif ket: S_{jb,ia} * |jb>
+        if not idx_is or not idx_pre:
+            print("Need to provide two string of indices to construct",
+                  f"an intermediate state. {idx_is}, {idx_pre} is not valid.")
+            exit()
+        idx_is = "".join(sorted(idx_is))
+        idx_pre = "".join(sorted(idx_pre))
+
+        if order not in self.isr:
             self.isr[order] = {}
-        # need to test code below when build intermediates work
-        for excitation_space, braket in request.items():
-            if not self.isr[order].get(excitation_space, False):
-                self.isr[order][excitation_space] = {}
-            to_evaluate[excitation_space] = \
-                [bk for bk in braket if not
-                    self.isr[order][excitation_space].get(bk, False)]
-        if len(to_evaluate) > 0:
-            self.__build_intermediate_states(order, to_evaluate)
-        return self.isr[order]
+        if space not in self.isr[order]:
+            self.isr[order][space] = {}
+        if braket not in self.isr[order][space]:
+            self.isr[order][space][braket] = {}
+        if ",".join([idx_is, idx_pre]) not in self.isr[order][space][braket]:
+            self.__build_is(order, space, braket, idx_is, idx_pre)
+        return self.isr[order][space][braket][",".join([idx_is, idx_pre])]
 
-    def __build_intermediate_states(self, order, spaces):
-        # spaces = {space: ["bra", "ket"]}
-        orders = get_order_two(order)
-
-        # import all S^{-0.5} and precursor states for all spaces requested
+    def __build_is(self, order, space, braket, idx_is, idx_pre):
+        get_s_indices = {
+            'bra': ",".join([idx_is, idx_pre]),
+            'ket': ",".join([idx_pre, idx_is])
+        }
         precursor = {}
         s_root = {}
-        # convert bra/ket to True since get_S_root does not know bra or ket
-        s_root_spaces = {}
-        for space in spaces:
-            s_root_spaces[space] = True
         for o in range(order + 1):
-            s_root[o] = self.get_S_root(o, **s_root_spaces)
-            # since all precursor states have already been constructed for the
-            # overlap matrix they are already available
-            precursor[o] = self.precursor[o]
+            precursor[o] = self.get_precursor(
+                o, space, braket, indices=idx_pre
+            )
+            s_root[o] = self.get_overlap(
+                o, space, indices=get_s_indices[braket]
+            )
 
-        for space, braket in spaces.items():
-            if "ket" in braket:
-                res = 0
-                for term in orders:
-                    res += s_root[term[0]][space] * \
-                         precursor[term[1]][space]["ket"]
-                res = substitute_dummies(res)
-                res = evaluate_deltas(res)
-                res = substitute_dummies(res)
-                self.isr[order][space]["ket"] = res
-                print(f"ISR_{space}^({order}) ket = ",
-                      f"{latex(self.make_pretty(res))}\n\n")
-            if "bra" in braket:
-                res = 0
-                for term in orders:
-                    res += s_root[term[0]][space] * \
-                         precursor[term[1]][space]["bra"]
-                res = evaluate_deltas(res)
-                self.isr[order][space]["bra"] = res
-                print(f"ISR_{space}^({order}) bra = {latex(res)}\n\n")
+        orders = get_order_two(order)
+        res = 0
+        for term in orders:
+            res += s_root[term[0]] * precursor[term[1]]
+            print("\n")
+            print(term)
+            print("s_root: ", latex(s_root[term[0]]))
+            print("precursor: ", latex(precursor[term[1]]))
+            print("evaluates to: ",
+                  latex(evaluate_deltas(s_root[term[0]] * precursor[term[1]])))
+        res = evaluate_deltas(res)
+        self.isr[order][space][braket][",".join([idx_is, idx_pre])] = res
+        print(f"Build {space} ISR_({idx_is}, {idx_pre})^({order}) {braket} =",
+              latex(res))
+
+    def get_pretty_is(self, order, space, braket):
+        indices = {
+            'ph': {'is': "ia", 'pre': "jb"},
+            'pphh': {'is': "iajb", 'pre': "klcd"},
+            'ppphhh': {'is': "iajbkc", 'pre': "ldmenf"},
+        }
+        if space not in indices:
+            print("Can only build pretty intermediate states for spaces",
+                  f"{list(indices.keys())}.")
+        idx = indices[space]
+        return self.make_pretty(
+            self.get_is(order, space, braket, idx["is"], idx["pre"])
+        )
 
 
 def gen_order_S(order):
@@ -477,3 +465,7 @@ isr = intermediate_states(mp)
 # a = isr.get_precursor(2, "ph", "ket", indices="jb")
 # a = isr.get_overlap(2, "ph", indices="ia,jb")
 # a = isr.get_S_root(2, "ph", indices="ia,jb")
+# a = isr.get_is(2, "ph", "ket", idx_is="ia", idx_pre="jb")
+a = isr.get_pretty_is(2, "ph", "ket")
+print("\n")
+print(latex(a))
