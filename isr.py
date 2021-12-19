@@ -29,16 +29,18 @@ class intermediate_states:
             "pphh": 2,
             "ppphhh": 3,
         }
-        self.default_indices = {
-            "ph": {"bra": "ia", "ket": "jb"},
-            "pphh": {"bra": "ijab", "ket": "klcd"},
-            "ppphhh": {"bra": "ijkabc", "ket": "lmndef"}
-        }
 
     def get_precursor(self, order, space, braket, indices=None):
-        # input order, space, bra/ket, indices="ia" o.ä.
-        # order: int, space: ph/pphh etc, braket: bra or ket, indices: iajb
+        """Method used to obtain precursor states of arbitrary order
+           for an arbitrary space. The indices of the resulting precursor
+           wavefunction need to be provided as string in the input
+           (e.g. indices='ia' produces |PSI_{ia}^#).
+           """
 
+        if not indices:
+            print("Indices in the form 'iajb' required to construct precursor",
+                  f"wavefunction of order {order} for space {space}.")
+            exit()
         if space not in self.order_spaces:
             print(f"{space} is not a valid space. Valid spaces need to be",
                   f"in the self.order_spaces dict: {self.order_spaces}")
@@ -55,20 +57,11 @@ class intermediate_states:
         if braket not in self.precursor[order][space]:
             self.precursor[order][space][braket] = {}
 
-        if not indices:
-            try:
-                indices = self.default_indices[space][braket]
-            except KeyError:
-                print(f"No default indices available for space {space}",
-                      f"{braket}. Either add some default indices or",
-                      "provide another space.")
-                exit()
-
         indices = "".join(sorted(indices))
         # only works if namin spaces ph, pphh etc.
         if len(indices) != len(space):
             print(f"{indices} are not adequate for space {space}.",
-                  "Too much or few indices provded")
+                  "Too much or few indices provided")
             exit()
 
         if space not in self.invoked_spaces:
@@ -104,10 +97,13 @@ class intermediate_states:
         ov = get_ov[braket]
         bk = get_bk[braket]
 
+        # in contrast to the gs, here the operators are ordered as
+        # abij instead of abji in order to stay consistent with the
+        # published ADC results.
         operators = 1
         for symbol in idx["".join(ov('virt'))]:
             operators *= Fd(symbol)
-        for symbol in reversed(idx["".join(ov('occ'))]):
+        for symbol in idx["".join(ov('occ'))]:
             operators *= F(symbol)
         res = NO(operators) * mp[order][braket]
         # iterate over lower excitatied spaces (including gs)
@@ -129,145 +125,204 @@ class intermediate_states:
                 # try without first
                 res -= i1 * lower_isr[term[0]]["".join(bk('ket'))]
         self.precursor[order][space][braket][indices] = res
-        print(f"Build {space}_({indices})^({order}) {braket}:", latex(res))
+        print(f"Build precursor {space}_({indices})^({order}) {braket}:",
+              latex(res))
 
-    def get_overlap(self, order, space, indices=None):
-        if not indices:
-            print("Indices are required when requesting precursor overlap",
-                  "matrix")
-            exit()
-        if order not in self.overlap:
-            self.overlap[order] = {}
-        pass
-
-    def get_overlap_precursor_old(self, order, **kwargs):
-        """Returns precursor overlap matrix of a given order
-           for all provided spaces.
-           E.g. get_overlap_precursor(2, ph=True) returns the second
-           order ph overlap matrix as {order: {excitation_space: x}}"""
-
-        if len(kwargs) == 0:
-            print("Need to provide the excitation space the precursor overlap",
-                  "matrix should be build for. (e.g. ph=True)")
-            exit()
-
-        if order not in self.overlap:
-            self.overlap[order] = {}
-
-        to_evaluate = {}
-        for excitation_space, value in kwargs.items():
-            if value and isinstance(value, bool):
-                if excitation_space not in self.overlap[order]:
-                    to_evaluate[excitation_space] = ["bra", "ket"]
-        if len(to_evaluate) > 0:
-            self.__build_overlap_precursor(order, to_evaluate)
-        return self.overlap[order]
-
-    def get_overlap_precursor_pretty(self, order, **kwargs):
-        """Returns the precursor overlap matrix of a given order
-           for all requested spaces. (e.g. ph=True)
-           The indices are cleaned up so the expression is more readable.
+    def get_pretty_precursor(self, order, space, braket):
+        """Returns precursor bra/ket for a given space and order.
+           Indices are not required. Default indices will be used,
+           because they will be replaced anyway.
            """
 
-        if len(kwargs) == 0:
-            print("Need to provide the excitation space the pretty precursor",
-                  "overlap matrix should be build for. (e.g. ph=True)")
+        indices = {
+            "ph": "ia",
+            "pphh": "ijab",
+            "ppphhh": "ijkabc",
+        }
+        return self.make_pretty(
+                self.get_precursor(order, space, braket, indices[space])
+            )
+
+    def get_overlap(self, order, space, indices=None):
+        """Method that constructs and returns precursor overlap matrices
+           for a given order and space. Indices of the resulting
+           overlap matrix element need to be provided in the form 'ia,jb'
+           which will produce S_{ia,jb}.
+           """
+
+        if not indices:
+            print("Need to provide indices to construct an precursor overlap",
+                  "matrix (e.g. indices='ia,jb' for S{ia,jb})")
             exit()
-        pretty_overlap = {}
-        overlap = self.get_overlap_precursor(order, **kwargs)
-        for space, S in overlap.items():
-            pretty_overlap[space] = self.make_pretty(S)
-        return pretty_overlap
+        if not isinstance(indices, str):
+            print("Indices for precursor overlap matrix must be of type",
+                  f"str, not {type(indices)}")
+            exit()
 
-    def __build_overlap_precursor(self, order, spaces):
-        orders = get_order_two(order)
+        # sort both parts of the index string alphabetically
+        splitted = indices.split(",")
+        if len(splitted) > 2:
+            print("Only provide 2 strings of indices separated by a ','",
+                  f"e.g. 'ia,jb'. {indices} is not valid.")
+            exit()
+        sorted_idx = []
+        for idxstring in splitted:
+            sorted_idx.append("".join(sorted(idxstring)))
+        indices = ",".join(sorted_idx)
+
+        if order not in self.overlap:
+            self.overlap[order] = {}
+        if space not in self.overlap[order]:
+            self.overlap[order][space] = {}
+        if indices not in self.overlap[order][space]:
+            self.__build_overlap(order, space, indices)
+        return self.overlap[order][space][indices]
+
+    def __build_overlap(self, order, space, indices):
+        # indices are sorted alphabetically already: ai,bj
+
+        get_idx = {
+            'bra': indices.split(",")[0],
+            'ket': indices.split(",")[1]
+        }
         precursor = {}
-
-        # get all relevant precursor states of all requested
-        # excitation spaces
         for o in range(order + 1):
-            precursor[o] = self.get_precursor(o, **spaces)
+            precursor[o] = {}
+            for braket in ["bra", "ket"]:
+                precursor[o][braket] = self.get_precursor(
+                    o, space, braket, indices=get_idx[braket]
+                )
 
-        for excitation_space in spaces:
-            res = 0
-            for term in orders:
-                res += precursor[term[0]][excitation_space]["bra"] * \
-                       precursor[term[1]][excitation_space]["ket"]
-            res = wicks(res, keep_only_fully_contracted=True,
-                        simplify_kronecker_deltas=True)
-            #            simplify_dummies=True)
-            # substitute dummies required for expression to be correct,
-            # but if substituting the dummies here, the indices of the deltas
-            # change and then will not match with indices at a later point.
-            self.overlap[order][excitation_space] = res
-            print(f"build S_{excitation_space}^({order}) = {latex(res)}\n\n")
+        orders = get_order_two(order)
+        res = 0
+        for term in orders:
+            res += precursor[term[0]]["bra"] * precursor[term[1]]["ket"]
+        res = wicks(res, keep_only_fully_contracted=True,
+                    simplify_kronecker_deltas=True)
+        self.overlap[order][space][indices] = res
+        print(f"Build overlap {space} S_({indices})^({order}) = {latex(res)}")
+
+    def get_pretty_overlap(self, order, space):
+        """Returns the precursor overlap matrix of a given order
+           for the defined space. There is no need to provide any indices,
+           because they will be substituted and replaced anyway.
+           Therefore, a default list with indices is included in the function,
+           that provides some indices to construct some overlap matrix and
+           precursor states.
+           """
+
+        indices = {
+            'ph': "ia,jb",
+            'pphh': "iajb,kcld",
+            'ppphhh': "iajbkc,ldmenf",
+        }
+        if space not in indices:
+            print("Can only build a pretty overlap matrix for the spaces",
+                  f"{list(indices.keys())}.")
+            exit()
+        return self.make_pretty(
+            self.get_overlap(order, space, indices=indices[space])
+        )
 
     def make_pretty(self, expression):
         """Because it is not possible to make the indices of the
-           precursor states and their overlap matrix pretty when building.
-           Otherwise the ISR may not be constructed automatically."""
+           precursor states and their overlap matrix pretty when building
+           a method is created for this purpose.
+           When indices are substituted sympy does not recognize them as
+           equal anymore and therefore evaluates expressions wrong.
+           """
 
         return substitute_dummies(
             expression, new_indices=True, pretty_indices=pretty_indices)
 
-    def get_S_root(self, order, **kwargs):
-        """Returns S^{-0.5} of a given order for all provided spaces.
-           E.g. get_S_root(2, ph=True) returns the second
-           order ph S^{-0.5} as {order: {excitation_space: x}}
+    def get_S_root(self, order, space, indices=None):
+        """Method to obtain S^{-0.5} of a given order.
+           Indices for the resulting matrix element are required.
+           e.g. indices='ia,jb' produces (S^{-0.5})_{ia,jb}
            """
 
-        if len(kwargs) == 0:
-            print("Need to provide the excitation space the precursor overlap",
-                  "matrix should be build for. (e.g. ph=True)")
+        if not indices:
+            print("Need to provide indices of e.g. the form 'ia,jb'",
+                  f"when constructing S_root of order {order} for",
+                  f"space {space}.")
             exit()
+        if not isinstance(indices, str):
+            print("Indices for S_root must be of type",
+                  f"str, not {type(indices)}")
+            exit()
+
+        # sort indices in each part of the string alphabetically
+        sorted_idx = []
+        for idxstring in indices.split(","):
+            sorted_idx.append("".join(sorted(idxstring)))
+        indices = ",".join(sorted_idx)
 
         if order not in self.S_root:
             self.S_root[order] = {}
+        if space not in self.S_root[order]:
+            self.S_root[order][space] = {}
+        if indices not in self.S_root[order][space]:
+            self.__build_S_root(order, space, indices)
+        return self.S_root[order][space][indices]
 
-        spaces_to_evaluate = {}
-        for excitation_space, value in kwargs.items():
-            if value and isinstance(value, bool):
-                if excitation_space not in self.S_root[order]:
-                    spaces_to_evaluate[excitation_space] = True
-        if len(spaces_to_evaluate) > 0:
-            self.__build_S_root(order, spaces_to_evaluate)
-        return self.S_root[order]
-
-    def get_S_root_pretty(self, order, **kwargs):
-        if len(kwargs) == 0:
-            print("Need to provide the excitation space S_root_pretty",
-                  "should be build for. (e.g. ph=True)")
-            exit()
-        pretty_S_root = {}
-        S_root = self.get_S_root(order, **kwargs)
-        for space, S in S_root.items():
-            pretty_S_root[space] = self.make_pretty(S)
-        return pretty_S_root
-
-    def __build_S_root(self, order, spaces):
+    def __build_S_root(self, order, space, indices):
         overlap = {}
-        # get all relevant Overlap matrices for all excitation spaces
         for o in range(order + 1):
-            overlap[o] = self.get_overlap_precursor(o, **spaces)
-        if order < 2:
-            for space in spaces:
-                self.S_root[order][space] = overlap[order][space]
-                print(f"Build S_root_{space}^({order}) = ",
-                      f"{latex(overlap[order][space])}\n\n")
-        else:
-            prefactors, orders = self.__expand_S_taylor(order)
+            overlap[o] = self.get_overlap(order, space, indices=indices)
 
-            for excitation_space in spaces:
-                res = 0
-                for exponent, terms in orders.items():
-                    for term in terms:
-                        for i in range(len(term)):
-                            res += prefactors[exponent] * \
-                                overlap[term[i]][excitation_space]
-                # res = substitute_dummies(res)
-                self.S_root[order][excitation_space] = res
-                print(f"Build S_root_{excitation_space}^({order}) = ",
-                      f"{latex(res)}\n\n")
+        prefactors, orders = self.__expand_S_taylor(order)
+        res = 0
+        for exponent, termlist in orders.items():
+            for term in termlist:
+                for o in range(len(term)):
+                    res += prefactors[exponent] * overlap[term[o]]
+        self.S_root[order][space][indices] = res
+        print(f"Build {space} S_root_({indices})^({order}) = {latex(res)}")
+
+    def __expand_S_taylor(self, order):
+        """Computes the Taylor expansion of 'S^{-0.5} = (1 + x)^{-0.5} with
+           'x = S(2) + S(3) + O(4)' to a given order in perturbation theory.
+
+           Returns two dicts:
+           The first one contains the prefactors of the series x + x² + ...
+           The second one contains the orders of S that contribute to the
+           n-th order term. (like (4,) and (2,2) for fourth order)
+           In both dicts the exponent of x in the Taylor expansion is used
+           as key.
+           """
+
+        x = symbols('x')
+        diffs = {0: 1}
+        f = (1 + x) ** -0.5
+        intermediate = f
+        for o in range(1, int(order / 2) + 1):
+            intermediate = diff(intermediate, x)
+            diffs[o] = nsimplify(intermediate.subs(x, 0) * 1 / factorial(o))
+        print("prefactors of taylor expansion: ", diffs)
+        orders = gen_order_S(order)
+        if not orders:
+            orders[0] = [(order,)]
+        print("orders of overlap matrix: ", orders)
+        return (diffs, orders)
+
+    def get_pretty_S_root(self, order, space):
+        """Returns S^{-0.5} of a given order for the defined space.
+           Indices will be picked from the default list and replaced
+           by "pretty" indices.
+           """
+
+        indices = {
+            'ph': "ia,jb",
+            'pphh': "iajb,kcld",
+            'ppphhh': "iajbkc,ldmenf",
+        }
+        if space not in indices:
+            print("Can only build pretty S_root for the spaces",
+                  f"{list(indices.keys())}.")
+            exit()
+        return self.make_pretty(
+            self.get_S_root(order, space, indices=indices[space])
+        )
 
     def get_intermediate_states(self, order, **kwargs):
         """Input: order, ph=['ket', 'bra']"""
@@ -351,34 +406,12 @@ class intermediate_states:
                 self.isr[order][space]["bra"] = res
                 print(f"ISR_{space}^({order}) bra = {latex(res)}\n\n")
 
-    def __expand_S_taylor(self, order):
-        """Computes the Taylor expansion of 'S^{-0.5} = (1 + x)^{-0.5} with
-           'x = S(2) + S(3) + O(4)' to a given order in perturbation theory.
-           Returns two dicts.
-           The first one contains the prefactors of the Taylor expansion.
-           The second one contains the orders of S that contribute to the
-           n-th order term. (like (4,) and (2,2) for fourth order)
-           In both dicts the exponent of x in the Taylor expansion is used
-           as key."""
-
-        x = symbols('x')
-        diffs = {0: 1}
-        f = (1 + x) ** -0.5
-        intermediate = f
-        for o in range(1, int(order / 2) + 1):
-            intermediate = diff(intermediate, x)
-            diffs[o] = nsimplify(intermediate.subs(x, 0) * 1 / factorial(o))
-        print("prefactors of taylor expansion: ", diffs)
-        orders = gen_order_S(order)
-        print("orders of overlap matrix: ", orders)
-        return (diffs, orders)
-
 
 def gen_order_S(order):
-    """expands 'S = 1 + x' in a Taylor series with 'x = S(2) + S(3) + O(4)' to
-       the given order.
-       Returns a dict that contains the exponents of x as key and a list of
-       tuples of the orders of S as values. {exponent: [(o1, o2, ...), ...]}
+    """Computed the series x + x² + ... with x = S(2) + S(3) + O(4).
+       Returns all terms of the series that are of a given order as
+       sorted by the exponent of x as key.
+       {exponent: [(o1, o2, ...), ...]}
        """
 
     orders = np.array([2 ** o for o in range(2, order + 1)])
@@ -441,6 +474,6 @@ mp = ground_state(h)
 # mp.get_energy(order=1)
 # mp.get_psi(2, bra=True)
 isr = intermediate_states(mp)
-a = isr.get_precursor(2, "ph", "ket", indices="jb")
-# a = isr.get_overlap_precursor(2, ph=True)  # , pphh=True)
-# a = isr.get_S_root(2, ph=True)
+# a = isr.get_precursor(2, "ph", "ket", indices="jb")
+# a = isr.get_overlap(2, "ph", indices="ia,jb")
+# a = isr.get_S_root(2, "ph", indices="ia,jb")
