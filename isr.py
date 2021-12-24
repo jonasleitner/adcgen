@@ -8,7 +8,7 @@ import numpy as np
 from math import factorial
 
 from groundstate import ground_state, Hamiltonian
-from indices import pretty_indices
+from indices import pretty_indices, split_idxstring
 
 
 class intermediate_states:
@@ -57,12 +57,9 @@ class intermediate_states:
         if braket not in self.precursor[order][space]:
             self.precursor[order][space][braket] = {}
 
-        indices = "".join(sorted(indices))
-        # only works if namin spaces ph, pphh etc.
-        if len(indices) != len(space):
-            print(f"{indices} are not adequate for space {space}.",
-                  "Too much or few indices provided")
-            exit()
+        # split the index str ij2a42b into [i,j2,a42,b]
+        # and sort alphabetically afterwards
+        indices = "".join(sorted(split_idxstring(indices)))
 
         if space not in self.invoked_spaces:
             self.indices.invoke_space(space)
@@ -107,23 +104,54 @@ class intermediate_states:
             operators *= F(symbol)
         res = NO(operators) * mp[order][braket]
         # iterate over lower excitatied spaces (including gs)
-        for lower_space in self.order_spaces:
+        for lower_space, n in self.order_spaces.items():
             if space == lower_space:
                 break
-            if lower_space != "gs":
-                print("not implemented")
-                exit()
+            if lower_space not in isr:
+                isr[lower_space] = {}
+                # get generic unique indices. Saved for reuse using
+                # the alphabetically sorted indices of the parent precursor
+                # state.
+                isr_generic = self.indices.get_isr_indices(
+                    indices, n_occ=3*n, n_virt=3*n
+                )
+                # sort indices into three strings of length n
+                isr_idx = {}
+                for i in range(3):
+                    occ = isr_generic['occ'][i*n:(i+1)*n]
+                    virt = isr_generic['virt'][i*n:(i+1)*n]
+                    idx_string = [s.name for s in virt]
+                    for s in occ:
+                        idx_string += s.name
+                    isr_idx[i+1] = "".join(idx_string)
+                # generate the isr states for the lower_space
+                for o in range(order + 1):
+                    isr[lower_space][o] = {}
+                    isr[lower_space][o]['bra'] = self.get_is(
+                        o, lower_space, 'bra', idx_is=isr_idx[1],
+                        idx_pre=isr_idx[3]
+                    )
+                    isr[lower_space][o]['ket'] = self.get_is(
+                        o, lower_space, 'ket', idx_is=isr_idx[1],
+                        idx_pre=isr_idx[2]
+                    )
             lower_isr = isr[lower_space]
             for term in orders:
-                i1 = lower_isr[term[1]]["bra"] * \
-                    NO(operators) * lower_isr[term[2]]["ket"]
+                if braket == "ket":
+                    i1 = lower_isr[term[1]]["bra"] * \
+                        NO(operators) * mp[term[2]]["ket"]
+                    state = lower_isr[term[0]]["ket"]
+                elif braket == "bra":
+                    i1 = mp[term[0]]["bra"] * NO(operators) \
+                        * lower_isr[term[1]]["ket"]
+                    state = lower_isr[term[2]]["bra"]
                 i1 = wicks(
                     i1, keep_only_fully_contracted=True,
                     simplify_kronecker_deltas=True,
                 )
                 # simplify_dummies=True  # no idea if this is good here.
                 # try without first
-                res -= i1 * lower_isr[term[0]]["".join(bk('ket'))]
+                res -= state * i1
         self.precursor[order][space][braket][indices] = res
         print(f"Build precursor {space}_({indices})^({order}) {braket}:",
               latex(res))
@@ -167,7 +195,7 @@ class intermediate_states:
             exit()
         sorted_idx = []
         for idxstring in splitted:
-            sorted_idx.append("".join(sorted(idxstring)))
+            sorted_idx.append("".join(sorted(split_idxstring(idxstring))))
         if sorted_idx[0] == sorted_idx[1]:
             print("Indices for overlap matrix should not be equal.",
                   "Use e.g. ia,jb and not ia,ia.")
@@ -258,7 +286,7 @@ class intermediate_states:
         # sort indices in each part of the string alphabetically
         sorted_idx = []
         for idxstring in indices.split(","):
-            sorted_idx.append("".join(sorted(idxstring)))
+            sorted_idx.append("".join(sorted(split_idxstring(idxstring))))
         indices = ",".join(sorted_idx)
 
         if order not in self.S_root:
@@ -337,8 +365,8 @@ class intermediate_states:
             print("Need to provide two string of indices to construct",
                   f"an intermediate state. {idx_is}, {idx_pre} is not valid.")
             exit()
-        idx_is = "".join(sorted(idx_is))
-        idx_pre = "".join(sorted(idx_pre))
+        idx_is = "".join(sorted(split_idxstring(idx_is)))
+        idx_pre = "".join(sorted(split_idxstring(idx_pre)))
 
         if order not in self.isr:
             self.isr[order] = {}
@@ -361,7 +389,7 @@ class intermediate_states:
             precursor[o] = self.get_precursor(
                 o, space, braket, indices=idx_pre
             )
-            s_root[o] = self.get_overlap(
+            s_root[o] = self.get_S_root(
                 o, space, indices=get_s_indices[braket]
             )
 
@@ -369,12 +397,6 @@ class intermediate_states:
         res = 0
         for term in orders:
             res += s_root[term[0]] * precursor[term[1]]
-            print("\n")
-            print(term)
-            print("s_root: ", latex(s_root[term[0]]))
-            print("precursor: ", latex(precursor[term[1]]))
-            print("evaluates to: ",
-                  latex(evaluate_deltas(s_root[term[0]] * precursor[term[1]])))
         res = evaluate_deltas(res)
         self.isr[order][space][braket][",".join([idx_is, idx_pre])] = res
         print(f"Build {space} ISR_({idx_is}, {idx_pre})^({order}) {braket} =",
@@ -462,10 +484,11 @@ mp = ground_state(h)
 # mp.get_energy(order=1)
 # mp.get_psi(2, bra=True)
 isr = intermediate_states(mp)
-# a = isr.get_precursor(2, "ph", "ket", indices="jb")
+# a = isr.get_precursor(1, "pphh", "ket", indices="iajb")
+a = isr.get_pretty_precursor(1, "pphh", "bra")
 # a = isr.get_overlap(2, "ph", indices="ia,jb")
 # a = isr.get_S_root(2, "ph", indices="ia,jb")
 # a = isr.get_is(2, "ph", "ket", idx_is="ia", idx_pre="jb")
-a = isr.get_pretty_is(2, "ph", "ket")
+# a = isr.get_pretty_is(0, "pphh", "ket")
 print("\n")
 print(latex(a))
