@@ -30,17 +30,15 @@ class intermediate_states:
             "ppphhh": 3,
         }
 
-    def get_precursor(self, order, space, braket, indices=None):
+    def get_precursor(self, order, space, braket, indices):
         """Method used to obtain precursor states of arbitrary order
            for an arbitrary space. The indices of the resulting precursor
            wavefunction need to be provided as string in the input
            (e.g. indices='ia' produces |PSI_{ia}^#).
            """
 
-        if not indices:
-            print("Indices in the form 'iajb' required to construct precursor",
-                  f"wavefunction of order {order} for space {space}.")
-            exit()
+        # maybe interchange the space naming convention from 'ph' etc to just
+        # the number of excited electrons 1, 2 etc.
         if space not in self.order_spaces:
             print(f"{space} is not a valid space. Valid spaces need to be",
                   f"in the self.order_spaces dict: {self.order_spaces}")
@@ -86,13 +84,7 @@ class intermediate_states:
             'bra': lambda ov: [other for other in ["occ", "virt"]
                                if other != ov]
         }
-        get_bk = {
-            'ket': lambda bk: bk,
-            'bra': lambda bk: [other for other in ["bra", "ket"]
-                               if other != bk]
-        }
         ov = get_ov[braket]
-        bk = get_bk[braket]
 
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
@@ -120,6 +112,7 @@ class intermediate_states:
                 for i in range(3):
                     occ = isr_generic['occ'][i*n:(i+1)*n]
                     virt = isr_generic['virt'][i*n:(i+1)*n]
+                    # extract the names of the generated symbols
                     idx_string = [s.name for s in virt]
                     for s in occ:
                         idx_string += s.name
@@ -137,10 +130,12 @@ class intermediate_states:
                     )
             lower_isr = isr[lower_space]
             for term in orders:
+                # |Y>  <--  -|X><X|Y>
                 if braket == "ket":
                     i1 = lower_isr[term[1]]["bra"] * \
                         NO(operators) * mp[term[2]]["ket"]
                     state = lower_isr[term[0]]["ket"]
+                # <Y|  <--  -<Y|X><X|
                 elif braket == "bra":
                     i1 = mp[term[0]]["bra"] * NO(operators) \
                         * lower_isr[term[1]]["ket"]
@@ -149,8 +144,6 @@ class intermediate_states:
                     i1, keep_only_fully_contracted=True,
                     simplify_kronecker_deltas=True,
                 )
-                # simplify_dummies=True  # no idea if this is good here.
-                # try without first
                 res -= state * i1
         self.precursor[order][space][braket][indices] = res
         print(f"Build precursor {space}_({indices})^({order}) {braket}:",
@@ -167,21 +160,21 @@ class intermediate_states:
             "pphh": "ijab",
             "ppphhh": "ijkabc",
         }
+        if space not in indices:
+            print("Can only build a pretty precursor state for the spaces",
+                  f"{list(indices.keys())}.")
+            exit()
         return self.make_pretty(
                 self.get_precursor(order, space, braket, indices[space])
             )
 
-    def get_overlap(self, order, space, indices=None):
+    def get_overlap(self, order, space, indices):
         """Method that constructs and returns precursor overlap matrices
            for a given order and space. Indices of the resulting
            overlap matrix element need to be provided in the form 'ia,jb'
            which will produce S_{ia,jb}.
            """
 
-        if not indices:
-            print("Need to provide indices to construct an precursor overlap",
-                  "matrix (e.g. indices='ia,jb' for S{ia,jb})")
-            exit()
         if not isinstance(indices, str):
             print("Indices for precursor overlap matrix must be of type",
                   f"str, not {type(indices)}")
@@ -267,17 +260,12 @@ class intermediate_states:
         return substitute_dummies(
             expression, new_indices=True, pretty_indices=pretty_indices)
 
-    def get_S_root(self, order, space, indices=None):
+    def get_S_root(self, order, space, indices):
         """Method to obtain S^{-0.5} of a given order.
            Indices for the resulting matrix element are required.
            e.g. indices='ia,jb' produces (S^{-0.5})_{ia,jb}
            """
 
-        if not indices:
-            print("Need to provide indices of e.g. the form 'ia,jb'",
-                  f"when constructing S_root of order {order} for",
-                  f"space {space}.")
-            exit()
         if not isinstance(indices, str):
             print("Indices for S_root must be of type",
                   f"str, not {type(indices)}")
@@ -356,15 +344,11 @@ class intermediate_states:
             self.get_S_root(order, space, indices=indices[space])
         )
 
-    def get_is(self, order, space, braket, idx_is=None, idx_pre=None):
+    def get_is(self, order, space, braket, idx_is, idx_pre):
         # idx_is='ia', idx_pre='jb'
         # target indices, second indices for precursor and overlap
         # if bra: S_{ia,jb} * <jb|
         # elif ket: S_{jb,ia} * |jb>
-        if not idx_is or not idx_pre:
-            print("Need to provide two string of indices to construct",
-                  f"an intermediate state. {idx_is}, {idx_pre} is not valid.")
-            exit()
         idx_is = "".join(sorted(split_idxstring(idx_is)))
         idx_pre = "".join(sorted(split_idxstring(idx_pre)))
 
@@ -485,10 +469,9 @@ mp = ground_state(h)
 # mp.get_psi(2, bra=True)
 isr = intermediate_states(mp)
 # a = isr.get_precursor(1, "pphh", "ket", indices="iajb")
-a = isr.get_pretty_precursor(1, "pphh", "bra")
 # a = isr.get_overlap(2, "ph", indices="ia,jb")
 # a = isr.get_S_root(2, "ph", indices="ia,jb")
 # a = isr.get_is(2, "ph", "ket", idx_is="ia", idx_pre="jb")
-# a = isr.get_pretty_is(0, "pphh", "ket")
+a = isr.get_pretty_is(2, "pphh", "ket")
 print("\n")
 print(latex(a))

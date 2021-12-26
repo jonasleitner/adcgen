@@ -36,14 +36,18 @@ class indices:
         self.generic_occ = []
         self.generic_virt = []
         # self.occ/virt hold all indices that are available.
+        # 'o1' reserved for Hamiltonian
         self.occ = ['i', 'j', 'k', 'l', 'm', 'n', 'o',
-                    'i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1']
+                    'i1', 'j1', 'k1', 'l1', 'm1', 'n1']
         self.virt = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
                      'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1']
         self.invoked_spaces = []
         self.__setup()
 
     def __setup(self):
+        """Setting up available and used list for gs and isr indices
+           """
+
         # not copying the generic lists, because gs and isr share the
         # same generic indice pool.
         self.available_indices["gs"] = {}
@@ -65,7 +69,11 @@ class indices:
 
     def __gen_generic_indices(self, ov):
         """Generates the next 'generation' of indices of the form i3/a3.
-           The integer will be inkremented by one for the next chunk of indices
+           The integer will be inkremented by one for the next chunk of
+           indices.
+           The generated indices are added to the self.generic_occ/virt,
+           the self.occ/virt list and the available lists of all invoked
+           spaces.
            """
 
         if not hasattr(self, "counter_occ"):
@@ -93,9 +101,8 @@ class indices:
         setattr(self, "counter_" + ov, counter[ov] + 1)
 
     def invoke_space(self, space):
-        """
-        Setup the used and available indice dicts for the respective space.
-        """
+        """Setup the used and available indice dicts for the respective space.
+           """
 
         if not isinstance(space, str):
             print(f"Space need to be of type str, not of {type(space)}")
@@ -126,10 +133,9 @@ class indices:
            by the keys 'occ' and 'virt'.
            Ground state indices are removed from the default self.occ/virt
            list and every invoked space. So no space will have access to them.
+           The obtained indices are added to the 'gs' used lists as symbols.
+           Indices obtained from the generic indices lists.
            """
-        # the Gs indices need to be separated somehow...
-        # for now using the standard indices for ADC spaces, while
-        # Gs uses the i1,j1,..., i2... indices.
 
         valid = ['n_occ', 'n_virt']
         for key, value in kwargs.items():
@@ -150,6 +156,8 @@ class indices:
            keys 'occ' and 'virt'.
            ISR indices are removed from the default self.occ/virt
            list and every invoked space. So no space will have access to them.
+           The obtained indices are added to the used lists of the parent
+           precursor state and to the used list of all spaces.
            """
 
         valid = ['n_occ', 'n_virt']
@@ -172,6 +180,10 @@ class indices:
 
     def __get_generic_indices(self, case, used, braket=None,
                               pre_indices=None, **kwargs):
+        """Obtaine a certain number of indices from the generic lists.
+           Used for gs and isr indices.
+           """
+
         if case not in ["gs", "isr"]:
             print("Only possible to obtain generic indices for 'gs' or 'isr'")
             exit()
@@ -222,12 +234,10 @@ class indices:
            by the keys 'occ' and 'virt'.
            New indices are taken from the available list of the respective
            space.
-           The symbols are safed in a dict and reused if requested again.
-           That way sympy recognizes symbols with the same name as equal.
+           The symbols are safed in the used lists of the respective space
+           and reused if requested again. That way sympy recognizes symbols
+           with the same name as equal.
            """
-
-        # space: ph/pphh or gs
-        # indices: str of indices, e.g. "ai"
 
         if not isinstance(space, str):
             print(f"Trying to get indices with space of type {type(space)}",
@@ -237,9 +247,6 @@ class indices:
             print("Indices for the ground state should be obtained with",
                   "get_gs_indices instead.")
             exit()
-        # if braket not in ["bra", "ket"]:
-        #     print(f"Can only get indices for 'bra' or 'ket' ,not {braket}")
-        #     exit()
         if not isinstance(indices, str):
             print("Requested indices need to be of type str (e.g. 'ai'), not",
                   type(indices))
@@ -267,6 +274,11 @@ class indices:
         return ret
 
     def __get_new_symbol(self, space, ov, idx, braket=None, pre_indices=None):
+        """Returns a new symbol from the available list. Also calls the remove
+           method that removes the indice from the available list and appends
+           the symbol to the used list.
+           """
+
         if not self.available_indices[space][ov]:
             print(f"No indices for space {ov} {space} available anymore.")
             exit()
@@ -279,6 +291,9 @@ class indices:
         return symbol
 
     def __get_common_indices(self, ov):
+        """Returns a list of all indices that are common to all invoked spaces.
+           """
+
         get_dict = {
             "occ": self.occ,
             "virt": self.virt
@@ -307,7 +322,7 @@ class indices:
             return symbols(idx, above_fermi=True, cls=Dummy)
 
     def remove(self, space, braket, pre_indices, ov, symbol):
-        """removes index from available and add to the list of
+        """Removes index from available and add symbols to the list of
            used indices."""
 
         if not isinstance(symbol, sy.core.symbol.Dummy):
@@ -342,7 +357,11 @@ class indices:
             used.append(symbol)
 
     def __assign_index(self, idx):
-        # assigns an index to occ or virt
+        """Returns wheter an index belongs to the occ/virt space.
+           Assumes a naming convention 'ax'/'ix', where 'x' is some
+           number.
+           """
+
         if idx[0] in ["a", "b", "c", "d", "e", "f", "g", "h"]:
             return "virt"
         elif idx[0] in ["i", "j", "k", "l", "m", "n", "o"]:
@@ -353,7 +372,7 @@ class indices:
 
 
 def split_idxstring(string):
-    """Splits an index string of the form ij12a3b as
+    """Splits an index string of the form ij12a3b in a list
        [i,j12,a3,b]
        """
 
