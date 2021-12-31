@@ -7,15 +7,15 @@ from sympy import symbols, latex, nsimplify
 import numpy as np
 from math import factorial
 
-from groundstate import ground_state, Hamiltonian
 from indices import pretty_indices, split_idxstring
+from groundstate import ground_state, Hamiltonian
 
 
 class intermediate_states:
     def __init__(self, mp):
         self.gs = mp
         self.indices = mp.indices
-        self.invoked_spaces = mp.indices.invoked_spaces
+        # self.invoked_spaces = mp.indices.invoked_spaces
         # {order: {'excitation_space': {"ket/bra": {indices: }}}}
         self.precursor = {}
         # {order: {'excitation_space': {'indices': x}}}
@@ -47,6 +47,10 @@ class intermediate_states:
             print(f"Unknown precursor wavefuntion type {braket}.",
                   "Only 'bra' and 'ket' are valid.")
             exit()
+        if len(split_idxstring(indices)) != len(space):
+            print("Number of Indices are not adequate for constructing a",
+                  f"Precursor state for space {space}. Indices: {indices}.")
+            exit()
 
         if order not in self.precursor:
             self.precursor[order] = {}
@@ -59,14 +63,14 @@ class intermediate_states:
         # and sort alphabetically afterwards
         indices = "".join(sorted(split_idxstring(indices)))
 
-        if space not in self.invoked_spaces:
-            self.indices.invoke_space(space)
+        # if space not in self.invoked_spaces:
+        #    self.indices.invoke_space(space)
         if indices not in self.precursor[order][space][braket]:
             self.__build_precursor(order, space, braket, indices)
         return self.precursor[order][space][braket][indices]
 
     def __build_precursor(self, order, space, braket, indices):
-        idx = self.indices.get_indices(space, indices)
+        idx = self.indices.get_indices(indices)
         # import all bra and ket gs wavefunctions up to requested order
         # for nicer indices iterate first over bk
         isr = {}
@@ -465,13 +469,11 @@ def get_orders_three(order):
 
 h = Hamiltonian()
 mp = ground_state(h)
-# mp.get_energy(order=1)
-# mp.get_psi(2, bra=True)
 isr = intermediate_states(mp)
-# a = isr.get_precursor(1, "pphh", "ket", indices="iajb")
+a = isr.get_precursor(1, "pphh", "ket", indices="iajb")
 # a = isr.get_overlap(2, "ph", indices="ia,jb")
 # a = isr.get_S_root(2, "ph", indices="ia,jb")
 # a = isr.get_is(2, "ph", "ket", idx_is="ia", idx_pre="jb")
-a = isr.get_pretty_is(2, "pphh", "ket")
-print("\n")
-print(latex(a))
+# a = isr.get_pretty_is(1, "ph", "ket")
+b = isr.indices.substitute_indices(a)
+print(latex(b))

@@ -1,5 +1,5 @@
 import sympy as sy
-from sympy import symbols, Dummy
+from sympy import symbols, Dummy, Mul, Add
 
 
 pretty_indices = {
@@ -23,25 +23,30 @@ class indices:
        If a new space is build, create_space has to be called for the
        respective space."""
     def __init__(self):
-        # dict {'space': {'occ': [idx]}}
+        # dict {'occ': [idx]}
         self.available_indices = {}
 
-        # {space: {bra: {occ: []}}}
-        # only the ground state has the additional splitting
-        # according to bra/ket
+        # {case: {x: {occ: []}}}
+        # the ground state has the splitting according to bra/ket
+        # ISR is splitted according to the idxstring of the parent
+        # ISR/Precursor state that requests the indices
+        # specific indices (that have been requested specifically to e.g.)
+        # construct a specific matrix element are stored like
+        # {case: {ov: []}}
         self.used_indices = {}
 
         # list with possible indices
-        # only indices of type i3/a3 etc are used for ground state currently
+        # only indices of type i3/a3 etc are used for ground state and ISR
         self.generic_occ = []
         self.generic_virt = []
-        # self.occ/virt hold all indices that are available.
+        # self.occ/virt hold indices that are exclusively available for
+        # specific indice request
         # 'o1' reserved for Hamiltonian
         self.occ = ['i', 'j', 'k', 'l', 'm', 'n', 'o',
                     'i1', 'j1', 'k1', 'l1', 'm1', 'n1']
         self.virt = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
                      'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1']
-        self.invoked_spaces = []
+        # self.invoked_spaces = []
         self.__setup()
 
     def __setup(self):
@@ -57,15 +62,22 @@ class indices:
         for braket in ["bra", "ket"]:
             self.used_indices["gs"][braket] = {"occ": [], "virt": []}
 
+        # stored with the idxstring of the parent ISR/Precursor state
+        # that requests the indices
         self.used_indices["isr"] = {}
         self.available_indices["isr"] = {}
         self.available_indices["isr"]["occ"] = self.generic_occ
         self.available_indices["isr"]["virt"] = self.generic_virt
 
-    def __set_default(self, space):
-        self.available_indices[space] = {}
-        self.available_indices[space]['occ'] = self.occ.copy()
-        self.available_indices[space]['virt'] = self.virt.copy()
+        # used to store all indices that have been requested specificly
+        # However, atm all indices are stored in the specific list, since
+        # essentially only get_gs/isr_indices are called to get more
+        # indices, while get_indices is only used to get previously
+        # created indices or the target indices of the desired state/
+        # matrix element
+        self.used_indices["specific"] = {'occ': [], 'virt': []}
+        self.available_indices["specific"] = {'occ': self.occ,
+                                              'virt': self.virt}
 
     def __gen_generic_indices(self, ov):
         """Generates the next 'generation' of indices of the form i3/a3.
@@ -79,9 +91,13 @@ class indices:
         if not hasattr(self, "counter_occ"):
             self.counter_occ = 3
             self.counter_virt = 3
+        # list_to_fill = {
+        #     'occ': (self.generic_occ, self.occ),
+        #     'virt': (self.generic_virt, self.virt)
+        # }
         list_to_fill = {
-            'occ': (self.generic_occ, self.occ),
-            'virt': (self.generic_virt, self.virt)
+            'occ': self.generic_occ,
+            'virt': self.generic_virt
         }
         counter = {
             'occ': self.counter_occ,
@@ -94,13 +110,22 @@ class indices:
         new_indices = []
         for idx in index_base[ov]:
             new_indices.append(idx + str(counter[ov]))
-        list_to_fill[ov][0].extend(new_indices)
-        list_to_fill[ov][1].extend(new_indices)
-        for space in self.invoked_spaces:
-            self.available_indices[space][ov].extend(new_indices)
+        # list_to_fill[ov][0].extend(new_indices)
+        # list_to_fill[ov][1].extend(new_indices)
+        # for space in self.invoked_spaces:
+        #     self.available_indices[space][ov].extend(new_indices)
+        list_to_fill[ov].extend(new_indices)
+        self.available_indices["specific"][ov].extend(new_indices)
         setattr(self, "counter_" + ov, counter[ov] + 1)
 
+    def __set_default(self, space):
+        # TODO: remove
+        self.available_indices[space] = {}
+        self.available_indices[space]['occ'] = self.occ.copy()
+        self.available_indices[space]['virt'] = self.virt.copy()
+
     def invoke_space(self, space):
+        # TODO: remove
         """Setup the used and available indice dicts for the respective space.
            """
 
@@ -185,6 +210,41 @@ class indices:
            """
 
         if case not in ["gs", "isr"]:
+            print("Only possible to obtain generic indices for 'gs' or 'isr'",
+                  f"The case {case} is not valid.")
+            exit()
+
+        get_ov = {'n_occ': "occ", 'n_virt': "virt"}
+        ret = {}
+        for n_ov, n in kwargs.items():
+            ov = get_ov[n_ov]
+            # reuse all symbols
+            if n <= len(used[ov]):
+                ret[ov] = used[ov][:n]
+            # not enough symbols available
+            else:
+                ret[ov] = used[ov][:n].copy()
+                needed = n - len(used[ov])
+                get_default = {
+                    "occ": self.generic_occ,
+                    "virt": self.generic_virt
+                }
+                while needed > len(get_default[ov]):
+                    self.__gen_generic_indices(ov)
+                idx = get_default[ov][:needed].copy()
+                ret[ov].extend(
+                    [self.__get_new_symbol(case, ov, idxstr, braket=braket,
+                     pre_indices=pre_indices) for idxstr in idx]
+                )
+        return ret
+
+    def __get_generic_indices_old(self, case, used, braket=None,
+                                  pre_indices=None, **kwargs):
+        """Obtaine a certain number of indices from the generic lists.
+           Used for gs and isr indices.
+           """
+
+        if case not in ["gs", "isr"]:
             print("Only possible to obtain generic indices for 'gs' or 'isr'")
             exit()
 
@@ -229,7 +289,42 @@ class indices:
                     )
         return ret
 
-    def get_indices(self, space, indices):
+    def get_indices(self, indices):
+        """Returns indices as sympy symbols in form of a dict, sorted
+           by the keys 'occ' and 'virt'.
+           New indices are taken from the specific available list
+           The symbols are safed in the specific used list
+           and reused if requested again. That way sympy recognizes symbols
+           with the same name as equal.
+           """
+
+        if not isinstance(indices, str):
+            print("Requested indices need to be of type str (e.g. 'ai'), not",
+                  type(indices))
+            exit()
+
+        separated = split_idxstring(indices)
+
+        ret = {}
+        used = self.used_indices["specific"]
+        for idx in separated:
+            ov = self.assign_index(idx)
+            if ov not in ret:
+                ret[ov] = []
+            # reuse symbol
+            found = False
+            for symbol in used[ov]:
+                if idx == symbol.name:
+                    ret[ov].append(symbol)
+                    found = True
+            # create new symbol
+            if not found:
+                ret[ov].append(
+                    self.__get_new_symbol("specific", ov, idx)
+                    )
+        return ret
+
+    def get_indices_old(self, space, indices):
         """Returns indices as sympy symbols in form of a dict, sorted
            by the keys 'occ' and 'virt'.
            New indices are taken from the available list of the respective
@@ -255,9 +350,9 @@ class indices:
         separated = split_idxstring(indices)
 
         ret = {}
-        used = self.used_indices[space]  # [braket]
+        used = self.used_indices[space]
         for idx in separated:
-            ov = self.__assign_index(idx)
+            ov = self.assign_index(idx)
             if ov not in ret:
                 ret[ov] = []
             # reuse symbol
@@ -273,7 +368,25 @@ class indices:
                     )
         return ret
 
-    def __get_new_symbol(self, space, ov, idx, braket=None, pre_indices=None):
+    def __get_new_symbol(self, case, ov, idx, braket=None, pre_indices=None):
+        """Returns a new symbol from the available list. Also calls the remove
+           method that removes the indice from the available list and appends
+           the symbol to the used list.
+           """
+
+        if not self.available_indices[case][ov]:
+            print(f"No indices for case {ov} {case} available anymore.")
+            exit()
+        if idx not in self.available_indices[case][ov]:
+            print(f"Could not find {ov} index {idx} in available indices",
+                  f"for case {case}.")
+            exit()
+        symbol = self.__make_symbol_new(ov, idx)
+        self.remove(case, braket, pre_indices, ov, symbol)
+        return symbol
+
+    def __get_new_symbol_old(self, space, ov, idx, braket=None,
+                             pre_indices=None):
         """Returns a new symbol from the available list. Also calls the remove
            method that removes the indice from the available list and appends
            the symbol to the used list.
@@ -291,6 +404,7 @@ class indices:
         return symbol
 
     def __get_common_indices(self, ov):
+        # Not needed anymore if no spaces are specified
         """Returns a list of all indices that are common to all invoked spaces.
            """
 
@@ -321,7 +435,33 @@ class indices:
         elif ov == "virt":
             return symbols(idx, above_fermi=True, cls=Dummy)
 
-    def remove(self, space, braket, pre_indices, ov, symbol):
+    def remove(self, case, braket, pre_indices, ov, symbol):
+        """Removes index from available and add symbols to the list of
+           used indices."""
+
+        if not isinstance(symbol, sy.core.symbol.Dummy):
+            print("Index that is to be removed from the available list",
+                  f"needs to be a sympy symbol. Not type {type(symbol)}")
+            exit()
+        if case not in self.available_indices:
+            print(f"Space is not recognized. Can't remove from space {case}.",
+                  f"Valid cases are {list(self.available_indices.keys())}")
+            exit()
+
+        idx = symbol.name
+        available = self.available_indices[case][ov]
+        if case == "gs":
+            used = self.used_indices[case][braket][ov]
+            self.used_indices["specific"][ov].append(symbol)
+        elif case == "isr":
+            used = self.used_indices[case][pre_indices][ov]
+            self.used_indices["specific"][ov].append(symbol)
+        elif case == "specific":
+            used = self.used_indices[case][ov]
+        available.remove(idx)
+        used.append(symbol)
+
+    def remove_old(self, space, braket, pre_indices, ov, symbol):
         """Removes index from available and add symbols to the list of
            used indices."""
 
@@ -355,8 +495,9 @@ class indices:
             used = self.used_indices[space][ov]
             available.remove(idx)
             used.append(symbol)
+        self.used_indices["all"][ov].append(symbol)
 
-    def __assign_index(self, idx):
+    def assign_index(self, idx):
         """Returns wheter an index belongs to the occ/virt space.
            Assumes a naming convention 'ax'/'ix', where 'x' is some
            number.
@@ -370,18 +511,65 @@ class indices:
             print(f"Could not assign index {idx} to occ or virt.")
             exit()
 
+    def substitute_indices(self, expr):
+        """Substitutes the indices in an expression.
+           Therefore, the original indices are sorted
+           a,b,a1,b2,a3,b3... and then substituted in this order
+           with the indices a,b,c,..., a1,b1,...
+           The same is done for the occ indices i,j,...
+           """
 
-def split_idxstring(string):
+        idx_order = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
+                     'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']}
+        if isinstance(expr, Add):
+            return Add(*[self.substitute_indices(term) for term in expr.args])
+        elif isinstance(expr, Mul):
+            idx_in_use = {'occ': [], 'virt': []}
+            # sort the original indices as
+            # [a, b, a1, b1, a3, b3]
+            original_idx = list(expr.atoms(Dummy))
+            original_name = sorted(
+                [s.name for s in original_idx],
+                key=lambda idx: (int(idx[1:]) if len(idx) > 1 else 0, idx[0])
+            )
+            substitute = []
+            for idx in original_name:
+                ov = self.assign_index(idx)
+                if idx_in_use[ov]:
+                    last = idx_in_use[ov][-1]
+                    last_num = last[1:]
+                    i = idx_order[ov].index(last[0])
+                    if i+1 < len(idx_order[ov]):
+                        new = idx_order[ov][i+1] + last_num
+                    else:
+                        new_num = 1 if not last_num else int(last_num + 1)
+                        new = idx_order[ov][0] + str(new_num)
+                else:
+                    new = idx_order[ov][0]
+                idx_in_use[ov].append(new)
+                new = self.get_indices(new)
+                new = new[ov][0]
+                for s in original_idx:
+                    if s.name == idx:
+                        j = original_idx.index(s)
+                old = original_idx[j]
+                substitute.append((old, new))
+            return expr.subs(substitute)
+        else:
+            return expr
+
+
+def split_idxstring(string_tosplit):
     """Splits an index string of the form ij12a3b in a list
        [i,j12,a3,b]
        """
 
     separated = []
     temp = []
-    for i, idx in enumerate(string):
+    for i, idx in enumerate(string_tosplit):
         temp.append(idx)
-        if i+1 < len(string):
-            if string[i+1].isdigit():
+        if i+1 < len(string_tosplit):
+            if string_tosplit[i+1].isdigit():
                 continue
             else:
                 separated.append("".join(temp))
