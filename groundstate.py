@@ -39,8 +39,8 @@ class Hamiltonian:
 
     def __build_H1(self):
         p, q, r, s = symbols('p,q,r,s', cls=Dummy)
-        o1 = symbols('o1', below_fermi=True, cls=Dummy)
-        v1 = AntiSymmetricTensor('V', (p, o1), (q, o1))
+        o42 = symbols('o42', below_fermi=True, cls=Dummy)
+        v1 = AntiSymmetricTensor('V', (p, o42), (q, o42))
         pq = Fd(p) * F(q)
         v2 = AntiSymmetricTensor('V', (p, q), (r, s))
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
@@ -77,6 +77,13 @@ class ground_state:
         e = bra * h * ket
         e = wicks(e, keep_only_fully_contracted=True,
                   simplify_kronecker_deltas=True)
+        # this is problematic, since the substitute_dummies function
+        # messes around with the indices and assign them not very nice.
+        # But i don't know how to handle the multiple i symbols else.
+        # maybe it is necessary to manually build the energy for every order?
+        e = substitute_dummies(e, new_indices=True,
+                               pretty_indices=pretty_indices)
+        e = self.indices.substitute_with_generic_indices(e)
         self.energy[order] = e
         print(f"E^({order}) = {latex(e)}")
 
@@ -182,10 +189,6 @@ class ground_state:
 
 
 # h = Hamiltonian(canonical=False)
-# h.get_H0
-# h.get_H1
 # mp = ground_state(h)
-# mp.indices.invoke_space("ph")
-# a = mp.get_pretty_energy(2)
-# print(latex(a))
-# a = mp.get_psi(2, 'bra')
+# a = mp.get_energy(2)
+# a = mp.get_psi(1, 'ket')

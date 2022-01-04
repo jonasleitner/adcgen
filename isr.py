@@ -15,7 +15,6 @@ class intermediate_states:
     def __init__(self, mp):
         self.gs = mp
         self.indices = mp.indices
-        # self.invoked_spaces = mp.indices.invoked_spaces
         # {order: {'excitation_space': {"ket/bra": {indices: }}}}
         self.precursor = {}
         # {order: {'excitation_space': {'indices': x}}}
@@ -155,8 +154,7 @@ class intermediate_states:
 
     def get_pretty_precursor(self, order, space, braket):
         """Returns precursor bra/ket for a given space and order.
-           Indices are not required. Default indices will be used,
-           because they will be replaced anyway.
+           Indices are not required. Default indices will be used.
            """
 
         indices = {
@@ -168,9 +166,12 @@ class intermediate_states:
             print("Can only build a pretty precursor state for the spaces",
                   f"{list(indices.keys())}.")
             exit()
-        return self.make_pretty(
-                self.get_precursor(order, space, braket, indices[space])
-            )
+        # return self.make_pretty(
+        #        self.get_precursor(order, space, braket, indices[space])
+        #    )
+        return self.indices.substitute_indices(
+            self.get_precursor(order, space, braket, indices[space])
+        )
 
     def get_overlap(self, order, space, indices):
         """Method that constructs and returns precursor overlap matrices
@@ -233,11 +234,7 @@ class intermediate_states:
 
     def get_pretty_overlap(self, order, space):
         """Returns the precursor overlap matrix of a given order
-           for the defined space. There is no need to provide any indices,
-           because they will be substituted and replaced anyway.
-           Therefore, a default list with indices is included in the function,
-           that provides some indices to construct some overlap matrix and
-           precursor states.
+           for the defined space. Default indices will be used.
            """
 
         indices = {
@@ -249,8 +246,11 @@ class intermediate_states:
             print("Can only build a pretty overlap matrix for the spaces",
                   f"{list(indices.keys())}.")
             exit()
-        return self.make_pretty(
-            self.get_overlap(order, space, indices=indices[space])
+        # return self.make_pretty(
+        #     self.get_overlap(order, space, indices=indices[space])
+        # )
+        return self.indices.substitute_indices(
+            self.get_overlap(order, space, indices[space])
         )
 
     def make_pretty(self, expression):
@@ -331,8 +331,7 @@ class intermediate_states:
 
     def get_pretty_S_root(self, order, space):
         """Returns S^{-0.5} of a given order for the defined space.
-           Indices will be picked from the default list and replaced
-           by "pretty" indices.
+           Indices will be picked from the default list.
            """
 
         indices = {
@@ -344,8 +343,11 @@ class intermediate_states:
             print("Can only build pretty S_root for the spaces",
                   f"{list(indices.keys())}.")
             exit()
-        return self.make_pretty(
-            self.get_S_root(order, space, indices=indices[space])
+        # return self.make_pretty(
+        #     self.get_S_root(order, space, indices=indices[space])
+        # )
+        return self.indices.substitute_indices(
+            self.get_S_root(order, space, indices[space])
         )
 
     def get_is(self, order, space, braket, idx_is, idx_pre):
@@ -391,6 +393,10 @@ class intermediate_states:
               latex(res))
 
     def get_pretty_is(self, order, space, braket):
+        """Returns a intermediate state with pretty indices.
+           Default indices will be picked.
+           """
+
         indices = {
             'ph': {'is': "ia", 'pre': "jb"},
             'pphh': {'is': "iajb", 'pre': "klcd"},
@@ -400,7 +406,10 @@ class intermediate_states:
             print("Can only build pretty intermediate states for spaces",
                   f"{list(indices.keys())}.")
         idx = indices[space]
-        return self.make_pretty(
+        # return self.make_pretty(
+        #     self.get_is(order, space, braket, idx["is"], idx["pre"])
+        # )
+        return self.indices.substitute_indices(
             self.get_is(order, space, braket, idx["is"], idx["pre"])
         )
 
@@ -467,13 +476,13 @@ def get_orders_three(order):
     return ret
 
 
-h = Hamiltonian()
-mp = ground_state(h)
-isr = intermediate_states(mp)
-a = isr.get_precursor(1, "pphh", "ket", indices="iajb")
+# h = Hamiltonian()
+# mp = ground_state(h)
+# isr = intermediate_states(mp)
+# a = isr.get_precursor(1, "pphh", "ket", indices="iajb")
 # a = isr.get_overlap(2, "ph", indices="ia,jb")
 # a = isr.get_S_root(2, "ph", indices="ia,jb")
 # a = isr.get_is(2, "ph", "ket", idx_is="ia", idx_pre="jb")
 # a = isr.get_pretty_is(1, "ph", "ket")
-b = isr.indices.substitute_indices(a)
-print(latex(b))
+# b = isr.indices.substitute_indices(a)
+# print(latex(b))
