@@ -49,9 +49,10 @@ class Hamiltonian:
 
 
 class ground_state:
-    def __init__(self, hamiltonian):
+    def __init__(self, hamiltonian, first_order_singles=False):
         self.indices = indices()
         self.h = hamiltonian
+        self.singles = first_order_singles
         self.energy = {}
         self.wfn = {}
 
@@ -110,16 +111,15 @@ class ground_state:
             self.wfn[order] = {}
 
         if braket not in self.wfn[order]:
-            if order in [0, 1]:
-                callback = getattr(self, "_build_psi" + str(order))
+            if order == 0:
+                callback = getattr(self, "_build_psi0")
                 callback(braket)
             else:
                 self.__build_psi(order, braket)
         return self.wfn[order][braket]
 
     def __build_psi(self, order, braket):
-        # generalize the gs wavefunction generation
-        # currently only used for second oder +
+        # generalized gs wavefunction generation
         tensor_string = {
             "bra": f"t{order}_cc",
             "ket": f"t{order}"
@@ -130,7 +130,11 @@ class ground_state:
             "ket": lambda ov: ov
         }
         psi = 0
-        for excitation in range(1, 2 + order + 1):
+        for excitation in range(1, order * 2 + 1):
+            # skip singles for the first order wavefunction if
+            # they are not desired.
+            if order == 1 and not self.singles and excitation == 1:
+                continue
             idx = self.indices.get_gs_indices(
                 braket, n_occ=excitation, n_virt=excitation
             )
@@ -144,7 +148,7 @@ class ground_state:
                 operators *= F(symbol)
             # prefactor correct?
             prefactor = Rational(1, factorial(excitation) ** 2)
-            psi += prefactor * t * NO(operators)
+            psi += - prefactor * t * NO(operators)
         self.wfn[order][braket] = psi
         print(f"Build gs^({order}) {braket} = ", latex(psi))
 
@@ -155,40 +159,3 @@ class ground_state:
                 print(f"|Psi^(0)> = {self.wfn[0][braket]}\n\n")
             if braket == "bra":
                 print(f"<Psi^(0)| = {self.wfn[0][braket]}\n\n")
-
-    def _build_psi1(self, *args):
-        # special function for psi1, because singles are excluded atm.
-        if "bra" in args:
-            idx = self.indices.get_gs_indices("bra", n_occ=2, n_virt=2)
-            t = AntiSymmetricTensor(
-                "t1_cc", tuple(idx["virt"]), tuple(idx["occ"])
-            )
-            operators = 1
-            for symbol in idx["occ"]:
-                operators *= Fd(symbol)
-            for symbol in reversed(idx["virt"]):
-                operators *= F(symbol)
-            prefactor = Rational(1, 4)
-            psi = prefactor * t * NO(operators)
-            self.wfn[1]["bra"] = psi
-            print("<Psi^(1)| = ", latex(psi))
-        if "ket" in args:
-            idx = self.indices.get_gs_indices("ket", n_occ=2, n_virt=2)
-            t = AntiSymmetricTensor(
-                "t1", tuple(idx["virt"]), tuple(idx["occ"])
-            )
-            operators = 1
-            for symbol in idx["virt"]:
-                operators *= Fd(symbol)
-            for symbol in reversed(idx["occ"]):
-                operators *= F(symbol)
-            prefactor = Rational(1, 4)
-            psi = prefactor * t * NO(operators)
-            self.wfn[1]["ket"] = psi
-            print(f"|Psi^(1)>  = {latex(psi)}\n\n")
-
-
-# h = Hamiltonian(canonical=False)
-# mp = ground_state(h)
-# a = mp.get_energy(2)
-# a = mp.get_psi(1, 'ket')

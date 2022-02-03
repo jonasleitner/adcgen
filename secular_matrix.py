@@ -138,7 +138,7 @@ class secular_matrix:
 
 
 h = Hamiltonian(canonical=False)
-mp = ground_state(h)
+mp = ground_state(h, first_order_singles=False)
 isr = intermediate_states(mp)
 m = secular_matrix(isr)
 a = m.get_precursor_matrix_block(1, "ph,ph", "ia,jb")

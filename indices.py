@@ -1,5 +1,5 @@
 import sympy as sy
-from sympy import symbols, Dummy, Add
+from sympy import symbols, Dummy, Add, Mul, S
 
 pretty_indices = {
     "below": "ijklmno",
@@ -10,17 +10,12 @@ pretty_indices = {
 
 class indices:
     """Book keeping class that keeps track of the used and available indices.
-       Each space (ph, pphh, etc.) have their own list of available indices.
-       Indices that are used for generating groundstate wavefunctions are
-       shared over all spaces, so they can be used for any space without
-       having to change indices.
-       Indices may be obtained by calling get_indices by providing the space
-       and the number of occ and virt indices. Indices are automatically
-       removed from the relevant lists, when calling get_indices.
-       If run out of indices: just add more to self.occ or self.virt lists.
-
-       If a new space is build, create_space has to be called for the
-       respective space."""
+       Necessary, because only one instance of Dummy symbol should be used for
+       each index, e.g. in each expression the same symbol
+       i = symbols('i', below_fermi=True, cls=Dummy)
+       should be used. This way sympy recognizes that all i in the expressions
+       are equal to each other, which allows for simplifications.
+       """
     def __init__(self):
         # dict {'occ': [idx]}
         self.available_indices = {}
@@ -337,7 +332,7 @@ class indices:
 
     def substitute_indices(self, expr):
         """Substitutes the indices in an expression.
-           Therefore, the original indices are sorted
+           To this end, the original indices are sorted like
            a,b,a1,b2,a3,b3... and then substituted in this order
            with the indices a,b,c,..., a1,b1,...
            The same is done for the occ indices i,j,...
@@ -345,7 +340,12 @@ class indices:
 
         if isinstance(expr, Add):
             return Add(*[self.substitute_indices(term) for term in expr.args])
-        # should be finde without the: elif isinstance(expr, Mul)
+        elif expr is S.Zero:
+            return expr
+        if not isinstance(expr, Mul):
+            print("Expression to substitute should be of type Mul, not"
+                  f"{type(expr)}.")
+            exit()
         idx_order = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
                      'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']}
         idx_in_use = {'occ': [], 'virt': []}
@@ -385,7 +385,7 @@ class indices:
         return expr.subs(substitute)
 
     def substitute_with_generic_indices(self, expr):
-        """Input: expression wich is already correct, due to substitution,
+        """Input: expression wich is already correct, wrt substitution,
            i.e. there should only be one index with name 'i' etc. in the
            expression.
            The indices will be replaced with newly generated generic ones

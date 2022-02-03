@@ -8,7 +8,7 @@ import numpy as np
 from math import factorial
 
 from indices import pretty_indices, split_idxstring
-from groundstate import ground_state, Hamiltonian
+# from groundstate import ground_state, Hamiltonian
 
 
 class intermediate_states:
