@@ -68,4 +68,15 @@ term6 = evaluate(term6)
 print(latex(term6), "\n\n")
 
 res = term1 + term2 + term3 + term4 + term5 - term6
-print("Third order Hylleraas energy: ", latex(res))
+print("Third order Hylleraas energy: ", latex(res), "\n\n")
+
+
+print("FOURTH ORDER (PARTIAL)")
+
+term3 = brapsi2 * (h.get_H1 - e1) * ketpsi1
+term3 = evaluate(term3)
+print(latex(term3), "\n\n")
+
+term7 = brapsi2 * (h.get_H0 - e0) * ketpsi2
+term7 = evaluate(term7)
+print(latex(term7))

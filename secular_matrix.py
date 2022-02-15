@@ -1,9 +1,9 @@
 from sympy import latex, Dummy
 from sympy.physics.secondquant import wicks, substitute_dummies
 
-from groundstate import Hamiltonian, ground_state
-from isr import intermediate_states, get_orders_three
+from isr import get_orders_three
 from indices import split_idxstring, pretty_indices
+from misc import cached_member
 
 
 class secular_matrix:
@@ -19,11 +19,31 @@ class secular_matrix:
 
     def __get_shifted_h(self, order):
         get_H = {
-            0: self.h.get_H0,
-            1: self.h.get_H1
+            0: self.h.h0,
+            1: self.h.h1,
         }
         h = get_H[order] if order < 2 else 0
-        return h - self.gs.get_energy(order)
+        return h - self.gs.energy(order)
+
+    @cached_member
+    def precursor_matrix(self, order, block, indices):
+        """Computes a certain block of the secular matrix in the
+           basis of the precursor states."""
+
+        for space in block.split(","):
+            if space not in self.isr.order_spaces:
+                print("Requested a matrix block for an unknown space."
+                      f"Valid blocks are {list(self.isr.order_spaces.keys())}")
+                exit()
+
+        sorted_idx = []
+        for idx in indices.split(","):
+            sorted_idx.append("".join(sorted(split_idxstring(idx))))
+        if sorted_idx[0] == sorted_idx[1]:
+            print("Indices for overlap matrix should not be equal."
+                  f"Provided indice string: {indices}")
+            exit()
+        indices = ",".join(sorted_idx)
 
     def get_precursor_matrix_block(self, order, block, indices):
         # block: "ph,pphh"
@@ -135,13 +155,3 @@ class secular_matrix:
         self.matrix[order][block][indices] = res
         print(latex(substitute_dummies(res, new_indices=True,
                                        pretty_indices=pretty_indices)))
-
-
-h = Hamiltonian(canonical=False)
-mp = ground_state(h, first_order_singles=False)
-isr = intermediate_states(mp)
-m = secular_matrix(isr)
-a = m.get_precursor_matrix_block(1, "ph,ph", "ia,jb")
-# a = m.build_shifted_h(2)
-# print(latex(substitute_dummies(a, new_indices=True,
-#       pretty_indices=pretty_indices)))
