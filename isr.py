@@ -1,6 +1,6 @@
 from sympy.core.function import diff
 from sympy.physics.secondquant import (
-    F, Fd, evaluate_deltas, wicks, NO
+    F, Fd, evaluate_deltas, wicks, NO, AntiSymmetricTensor
 )
 from sympy import symbols, latex, nsimplify
 
@@ -268,6 +268,19 @@ class intermediate_states:
         print(f"Build {space} ISR_({idx_is}, {idx_pre})^({order}) {braket} = ",
               latex(res))
         return res
+
+    def amplitude_vector(self, space, indices):
+        """Returns an amplitude vector for the requested space using
+           the provided indices.
+           """
+
+        if len(space) != len(split_idxstring(indices)):
+            print(f"Indices {indices} not valid for space {space}.")
+            exit()
+
+        idx = self.indices.get_indices(indices)
+
+        return AntiSymmetricTensor("Y", tuple(idx["virt"]), tuple(idx["occ"]))
 
     def __expand_S_taylor(self, order):
         """Computes the Taylor expansion of 'S^{-0.5} = (1 + x)^{-0.5} with

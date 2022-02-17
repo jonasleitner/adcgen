@@ -4,6 +4,7 @@ from indices import assign_index
 
 
 def sort_by_n_deltas(expr):
+    expr = expr.expand()
     if not isinstance(expr, Add):
         print(f"Can only sort an expression that is of type {Add}."
               f"Provided expression is of type {type(expr)}")
@@ -26,6 +27,7 @@ def sort_by_n_deltas(expr):
 
 
 def sort_by_type_deltas(expr):
+    expr = expr.expand()
     if not isinstance(expr, Add):
         print(f"Can only sort an expression that is of type {Add}."
               f"Proovided eypression is of type {type(expr)}.")
@@ -37,8 +39,8 @@ def sort_by_type_deltas(expr):
             if isinstance(t, KroneckerDelta):
                 ov1 = assign_index(t.preferred_index.name)
                 ov2 = assign_index(t.killable_index.name)
-                temp.append(ov1[0] + ov2[0])
-        temp = tuple(sorted(temp))
+                temp.append("".join(sorted(ov1[0] + ov2[0])))
+        temp = tuple(temp)
         if not temp:
             temp = "no_deltas"
         try:
@@ -49,24 +51,26 @@ def sort_by_type_deltas(expr):
     res = {}
     for d, terms in deltas.items():
         res[d] = Add(*[t for t in terms])
+    print(res.keys())
     return res
 
 
 def sort_by_type_fock(expr):
+    expr = expr.expand()
     if not isinstance(expr, Add):
         print(f"Can only sort an expression that is of type {Add}."
               f"Proovided eypression is of type {type(expr)}.")
         exit()
     fock = {}
     for term in expr.args:
-        temp = []
+        temp = set()
         for t in term.args:
             if isinstance(t, AntiSymmetricTensor):
-                if t.symbol == "f":
-                    ov1 = assign_index(t.upper)
-                    ov2 = assign_index(t.lower)
-                    temp.append(ov1[0] + ov2[0])
-        temp = tuple(sorted(temp))
+                if t.symbol.name == "f":
+                    ov1 = assign_index(t.upper[0].name)
+                    ov2 = assign_index(t.lower[0].name)
+                    temp.add("".join(sorted(ov1[0] + ov2[0])))
+        temp = tuple(temp)
         if not temp:
             temp = "no_fock"
         try:

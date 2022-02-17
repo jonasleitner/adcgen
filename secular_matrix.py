@@ -1,4 +1,4 @@
-from sympy.physics.secondquant import wicks
+from sympy.physics.secondquant import wicks, evaluate_deltas
 
 from isr import get_orders_three
 from indices import check_repeated_indices, split_idxstring
@@ -135,3 +135,38 @@ class secular_matrix:
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
         return res
+
+    def mvp(self, order, mvp_space, block, indices):
+        """Computes the Matrix vector product for the provided space by
+           contracting the specified matrix block with an Amplitudevector.
+           For example:
+           space='ph', block='ph,pphh', indices='ia'
+           computes the singles MVP contribution from the M_{S,D} coupling
+           block.
+           """
+
+        if len(mvp_space) != len(split_idxstring(indices)):
+            print(f"The indices {indices} are insufficient for the space"
+                  f"{mvp_space}.")
+            exit()
+        if mvp_space not in block.split(","):
+            print(f"The desired MVP space {mvp_space} needs to be present in"
+                  f"the secular matrix block {block}.")
+            exit()
+
+        # generate additional indices for the secular matrix block
+        b2 = block.split(",")[1]
+        idx = self.indices.get_new_gen_indices(
+            n_occ=self.isr.order_spaces[b2], n_virt=self.isr.order_spaces[b2]
+        )
+        idx_str = [s.name for s in idx["occ"]]
+        idx_str.extend(s.name for s in idx["virt"])
+        idx_str = "".join(idx_str)
+
+        # contruct the secular matrix
+        m = self.isr_matrix(order, block, indices + "," + idx_str)
+
+        # obtain the amplitude vector
+        y = self.isr.amplitude_vector(b2, idx_str)
+
+        return evaluate_deltas((m * y).expand())
