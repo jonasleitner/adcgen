@@ -31,13 +31,14 @@ class indices:
 
         # occ/virt hold indices that are exclusively available for
         # specific indice requests
-        occ = ['i', 'j', 'k', 'l', 'm', 'n', 'o',
-               'i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1',
-               'i2', 'j2', 'k2', 'l2', 'm2', 'n2', 'o2']
-        virt = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
-                'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1',
-                'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2']
-        self.specific_indices = {"occ": occ, "virt": virt}
+        self.occ = ['i', 'j', 'k', 'l', 'm', 'n', 'o',
+                    'i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1',
+                    'i2', 'j2', 'k2', 'l2', 'm2', 'n2', 'o2']
+        self.virt = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+                     'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1',
+                     'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2']
+        self.specific_indices = {"occ": ['o42'] + self.occ.copy(),
+                                 "virt": self.virt.copy()}
         self.__setup_used()
 
     def __setup_used(self):
@@ -50,8 +51,14 @@ class indices:
 
         self.used_indices["isr"] = {}
 
+        # just for clarity reasons:
+        self.used_indices["new"] = {'occ': [], 'virt': []}
+
         # all indices that are used in any case are stored in this list
         self.used_indices["specific"] = {'occ': [], 'virt': []}
+        # special index that is used for h1 and nowhere else
+        # call get indices to get him in the used list for index substitution
+        self.get_indices('o42')
 
     def __gen_generic_indices(self, ov):
         """Generates the next 'generation' of indices of the form i3/a3.
@@ -64,12 +71,12 @@ class indices:
         # initialise counter depending on the predefined values in occ and virt
         # (see __init__).
         if not hasattr(self, "counter_occ"):
-            if self.specific_indices["occ"][-1][0] in ["o", "h"]:
-                i = int(self.specific_indices[ov][-1][1:]) + 1
-            else:
-                i = int(self.specific_indices[ov][-1][1:]) + 2
-            self.counter_occ = i
-            self.counter_virt = i
+            io = int(self.occ[-1][1:]) + 1 if self.occ[-1][0] == "o" \
+                else int(self.occ[-1][1:]) + 2
+            iv = int(self.virt[-1][1:]) + 1 if self.occ[-1][0] == "h" \
+                else int(self.virt[-1][1:]) + 2
+            self.counter_occ = io
+            self.counter_virt = iv
 
         counter = {
             'occ': self.counter_occ,
@@ -149,7 +156,7 @@ class indices:
                 exit()
 
         # no need to check any used list, just create new generic indices
-        used = self.used_indices["specific"]
+        used = self.used_indices["new"]
         ret = {}
         for n_ov, n in kwargs.items():
             ov = get_ov[n_ov]
@@ -231,7 +238,7 @@ class indices:
             print(f"No {ov} indices for case {case} available anymore.")
             exit()
         if idx not in available[ov]:
-            print(f"Could not find {ov} index {idx} in available indices"
+            print(f"Could not find {ov} index {idx} in available indices "
                   f"for case {case}.")
             exit()
 
@@ -253,7 +260,7 @@ class indices:
             print("Index that is to be removed from the available list",
                   f"needs to be a sympy symbol. Not type {type(symbol)}")
             exit()
-        if case not in {"generic", "specific"}:
+        if case not in ["generic", "specific"]:
             print(f"Case is not recognized. Can't remove for case {case}."
                   f"Valid cases are 'generic' and 'specific'.")
             exit()
@@ -264,96 +271,122 @@ class indices:
 
         available.remove(idx)
         used.append(symbol)
-        if case == "generic" and symbol not in \
-                self.used_indices["specific"][ov]:
+        # attach symbols for gs and isr also to the specific used list
+        # (the new_gen_indices are already attached above, because they
+        # have the specific used list as used.)
+        if case == "generic":
+            if symbol in self.used_indices["specific"][ov]:
+                print(f"The symbol {symbol} that was already created and used "
+                      "at some point was attempted to create again, altough it"
+                      " should have been looked up in the used list.")
+                exit()
             self.used_indices["specific"][ov].append(symbol)
 
     def substitute_indices(self, expr):
-        """Substitutes the indices in an expression.
-           To this end, the original indices are sorted like
-           a,b,a1,b2,a3,b3... and then substituted in this order
-           with the indices a,b,c,..., a1,b1,...
-           The same is done for the occ indices i,j,...
+        """Substitute the indices in an expression. Leaving the specific indices
+           in self.occ and self.virt unchanged.
+           This function often not completely simplifies an expression. A few
+           terms often may be further simplified by interchanging index names.
+           However, it is an alternative that may be used when
+           substitute_indices from sympy completely fails.
            """
 
+        expr = expr.expand()
         if isinstance(expr, Add):
             return Add(*[self.substitute_indices(term) for term in expr.args])
         elif expr is S.Zero:
             return expr
-        idx_order = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
-                     'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']}
-        idx_in_use = {'occ': [], 'virt': []}
-        # sort the original indices as
-        # [a, b, a1, b1, a3, b3]
-        original_idx = list(expr.atoms(Dummy))
-        original_name = sorted(
-            [s.name for s in original_idx],
-            key=lambda idx: (int(idx[1:]) if len(idx) > 1 else 0, idx[0])
+
+        used_idx = {'occ': [], 'virt': []}
+
+        # sort the orignal symbols
+        original_sym = list(expr.atoms(Dummy))
+        sorted_sym = sorted(
+            [s for s in original_sym],
+            key=lambda s: (int(s.name[1:]) if len(s.name) > 1
+                           else 0, s.name[0])
         )
-        substitute = []
-        for idx in original_name:
-            ov = assign_index(idx)
-            if idx_in_use[ov]:
-                last = idx_in_use[ov][-1]
-                last_num = last[1:]
-                i = idx_order[ov].index(last[0])
-                if i+1 < len(idx_order[ov]):
-                    new = idx_order[ov][i+1] + last_num
-                else:
-                    new_num = 1 if not last_num else int(last_num) + 1
-                    new = idx_order[ov][0] + str(new_num)
+
+        sub = {}
+        generic = []
+        # prescan if we have indices that most likely have been specified by
+        # the user
+        for s in sorted_sym:
+            if s in sub:
+                print("FOUND INDEX TWICE!!!!")
+                continue
+            ov = assign_index(s.name)
+            # not do anything with p,q,r,s
+            if ov == "general":
+                continue
+            # catch all generic indices
+            ov_list = {"occ": self.occ, "virt": self.virt}
+            if s.name not in ov_list[ov]:
+                generic.append(s)
+                continue
+
+            ref = self.get_indices(s.name)[ov][0]
+            if s == ref:
+                sub[s] = ref
+                used_idx[ov].append(ref.name)
+            # catch all indices that have been created by sympy
+            # (e.g. multiple 'i' through wicks)
             else:
-                new = idx_order[ov][0]
-            idx_in_use[ov].append(new)
-            # rather replace everything... that way for sure only one 'i'
-            # is in the result
-            # if idx == new:
-            #     continue
-            new = self.get_indices(new)
-            new = new[ov][0]
-            for s in original_idx:
-                if s.name == idx:
-                    j = original_idx.index(s)
-            old = original_idx[j]
-            substitute.append((old, new))
-        return expr.subs(substitute)
+                generic.append(s)
+
+        # try to substitute the remaining, generic indices
+        for s in generic:
+            if s in sub:
+                print("FOUND GENERIC INDEX TWICE!!!!")
+                continue
+            ov = assign_index(s.name)
+
+            new = get_first_missing_index(used_idx[ov], ov)
+            new_s = self.get_indices(new)[ov][0]
+
+            sub[s] = new_s
+            used_idx[ov].append(new_s.name)
+        return expr.subs(sub, simultaneous=True)
 
     def substitute_with_generic_indices(self, expr):
-        """Input: expression wich is already correct, wrt substitution,
-           i.e. there should only be one index with name 'i' etc. in the
-           expression.
-           The indices will be replaced with newly generated generic ones
-           to continue calculations with the expression.
+        """Replaces indices in an expression with newly generated
+           generic indices that are not in use anywhere else.
            """
 
-        orig_idx = list(expr.atoms(Dummy))
-        orig_name = sorted(
-            [s.name for s in orig_idx],
-            key=lambda idx: (int(idx[1:]) if len(idx) > 1 else 0, idx[0])
+        orig_sym = list(expr.atoms(Dummy))
+        sorted_sym = sorted(
+            [s for s in orig_sym],
+            key=lambda s: (int(s.name[1:]) if len(s.name) > 1 else 0,
+                           s.name[0])
         )
-        old_idx = {}
+
+        old_sym = {}
+        # counting how many occ and virt indices are needed
+        for s in sorted_sym:
+            ov = assign_index(s.name)
+            if ov == "general":
+                continue
+            if ov not in old_sym:
+                old_sym[ov] = []
+            if s not in old_sym[ov]:
+                old_sym[ov].append(s)
+
+        # generate new generic indices for replacing
+        n_ov = {'occ': 'n_occ', 'virt': 'n_virt'}
         kwargs = {}
-        n_ov = {'occ': "n_occ", 'virt': "n_virt"}
-        for name in orig_name:
-            ov = assign_index(name)
-            if ov not in old_idx:
-                old_idx[ov] = []
-            for symbol in orig_idx:
-                if symbol.name == name:
-                    old_idx[ov].append(symbol)
-            if n_ov[ov] not in kwargs:
-                kwargs[n_ov[ov]] = 0
-            kwargs[n_ov[ov]] += 1
-        new_idx = self.get_new_gen_indices(**kwargs)
-        substitute = []
-        for ov in old_idx:
-            if len(old_idx[ov]) != len(new_idx[ov]):
-                print(f"Cannot replace {len(old_idx[ov])} old indices",
-                      f"with {len(new_idx[ov])} new generic indices.")
+        for ov in old_sym:
+            kwargs[n_ov[ov]] = len(old_sym[ov])
+        new_sym = self.get_new_gen_indices(**kwargs)
+
+        sub = []
+        for ov in old_sym:
+            if len(old_sym[ov]) != len(new_sym[ov]):
+                print(f"Cannot replace {len(old_sym[ov])} old indices",
+                      f"with {len(new_sym[ov])} new generic indices.")
                 exit()
-            for i in range(len(old_idx[ov])):
-                substitute.append((old_idx[ov][i], new_idx[ov][i]))
-        return expr.subs(substitute)
+            for i in range(len(old_sym[ov])):
+                sub.append((old_sym[ov][i], new_sym[ov][i]))
+        return expr.subs(sub, simultaneous=True)
 
 
 def assign_index(idx):
@@ -366,8 +399,10 @@ def assign_index(idx):
         return "virt"
     elif idx[0] in ["i", "j", "k", "l", "m", "n", "o"]:
         return "occ"
+    elif idx[0] in ["p", "q", "r", "s"]:
+        return "general"
     else:
-        print(f"Could not assign index {idx} to occ or virt.")
+        print(f"Could not assign index {idx} to occ, virt or general.")
         exit()
 
 
@@ -402,6 +437,31 @@ def check_repeated_indices(string_a, string_b):
         if idx in split_b:
             repeated = True
     return repeated
+
+
+def get_first_missing_index(idx_list, ov):
+    """Returns the first index that is missing in the provided index
+       list. If the list is continuous the next index is returned.
+       Assumes an ordering like [i,..., o, i1,... o1, i2...].
+       """
+
+    idx_order = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
+                 'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']}
+    sorted_idx = sorted(
+        idx_list,
+        key=lambda idx: (int(idx[1:]) if len(idx) > 1 else 0, idx[0])
+    )
+    for i, idx in enumerate(sorted_idx):
+        if idx != idx_order[ov][i]:
+            return idx_order[ov][i]
+        if idx[0] in ['o', 'h']:
+            new_n = int(idx[1:]) + 1 if idx[1:] else 1
+            idx_order[ov].extend([base[0] + str(new_n)
+                                  for base in idx_order[ov]])
+        new = idx_order[ov][i+1]
+    if not idx_list:
+        new = idx_order[ov][0]
+    return new
 
 
 def make_pretty(expr):

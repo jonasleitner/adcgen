@@ -2,7 +2,7 @@ from sympy.core.function import diff
 from sympy.physics.secondquant import (
     F, Fd, evaluate_deltas, wicks, NO, AntiSymmetricTensor
 )
-from sympy import symbols, latex, nsimplify
+from sympy import symbols, latex, nsimplify, Rational
 
 import numpy as np
 from math import factorial
@@ -87,6 +87,7 @@ class intermediate_states:
             elif braket == "bra":
                 i1 = mp[term[0]]["bra"] * NO(operators) * mp[term[1]]["ket"]
                 state = mp[term[2]]["bra"]
+            # wicks automatically expands the passed expression
             i1 = wicks(
                 i1, keep_only_fully_contracted=True,
                 simplify_kronecker_deltas=True,
@@ -230,7 +231,7 @@ class intermediate_states:
         for exponent, termlist in orders.items():
             for term in termlist:
                 for o in range(len(term)):
-                    res += prefactors[exponent] * overlap[term[o]]
+                    res += (prefactors[exponent] * overlap[term[o]]).expand()
         print(f"Build {space} S_root_({indices})^({order}) = {latex(res)}")
         return res
 
@@ -261,9 +262,11 @@ class intermediate_states:
             )
 
         orders = get_order_two(order)
+        prefactor = Rational(1, factorial(self.order_spaces[space]) ** 2)
+
         res = 0
         for term in orders:
-            res += s_root[term[0]] * precursor[term[1]]
+            res += (prefactor * s_root[term[0]] * precursor[term[1]]).expand()
         res = evaluate_deltas(res)
         print(f"Build {space} ISR_({idx_is}, {idx_pre})^({order}) {braket} = ",
               latex(res))
@@ -280,7 +283,25 @@ class intermediate_states:
 
         idx = self.indices.get_indices(indices)
 
-        return AntiSymmetricTensor("Y", tuple(idx["virt"]), tuple(idx["occ"]))
+        # normally when lifting the index restrictions a prefactor of
+        # 1/(n!)^2 is necessary
+        # However, in order to keep the amplitude vector normalized
+        # 2 * 1/(n!)^2 is packed in each amplitude vector
+        # the remaining 2 * 1/(n!)^2 is visible in the MVP expression
+        # Note: This is only true for spaces != 'ph'!
+        prefactor = Rational(1, factorial(self.order_spaces[space]) ** 2)
+
+        if prefactor == 1:
+            print("no prefactor from ampl side")
+            return AntiSymmetricTensor(
+                "Y", tuple(idx["virt"]), tuple(idx["occ"])
+            )
+        else:
+            print("prefactor from ampl side: ", 2 * prefactor)
+            return (
+                2 * prefactor *
+                AntiSymmetricTensor("Y", tuple(idx["virt"]), tuple(idx["occ"]))
+            )
 
     def __expand_S_taylor(self, order):
         """Computes the Taylor expansion of 'S^{-0.5} = (1 + x)^{-0.5} with

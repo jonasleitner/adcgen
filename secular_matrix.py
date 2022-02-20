@@ -1,4 +1,7 @@
 from sympy.physics.secondquant import wicks, evaluate_deltas
+from sympy import Rational
+
+from math import factorial
 
 from isr import get_orders_three
 from indices import check_repeated_indices, split_idxstring
@@ -28,8 +31,16 @@ class secular_matrix:
     def precursor_matrix(self, order, block, indices):
         """Computes a certain block of the secular matrix in the
            basis of the precursor states.
-           Due to substitute_dummies, it is hard to identify to which matrix
-           element an individual term belongs.
+           Substitute_dummies: 1) messes around with the indices -> very hard
+           to identifie to which matrix element (e.g. M_ia,jb vs M_ic,kb)
+           a term belongs. 2) for coupling blocks and the pphh,pphh block wrong
+           index substitution causes all terms to cancel - which is wong.
+           The custom substitute_indices function (method of the indice book
+           keeping class) gives correct results for all blocks (only checked
+           for ADC(2)). However, in some blocks it may be necessary to
+           have a look at a few terms that did not cancel with
+           substitute_indices. It may be necessary to rename/interchange some
+           indices by hand for those terms to cancel correctly.
            """
 
         if len(block.split(",")) != 2 or len(indices.split(",")) != 2:
@@ -79,6 +90,11 @@ class secular_matrix:
         """Computes a specific block of a specific order of the secular matrix.
            Due to substitute_dummies care has to be taken to which matrix
            element an individual term belongs.
+           Additionally, it is not possible to calcualte the coupling blocks
+           with this function nicely. The obtained expression seems to be
+           correct, however substitute_dummies messes with the result so all
+           terms cancel to 0.
+           The same is true for the pphh,pphh block.
            """
 
         if len(block.split(",")) != 2 or len(indices.split(",")) != 2:
@@ -136,6 +152,7 @@ class secular_matrix:
                          simplify_kronecker_deltas=True)
         return res
 
+    @cached_member
     def mvp(self, order, mvp_space, block, indices):
         """Computes the Matrix vector product for the provided space by
            contracting the specified matrix block with an Amplitudevector.
@@ -143,15 +160,18 @@ class secular_matrix:
            space='ph', block='ph,pphh', indices='ia'
            computes the singles MVP contribution from the M_{S,D} coupling
            block.
+           The ph,pphh coupling block seems to evaluate to 0, due to stupid
+           index substitution of substitute_dummies.
+           The same is true for pphh,pphh.
            """
 
         if len(mvp_space) != len(split_idxstring(indices)):
             print(f"The indices {indices} are insufficient for the space"
                   f"{mvp_space}.")
             exit()
-        if mvp_space not in block.split(","):
-            print(f"The desired MVP space {mvp_space} needs to be present in"
-                  f"the secular matrix block {block}.")
+        if mvp_space != block.split(",")[0]:
+            print(f"The desired MVP space {mvp_space} has to be identical"
+                  f"to the first secular matrix space: {block}.")
             exit()
 
         # generate additional indices for the secular matrix block
@@ -169,4 +189,21 @@ class secular_matrix:
         # obtain the amplitude vector
         y = self.isr.amplitude_vector(b2, idx_str)
 
-        return evaluate_deltas((m * y).expand())
+        # Lifting index restrictions leads to a prefactor of 1/(n!)^2 for
+        # a n-fold excitation.
+        # In order to keep the MVP normalized, a factor of 2 * 1/(n!)^2
+        # is hidden inside the MVP vector, while the other part
+        # (again 2 * 1/(n!)^2) is shifted in the MVP expression
+        # Note: This is only true for mvp_spaces != 'ph'!
+        prefactor = Rational(
+            1, factorial(self.isr.order_spaces[mvp_space]) ** 2
+        )
+
+        if prefactor == 1:
+            print("no prefactor from sec matrix side")
+            return evaluate_deltas((m * y).expand())
+        else:
+            print("prefactor from sec matrix side: ", 2 * prefactor)
+            return (
+                evaluate_deltas((2 * prefactor * m * y).expand())
+            )

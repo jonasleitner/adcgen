@@ -30,7 +30,7 @@ def sort_by_type_deltas(expr):
     expr = expr.expand()
     if not isinstance(expr, Add):
         print(f"Can only sort an expression that is of type {Add}."
-              f"Proovided eypression is of type {type(expr)}.")
+              f"Provided eypression is of type {type(expr)}.")
         exit()
     deltas = {}
     for term in expr.args:
@@ -51,7 +51,6 @@ def sort_by_type_deltas(expr):
     res = {}
     for d, terms in deltas.items():
         res[d] = Add(*[t for t in terms])
-    print(res.keys())
     return res
 
 
@@ -59,17 +58,16 @@ def sort_by_type_fock(expr):
     expr = expr.expand()
     if not isinstance(expr, Add):
         print(f"Can only sort an expression that is of type {Add}."
-              f"Proovided eypression is of type {type(expr)}.")
+              f"Provided eypression is of type {type(expr)}.")
         exit()
     fock = {}
     for term in expr.args:
         temp = set()
         for t in term.args:
-            if isinstance(t, AntiSymmetricTensor):
-                if t.symbol.name == "f":
-                    ov1 = assign_index(t.upper[0].name)
-                    ov2 = assign_index(t.lower[0].name)
-                    temp.add("".join(sorted(ov1[0] + ov2[0])))
+            if isinstance(t, AntiSymmetricTensor) and t.symbol.name == "f":
+                ov1 = assign_index(t.upper[0].name)
+                ov2 = assign_index(t.lower[0].name)
+                temp.add("".join(sorted(ov1[0] + ov2[0])))
         temp = tuple(temp)
         if not temp:
             temp = "no_fock"
@@ -82,3 +80,23 @@ def sort_by_type_fock(expr):
     for f, term in fock.items():
         res[f] = Add(*[t for t in term])
     return res
+
+
+def filter_tensor(expr, t_string):
+    """Returns all terms of an expression that contain an AntiSymmetriTensor
+       with a certain name. Also returns terms that contain the comlpex
+       conjugate assuming that the cc. Tensor shares the same name but includes
+       just one or two 'c' additionally."""
+
+    expr = expr.expand()
+    if not isinstance(expr, Add):
+        print(f"Can only filter an expression that is of type {Add}."
+              f"Provided eypression is of type {type(expr)}.")
+        exit()
+    tensor = []
+    for term in expr.args:
+        for t in term.args:
+            if isinstance(t, AntiSymmetricTensor) and \
+                    t.symbol.name.replace('c', '') == t_string:
+                tensor.append(term)
+    return Add(*tensor)
