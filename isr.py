@@ -19,17 +19,13 @@ class intermediate_states:
     def __init__(self, mp, variant="pp"):
         self.gs = mp
         self.indices = mp.indices
-        valid_spaces = {
-            "pp": ["ph", "pphh", "ppphhh", "pppphhhh"],
-            "ip": ["h", "phh", "pphhh", "ppphhhh"],
-            "ea": ["p", "pph", "ppphh", "pppphhh"]
-        }
-        if variant not in ["pp", "ea", "ip"]:
+
+        variants = ["pp", "ea", "ip"]
+        if variant not in variants:
             print(f"The ADC variant {variant} is not valid. "
-                  f"Supported variants are {list(valid_spaces.keys())}.")
+                  f"Supported variants are {variants}.")
             exit()
         self.variant = variant
-        self.valid_spaces = valid_spaces[variant]
 
     @cached_member
     def precursor(self, order, space, braket, indices):
@@ -39,9 +35,9 @@ class intermediate_states:
            (e.g. indices='ia' produces |PSI_{ia}^#>).
            """
 
-        if space not in self.valid_spaces:
-            print(f"{space} is not a valid space. Valid spaces are"
-                  f"{self.valid_spaces}.")
+        if not self.check_valid_space(space):
+            print(f"{space} is not a valid space for a {self.variant} "
+                  "ISR state.")
             exit()
         if braket not in ["bra", "ket"]:
             print(f"Unknown precursor wavefuntion type {braket}."
@@ -238,7 +234,7 @@ class intermediate_states:
         for o in range(order + 1):
             overlap[o] = self.overlap(order, space, indices=indices)
 
-        prefactors, orders = self.__expand_S_taylor(order)
+        prefactors, orders = self.expand_S_taylor(order)
         res = 0
         for exponent, termlist in orders.items():
             for term in termlist:
@@ -284,7 +280,7 @@ class intermediate_states:
               f"= {latex(res)}")
         return res
 
-    def amplitude_vector(self, space, indices):
+    def amplitude_vector(self, space, indices, lr="right"):
         """Returns an amplitude vector for the requested space using
            the provided indices.
            Note that, also a prefactor is returned that keeps the
@@ -311,14 +307,20 @@ class intermediate_states:
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
+        t_string = {
+            "right": "Y",
+            "left": "X",
+        }
         print("prefactor from ampl side: ", prefactor)
         return prefactor * AntiSymmetricTensor(
-            "Y", tuple(idx["virt"]), tuple(idx["occ"])
+            t_string[lr], tuple(idx["virt"]), tuple(idx["occ"])
         )
 
-    def __expand_S_taylor(self, order):
+    def expand_S_taylor(self, order, min_order=2):
         """Computes the Taylor expansion of 'S^{-0.5} = (1 + x)^{-0.5} with
            'x = S(2) + S(3) + O(4)' to a given order in perturbation theory.
+           The lowest order term of x may be defined via the parameter
+           min_order.
 
            Returns two dicts:
            The first one contains the prefactors of the series x + x² + ...
@@ -332,10 +334,11 @@ class intermediate_states:
         diffs = {0: 1}
         f = (1 + x) ** -0.5
         intermediate = f
-        for o in range(1, int(order / 2) + 1):
+        # for o in range(1, int(order / 2) + 1):
+        for o in range(1, int(order/min_order) + 1):
             intermediate = diff(intermediate, x)
             diffs[o] = nsimplify(intermediate.subs(x, 0) * 1 / factorial(o))
-        orders = gen_order_S(order)
+        orders = gen_order_S(order, min_order=min_order)
         if not orders:
             orders[0] = [(order,)]
         return (diffs, orders)
@@ -350,6 +353,26 @@ class intermediate_states:
                 break
             lower_spaces.append(space_str)
         return lower_spaces
+
+    def check_valid_space(self, space_str):
+        """Checks wheter the provided space is a valid space for
+           the chosen ADC variant.
+           """
+
+        smallest = {
+            "pp": "ph",
+            "ip": "h",
+            "ea": "p",
+        }
+        if space_str == smallest[self.variant]:
+            return True
+
+        lower_spaces = self.__generate_lower_spaces(space_str)
+        valid = False
+        for s in lower_spaces:
+            if s == smallest[self.variant]:
+                valid = True
+        return valid
 
     def pretty_precursor(self, order, space, braket):
         """Returns precursor bra/ket for a given space and order.
@@ -431,23 +454,22 @@ class intermediate_states:
         )
 
 
-def gen_order_S(order):
-    """Computes the series x + x² + ... with x = S(2) + S(3) + O(4).
+def gen_order_S(order, min_order=2):
+    """Computes the series x + x² + ... with
+       x = S(min) + S(min+1) + ... + S(order).
        Returns all terms of the series that are of a given order
-       sorted by the exponent of x, i.e.
+       sorted by the exponent of x:
        {exponent: [(o1, o2, ...), ...]}.
        """
 
-    orders = np.array([2 ** o for o in range(2, order + 1)])
-    multiplied = {}
-    if (int(order / 2) - 1) > 0:
+    orders = np.array([2 ** o for o in range(min_order, order + 1)])
+    multiplied = {1: orders}
+    if order >= 2 * min_order:
         res = orders
-        for exponent in range(int(order / 2) - 1):
+        for exponent in range(int(order/min_order) - 1):
             i1 = np.multiply.outer(res, orders)
             multiplied[exponent + 2] = i1
             res = i1
-    else:
-        multiplied[1] = orders
 
     indices = {}
     for exponent, product in multiplied.items():
@@ -461,7 +483,7 @@ def gen_order_S(order):
         for idx in range(artuple[0].size):
             i1 = []
             for ar in range(len(artuple)):
-                i1.append(artuple[ar][idx] + 2)
+                i1.append(artuple[ar][idx] + min_order)
             res.append(tuple(i1))
         matching_orders[exponent] = res
     return matching_orders

@@ -2,6 +2,7 @@ from sympy.physics.secondquant import wicks, evaluate_deltas
 from sympy import sqrt
 
 from math import factorial
+from itertools import product
 
 from isr import get_orders_three
 from indices import (check_repeated_indices, split_idxstring,
@@ -46,9 +47,9 @@ class secular_matrix:
                   "are not valid.")
             exit()
         for space in block.split(","):
-            if space not in self.isr.valid_spaces:
-                print("Requested a matrix block for an unknown space."
-                      f"Valid blocks are {list(self.isr.valid_spaces.keys())}")
+            if not self.isr.check_valid_space(space):
+                print("Requested the matrix block {block} with the invalid "
+                      f"excitation space {space} for {self.isr.variant} ADC.")
                 exit()
 
         if check_repeated_indices(indices.split(",")[0],
@@ -97,9 +98,9 @@ class secular_matrix:
                   "are not valid.")
             exit()
         for space in block.split(","):
-            if space not in self.isr.valid_spaces:
-                print("Requested a matrix block for an unknown space.",
-                      f"Valid blocks are {list(self.isr.valid_spaces.keys())}")
+            if not self.isr.check_valid_space(space):
+                print(f"Requested the matrix block {block} with an invalid "
+                      f"excitation space {space} for {self.isr.variant} ADC.")
                 exit()
 
         if check_repeated_indices(indices.split(",")[0],
@@ -199,3 +200,43 @@ class secular_matrix:
 
         print("prefactor from sec matrix side: ", prefactor)
         return evaluate_deltas((prefactor * m * y).expand())
+
+    def get_max_ptorder_spaces(self, order):
+        # TODO: CHECK IF THIS IS CORRECT!!
+        smallest = {
+            "pp": "ph",
+            "ip": "h",
+            "ea": "p",
+        }
+        space = smallest[self.isr.variant]
+        ret = {space: order}
+        for s in range(1, int(order/2) + 1):
+            space = "p" + space + "h"
+            o = order - s
+            ret[space] = o
+        return ret
+
+    def block_order(self, order):
+        """Returns the order to which each block of the ADC(n) secular
+           is expanded.
+           Returns a dict with the block tuple (s1, s2) as key.
+           """
+
+        max_orders = self.get_max_ptorder_spaces(order)
+        min_space = min(max_orders)
+        blocks = list(product(max_orders.keys(), max_orders.keys()))
+        ret = {}
+        for block in blocks:
+            s1 = block[0]
+            s2 = block[1]
+            # diagonal
+            if s1 == s2:
+                dif = abs(len(s1) - len(min_space))
+                ret[block] = max_orders[min_space] - dif
+            # off diagonal
+            else:
+                dif = int(abs(len(s1) - len(s2)) / 2)
+                diag = max_orders[min_space] - \
+                    abs(len(max([s1, s2])) - len(min_space))
+                ret[block] = diag + dif
+        return ret
