@@ -464,6 +464,19 @@ def get_first_missing_index(idx_list, ov):
     return new
 
 
+def get_n_ov_from_space(space_str):
+    ret = {"n_occ": 0, "n_virt": 0}
+    for letter in space_str:
+        if letter == "h":
+            ret["n_occ"] += 1
+        elif letter == "p":
+            ret["n_virt"] += 1
+        else:
+            print(f"Invalid letter found in space string: {letter}.")
+            exit()
+    return ret
+
+
 def make_pretty(expr):
     """Funciton that exchanges the indices in an expression with other,
        pretty indices. Not done by default, because it is not possible

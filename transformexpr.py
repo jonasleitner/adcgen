@@ -1,4 +1,4 @@
-from sympy import KroneckerDelta, Add
+from sympy import KroneckerDelta, Add, S, latex
 from sympy.physics.secondquant import AntiSymmetricTensor
 from indices import assign_index
 
@@ -91,7 +91,7 @@ def filter_tensor(expr, t_string):
     expr = expr.expand()
     if not isinstance(expr, Add):
         print(f"Can only filter an expression that is of type {Add}."
-              f"Provided eypression is of type {type(expr)}.")
+              f" Provided expression is of type {type(expr)}.")
         exit()
     tensor = []
     for term in expr.args:
@@ -100,3 +100,67 @@ def filter_tensor(expr, t_string):
                     t.symbol.name.replace('c', '') == t_string:
                 tensor.append(term)
     return Add(*tensor)
+
+
+def sort_tensor_sum_indices(expr, t_string):
+    """Sorts an expression by sorting the terms depending on the
+       number of indices of an AntiSymmetricTensor that are summed
+       over. There is an additional splitting that depends on the
+       kind of index (occ/virt).
+       """
+
+    expr = expr.expand()
+    if not isinstance(expr, Add):
+        print(f"Can only filter an expression that is of type {Add}."
+              f" Provided expression is of type {type(expr)}.")
+        exit()
+    # prefilter all terms that contain the desired tensor
+    tensor = filter_tensor(expr, t_string)
+    if len(tensor.args) < 2:
+        print("The expression contains at most 1 term that contains "
+              f"the tensor {t_string}. No need to filter according "
+              "to indices.")
+        return tensor
+    ret = {}
+    # get all terms that do not contain the tensor
+    if expr - tensor != S.Zero:
+        ret[f'no_{t_string}'] = expr - tensor
+
+    temp = {}
+    for term in tensor.args:
+        # first get all the indices that are present in the Mul object
+        # and count how often they occur
+        idx = {}
+        for t in term.args:
+            for s in t.free_symbols:
+                if s in idx:
+                    idx[s] += 1
+                else:
+                    idx[s] = 0
+        # now check how many indices in upper and lower occur more
+        # than once in the expr (einstein sum convention).
+        found = False
+        for t in term.args:
+            if isinstance(t, AntiSymmetricTensor) and \
+                    t.symbol.name.replace('c', '') == t_string:
+                if found:
+                    print(f"Found more than occurence of the tensor {t_string}"
+                          f" in {latex(term)}. The function assumes there "
+                          "exists only 1.")
+                    exit()
+                upper_sum = [
+                    assign_index(s.name)[0] for s in t.upper if idx[s]
+                ]
+                lower_sum = [
+                    assign_index(s.name)[0] for s in t.lower if idx[s]
+                ]
+                sum_ov = "".join(sorted(lower_sum + upper_sum))
+                if not sum_ov:
+                    sum_ov = "no_indices"
+                if sum_ov not in temp:
+                    temp[sum_ov] = []
+                temp[sum_ov].append(term)
+
+    for ov, terms in temp.items():
+        ret[ov] = Add(*[t for t in terms])
+    return ret

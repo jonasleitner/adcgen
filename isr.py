@@ -1,52 +1,68 @@
 from sympy.core.function import diff
 from sympy.physics.secondquant import (
-    F, Fd, evaluate_deltas, wicks, NO, AntiSymmetricTensor
+    F, Fd, evaluate_deltas, wicks, NO, AntiSymmetricTensor,
+    Dagger
 )
-from sympy import symbols, latex, nsimplify, Rational
+from sympy import symbols, latex, nsimplify, Rational, sqrt
 
 import numpy as np
 from math import factorial
 
-from indices import split_idxstring, make_pretty, check_repeated_indices
+from indices import (
+    split_idxstring, make_pretty, check_repeated_indices,
+    get_n_ov_from_space, assign_index
+)
 from misc import cached_member
 
 
 class intermediate_states:
-    def __init__(self, mp):
+    def __init__(self, mp, variant="pp"):
         self.gs = mp
         self.indices = mp.indices
-        self.order_spaces = {
-            "ph": 1,
-            "pphh": 2,
-            "ppphhh": 3,
-            "pppphhhh": 4,
+        valid_spaces = {
+            "pp": ["ph", "pphh", "ppphhh", "pppphhhh"],
+            "ip": ["h", "phh", "pphhh", "ppphhhh"],
+            "ea": ["p", "pph", "ppphh", "pppphhh"]
         }
+        if variant not in ["pp", "ea", "ip"]:
+            print(f"The ADC variant {variant} is not valid. "
+                  f"Supported variants are {list(valid_spaces.keys())}.")
+            exit()
+        self.variant = variant
+        self.valid_spaces = valid_spaces[variant]
 
     @cached_member
     def precursor(self, order, space, braket, indices):
-        """Method used to obtain precursor states of arbitrary order
-           for an arbitrary space. The indices of the resulting precursor
+        """Method used to obtain precursor states of specified order
+           for the specified space. The indices of the resulting precursor
            wavefunction need to be provided as string in the input
-           (e.g. indices='ia' produces |PSI_{ia}^#).
+           (e.g. indices='ia' produces |PSI_{ia}^#>).
            """
 
-        if space not in self.order_spaces:
+        if space not in self.valid_spaces:
             print(f"{space} is not a valid space. Valid spaces are"
-                  f"{self.order_spaces}.")
+                  f"{self.valid_spaces}.")
             exit()
         if braket not in ["bra", "ket"]:
             print(f"Unknown precursor wavefuntion type {braket}."
                   "Only 'bra' and 'ket' are valid.")
             exit()
-        if len(split_idxstring(indices)) != len(space):
-            print("Number of Indices are not adequate for constructing a",
-                  f"Precursor state for space {space}. Indices: {indices}.")
-            exit()
 
-        # split the index str ij2a42b into [i,j2,a42,b]
-        # and sort alphabetically afterwards
-        indices = "".join(sorted(split_idxstring(indices)))
-        idx = self.indices.get_indices(indices)
+        # check compatibiliity of indices and space
+        idx_ov = {'occ': 0, 'virt': 0, 'general': 0}
+        for idx in split_idxstring(indices):
+            idx_ov[assign_index(idx)] += 1
+        if idx_ov['general']:
+            print(f"The provided indices {indices} include a general index.")
+            exit()
+        n_ov_space = get_n_ov_from_space(space)
+        if idx_ov["occ"] != n_ov_space["n_occ"] or \
+                idx_ov["virt"] != n_ov_space["n_virt"]:
+            print(f"The provided indices {indices} (occ: {idx_ov['occ']} / "
+                  f"virt: {idx_ov['virt']}) do not match the required amount "
+                  f"of indices for the space {space} (occ: "
+                  f"{n_ov_space['n_occ']} / virt: {n_ov_space['n_virt']}).")
+            exit()
 
         # import all bra and ket gs wavefunctions up to requested order
         # for nicer indices iterate first over bk
@@ -60,82 +76,94 @@ class intermediate_states:
         # get all possible combinations a*b*c of the desired order
         orders = get_orders_three(order)
 
-        get_ov = {
-            'ket': lambda ov: ov,
-            'bra': lambda ov: [other for other in ["occ", "virt"]
-                               if other != ov]
-        }
-        ov = get_ov[braket]
-
+        idx = self.indices.get_indices(indices)
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
         # ADC results.
         operators = 1
-        for symbol in idx["".join(ov('virt'))]:
-            operators *= Fd(symbol)
-        for symbol in idx["".join(ov('occ'))]:
-            operators *= F(symbol)
+        if idx.get('virt'):
+            for symbol in idx['virt']:
+                operators *= Fd(symbol)
+        if idx.get('occ'):
+            for symbol in idx['occ']:
+                operators *= F(symbol)
+        if braket == "bra":
+            operators = Dagger(operators)
+
+        # no need to differentiate bra/ket here, because
+        # operators * mp = mp * operators (there is always an equal number of
+        # p/h operators in mp that needs to be moved to the other side.
+        # Will always give +.)
         res = NO(operators) * mp[order][braket]
 
-        # orthogonalise with respect to the ground state
-        for term in orders:
-            # |Y>  <--  -|X><X|Y>
-            if braket == "ket":
-                i1 = mp[term[1]]["bra"] * NO(operators) * mp[term[2]]["ket"]
-                state = mp[term[0]]["ket"]
-            # <Y|  <--  -<Y|X><X|
-            elif braket == "bra":
-                i1 = mp[term[0]]["bra"] * NO(operators) * mp[term[1]]["ket"]
-                state = mp[term[2]]["bra"]
-            # wicks automatically expands the passed expression
-            i1 = wicks(
-                i1, keep_only_fully_contracted=True,
-                simplify_kronecker_deltas=True,
-            )
-            res -= state * i1
+        # orthogonalise with respect to the ground state for pp ADC.
+        if self.variant == "pp":
+            for term in orders:
+                # |Y>  <--  -|X><X|Y>
+                if braket == "ket":
+                    i1 = mp[term[1]]["bra"] * NO(operators) * \
+                        mp[term[2]]["ket"]
+                    state = mp[term[0]]["ket"]
+                # <Y|  <--  -<Y|X><X|
+                elif braket == "bra":
+                    i1 = mp[term[0]]["bra"] * NO(operators) * \
+                        mp[term[1]]["ket"]
+                    state = mp[term[2]]["bra"]
+                # wicks automatically expands the passed expression
+                i1 = wicks(
+                    i1, keep_only_fully_contracted=True,
+                    simplify_kronecker_deltas=True,
+                )
+                res -= state * i1
 
         # iterate over lower excitated spaces
-        for n in range(1, self.order_spaces[space]):
-            # generate name string of the lower excited space
-            lower_space = ["p" for i in range(n)]
-            lower_space.extend(["h" for i in range(n)])
-            lower_space = "".join(lower_space)
-
+        lower_spaces = self.__generate_lower_spaces(space)
+        for lower_space in lower_spaces:
             # get generic unique indices to generate the lower_isr_states.
+            n_ov = get_n_ov_from_space(lower_space)
             isr_generic = self.indices.get_isr_indices(
-                indices, n_occ=3*n, n_virt=3*n
+                indices, n_occ=3*n_ov["n_occ"], n_virt=3*n_ov["n_virt"]
             )
-            # sort indices into three strings of length n
+            # sort indices into three strings of length n_o + n_v
             isr_idx = {}
             for i in range(3):
-                occ = isr_generic['occ'][i*n:(i+1)*n]
-                virt = isr_generic['virt'][i*n:(i+1)*n]
-                # extract the names of the generated symbols
-                idx_string = [s.name for s in virt]
-                idx_string.extend([s.name for s in occ])
-                isr_idx[i] = "".join(idx_string)
+                isr_idx[i] = []
+                if n_ov["n_occ"]:
+                    n_o = n_ov["n_occ"]
+                    occ = isr_generic['occ'][i*n_o:(i+1)*n_o]
+                    isr_idx[i].extend([s.name for s in occ])
+                if n_ov["n_virt"]:
+                    n_v = n_ov["n_virt"]
+                    virt = isr_generic['virt'][i*n_v:(i+1)*n_v]
+                    isr_idx[i].extend([s.name for s in virt])
+                isr_idx[i] = "".join(isr_idx[i])
 
             # generate the isr states for the lower_space
             lower_isr = {}
             for o in range(order + 1):
                 lower_isr[o] = {}
                 lower_isr[o]['bra'] = self.intermediate_state(
-                    o, lower_space, 'bra', isr_idx[0], isr_idx[2]
+                    o, lower_space, 'bra', idx_is=isr_idx[0],
+                    idx_pre=isr_idx[2]
                 )
                 lower_isr[o]['ket'] = self.intermediate_state(
-                    o, lower_space, 'ket', isr_idx[0], isr_idx[1]
+                    o, lower_space, 'ket', idx_is=isr_idx[0],
+                    idx_pre=isr_idx[1]
                 )
 
             # orthogonalise with respsect to the lower excited ISR state
             for term in orders:
                 # |Y>  <--  -|X><X|Y>
+                prefactor = Rational(
+                    1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+                )
                 if braket == "ket":
-                    i1 = lower_isr[term[1]]["bra"] * \
+                    i1 = prefactor * lower_isr[term[1]]["bra"] * \
                         NO(operators) * mp[term[2]]["ket"]
                     state = lower_isr[term[0]]["ket"]
                 # <Y|  <--  -<Y|X><X|
                 elif braket == "bra":
-                    i1 = mp[term[0]]["bra"] * NO(operators) \
+                    i1 = prefactor * mp[term[0]]["bra"] * NO(operators) \
                         * lower_isr[term[1]]["ket"]
                     state = lower_isr[term[2]]["bra"]
                 i1 = wicks(
@@ -161,7 +189,6 @@ class intermediate_states:
                   f"str, not {type(indices)}")
             exit()
 
-        # sort both parts of the index string alphabetically
         splitted = indices.split(",")
         if len(splitted) != 2:
             print("Only provide 2 strings of indices separated by a ','"
@@ -171,17 +198,8 @@ class intermediate_states:
             print("Repeated index found in indices of overlap matrix "
                   f"{splitted[0]}, {splitted[1]}.")
             exit()
-        sorted_idx = []
-        for idxstring in splitted:
-            split = sorted(split_idxstring(idxstring))
-            sorted_idx.append("".join(split))
-        if sorted_idx[0] == sorted_idx[1]:
-            print("Indices for overlap matrix should not be equal."
-                  f"Provided indices {indices}.")
-            exit()
-        indices = ",".join(sorted_idx)
 
-        # calculate the precursor states.
+        # calculate the required precursor states.
         get_idx = {
             'bra': indices.split(",")[0],
             'ket': indices.split(",")[1]
@@ -191,7 +209,7 @@ class intermediate_states:
             precursor[o] = {}
             for braket in ["bra", "ket"]:
                 precursor[o][braket] = self.precursor(
-                    o, space, braket, get_idx[braket]
+                    o, space, braket, indices=get_idx[braket]
                 )
 
         orders = get_order_two(order)
@@ -212,19 +230,13 @@ class intermediate_states:
            """
 
         if not isinstance(indices, str):
-            print("Indices for S_root must be of type"
+            print("Indices for S_root must be of type "
                   f"str, not {type(indices)}")
             exit()
 
-        # sort indices in each part of the string alphabetically
-        sorted_idx = []
-        for idxstring in indices.split(","):
-            sorted_idx.append("".join(sorted(split_idxstring(idxstring))))
-        indices = ",".join(sorted_idx)
-
         overlap = {}
         for o in range(order + 1):
-            overlap[o] = self.overlap(order, space, indices)
+            overlap[o] = self.overlap(order, space, indices=indices)
 
         prefactors, orders = self.__expand_S_taylor(order)
         res = 0
@@ -244,9 +256,6 @@ class intermediate_states:
            runs over idx_pre.
            """
 
-        idx_is = "".join(sorted(split_idxstring(idx_is)))
-        idx_pre = "".join(sorted(split_idxstring(idx_pre)))
-
         get_s_indices = {
             'bra': ",".join([idx_is, idx_pre]),
             'ket': ",".join([idx_pre, idx_is])
@@ -255,26 +264,31 @@ class intermediate_states:
         s_root = {}
         for o in range(order + 1):
             precursor[o] = self.precursor(
-                o, space, braket, idx_pre
+                o, space, braket, indices=idx_pre
             )
             s_root[o] = self.s_root(
-                o, space, get_s_indices[braket]
+                o, space, indices=get_s_indices[braket]
             )
 
         orders = get_order_two(order)
-        prefactor = Rational(1, factorial(self.order_spaces[space]) ** 2)
+        n_ov = get_n_ov_from_space(space)
+        prefactor = Rational(
+            1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+        )
 
         res = 0
         for term in orders:
             res += (prefactor * s_root[term[0]] * precursor[term[1]]).expand()
         res = evaluate_deltas(res)
-        print(f"Build {space} ISR_({idx_is}, {idx_pre})^({order}) {braket} = ",
-              latex(res))
+        print(f"Build {space} ISR_({idx_is} <- {idx_pre})^({order}) {braket} "
+              f"= {latex(res)}")
         return res
 
     def amplitude_vector(self, space, indices):
         """Returns an amplitude vector for the requested space using
            the provided indices.
+           Note that, also a prefactor is returned that keeps the
+           normalization of Y if the index restrictions are dropped.
            """
 
         if len(space) != len(split_idxstring(indices)):
@@ -282,26 +296,25 @@ class intermediate_states:
             exit()
 
         idx = self.indices.get_indices(indices)
+        for ov in ["occ", "virt"]:
+            if ov not in idx:
+                idx[ov] = []
 
         # normally when lifting the index restrictions a prefactor of
-        # 1/(n!)^2 is necessary
+        # p = 1/(no! * nv!) is necessary
         # However, in order to keep the amplitude vector normalized
-        # 2 * 1/(n!)^2 is packed in each amplitude vector
-        # the remaining 2 * 1/(n!)^2 is visible in the MVP expression
-        # Note: This is only true for spaces != 'ph'!
-        prefactor = Rational(1, factorial(self.order_spaces[space]) ** 2)
+        # sqrt(p) is packed in each amplitude vector.
+        # For PP ADC this gives 1/(n!)^2 * <Y|Y> which keeps the normalization
+        # of Y. The remaining factor sqrt(p) is visible in the MVP expression
+        n_ov = get_n_ov_from_space(space)
+        prefactor = 1 / sqrt(
+            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+        )
 
-        if prefactor == 1:
-            print("no prefactor from ampl side")
-            return AntiSymmetricTensor(
-                "Y", tuple(idx["virt"]), tuple(idx["occ"])
-            )
-        else:
-            print("prefactor from ampl side: ", 2 * prefactor)
-            return (
-                2 * prefactor *
-                AntiSymmetricTensor("Y", tuple(idx["virt"]), tuple(idx["occ"]))
-            )
+        print("prefactor from ampl side: ", prefactor)
+        return prefactor * AntiSymmetricTensor(
+            "Y", tuple(idx["virt"]), tuple(idx["occ"])
+        )
 
     def __expand_S_taylor(self, order):
         """Computes the Taylor expansion of 'S^{-0.5} = (1 + x)^{-0.5} with
@@ -326,6 +339,17 @@ class intermediate_states:
         if not orders:
             orders[0] = [(order,)]
         return (diffs, orders)
+
+    def __generate_lower_spaces(self, space_str):
+        lower_spaces = []
+        n_ov = get_n_ov_from_space(space_str)
+        for i in range(min(n_ov.values())):
+            space_str = space_str.replace('p', "", 1)
+            space_str = space_str.replace('h', "", 1)
+            if not space_str:
+                break
+            lower_spaces.append(space_str)
+        return lower_spaces
 
     def pretty_precursor(self, order, space, braket):
         """Returns precursor bra/ket for a given space and order.

@@ -1,10 +1,11 @@
 from sympy.physics.secondquant import wicks, evaluate_deltas
-from sympy import Rational
+from sympy import sqrt
 
 from math import factorial
 
 from isr import get_orders_three
-from indices import check_repeated_indices, split_idxstring
+from indices import (check_repeated_indices, split_idxstring,
+                     get_n_ov_from_space)
 from misc import cached_member
 
 
@@ -14,10 +15,6 @@ class secular_matrix:
         self.gs = isr.gs
         self.h = isr.gs.h
         self.indices = isr.gs.indices
-        # {order: x}
-        # {order: {block: {indices: x}}}
-        # self.pre_matrix = {}
-        self.matrix = {}
 
     def __get_shifted_h(self, order):
         get_H = {
@@ -49,19 +46,16 @@ class secular_matrix:
                   "are not valid.")
             exit()
         for space in block.split(","):
-            if space not in self.isr.order_spaces:
+            if space not in self.isr.valid_spaces:
                 print("Requested a matrix block for an unknown space."
-                      f"Valid blocks are {list(self.isr.order_spaces.keys())}")
+                      f"Valid blocks are {list(self.isr.valid_spaces.keys())}")
                 exit()
 
-        sorted_idx = []
-        for idx in indices.split(","):
-            sorted_idx.append("".join(sorted(split_idxstring(idx))))
-        if check_repeated_indices(sorted_idx[0], sorted_idx[1]):
-            print("Indices for overlap matrix should not be equal."
+        if check_repeated_indices(indices.split(",")[0],
+                                  indices.split(",")[1]):
+            print("Indices for precursor secular matrix should not be equal."
                   f"Provided indice string: {indices}")
             exit()
-        indices = ",".join(sorted_idx)
 
         space_idx = {
             "bra": (block.split(",")[0], indices.split(",")[0]),
@@ -74,7 +68,7 @@ class secular_matrix:
             for bk in ["bra", "ket"]:
                 sp = space_idx[bk][0]
                 idx = space_idx[bk][1]
-                pre[o][bk] = self.isr.precursor(o, sp, bk, idx)
+                pre[o][bk] = self.isr.precursor(o, sp, bk, indices=idx)
 
         orders = get_orders_three(order)
         res = 0
@@ -88,13 +82,13 @@ class secular_matrix:
     @cached_member
     def isr_matrix(self, order, block, indices):
         """Computes a specific block of a specific order of the secular matrix.
-           Due to substitute_dummies care has to be taken to which matrix
-           element an individual term belongs.
-           Additionally, it is not possible to calcualte the coupling blocks
-           with this function nicely. The obtained expression seems to be
-           correct, however substitute_dummies messes with the result so all
-           terms cancel to 0.
-           The same is true for the pphh,pphh block.
+           Substitute_dummie: 1) messes around with the indices (see
+           precursor_matrix) 2) for the coupling blocks and the 'pphh,pphh'
+           block wrong index substitution causes all terms to cancel - which
+           is wrong.
+           The custom substitute_indices function may be used instead. It
+           gives correct results for ADC(2). No additional manipulation of
+           terms by hand was necessary.
            """
 
         if len(block.split(",")) != 2 or len(indices.split(",")) != 2:
@@ -103,19 +97,16 @@ class secular_matrix:
                   "are not valid.")
             exit()
         for space in block.split(","):
-            if space not in self.isr.order_spaces:
+            if space not in self.isr.valid_spaces:
                 print("Requested a matrix block for an unknown space.",
-                      f"Valid blocks are {list(self.isr.order_spaces.keys())}")
+                      f"Valid blocks are {list(self.isr.valid_spaces.keys())}")
                 exit()
 
-        sorted_idx = []
-        for idx in indices.split(","):
-            sorted_idx.append("".join(sorted(split_idxstring(idx))))
-        if check_repeated_indices(sorted_idx[0], sorted_idx[1]):
-            print("Indices for overlap matrix should not be equal.",
+        if check_repeated_indices(indices.split(",")[0],
+                                  indices.split(",")[1]):
+            print("Indices for isr secular matrix should not be equal.",
                   f"Provided indice string: {indices}")
             exit()
-        indices = ",".join(sorted_idx)
 
         space_idx = {
             "bra": (block.split(",")[0], indices.split(",")[0]),
@@ -127,20 +118,22 @@ class secular_matrix:
             sp = space_idx[bk][0]
             idx = space_idx[bk][1]
 
-            # generate additional generic indices to construct the ISR basis
+            # generate additional generic indices to construct additional
+            # precursor states for the ISR basis
+            n_ov = get_n_ov_from_space(sp)
             gen_idx = self.indices.get_isr_indices(
-                      idx, n_occ=self.isr.order_spaces[sp],
-                      n_virt=self.isr.order_spaces[sp]
+                idx, n_occ=n_ov["n_occ"], n_virt=n_ov["n_virt"]
             )
-            idx_pre = [s.name for s in gen_idx["virt"]]
-            idx_pre.extend([s.name for s in gen_idx["occ"]])
+            idx_pre = []
+            for symbols in gen_idx.values():
+                idx_pre.extend([s.name for s in symbols])
             idx_pre = "".join(idx_pre)
 
             for o in range(order + 1):
                 if o not in isr:
                     isr[o] = {}
                 isr[o][bk] = self.isr.intermediate_state(
-                    o, sp, bk, idx, idx_pre
+                    o, sp, bk, idx_is=idx, idx_pre=idx_pre
                 )
 
         orders = get_orders_three(order)
@@ -160,14 +153,16 @@ class secular_matrix:
            space='ph', block='ph,pphh', indices='ia'
            computes the singles MVP contribution from the M_{S,D} coupling
            block.
-           The ph,pphh coupling block seems to evaluate to 0, due to stupid
-           index substitution of substitute_dummies.
-           The same is true for pphh,pphh.
+           Substitute_dummies: works fine for the ph MVP. The pphh MVP however
+           evaluates to 0, due to wrong index substitution.
+           The custom substitute_indices method seems to work for all MVP
+           spaces. However, it may be necessary to cancel a few terms by hand
+           (interchange some indice names).
            """
 
         if len(mvp_space) != len(split_idxstring(indices)):
-            print(f"The indices {indices} are insufficient for the space"
-                  f"{mvp_space}.")
+            print(f"The indices {indices} are insufficient for the"
+                  f" {mvp_space} mvp.")
             exit()
         if mvp_space != block.split(",")[0]:
             print(f"The desired MVP space {mvp_space} has to be identical"
@@ -176,34 +171,31 @@ class secular_matrix:
 
         # generate additional indices for the secular matrix block
         b2 = block.split(",")[1]
+        n_ov = get_n_ov_from_space(b2)
         idx = self.indices.get_new_gen_indices(
-            n_occ=self.isr.order_spaces[b2], n_virt=self.isr.order_spaces[b2]
+            n_occ=n_ov["n_occ"], n_virt=n_ov["n_virt"]
         )
-        idx_str = [s.name for s in idx["occ"]]
-        idx_str.extend(s.name for s in idx["virt"])
+        idx_str = []
+        for symbols in idx.values():
+            idx_str.extend([s.name for s in symbols])
         idx_str = "".join(idx_str)
 
         # contruct the secular matrix
-        m = self.isr_matrix(order, block, indices + "," + idx_str)
+        m = self.isr_matrix(order, block, indices=(indices + "," + idx_str))
 
         # obtain the amplitude vector
         y = self.isr.amplitude_vector(b2, idx_str)
 
-        # Lifting index restrictions leads to a prefactor of 1/(n!)^2 for
-        # a n-fold excitation.
-        # In order to keep the MVP normalized, a factor of 2 * 1/(n!)^2
-        # is hidden inside the MVP vector, while the other part
-        # (again 2 * 1/(n!)^2) is shifted in the MVP expression
-        # Note: This is only true for mvp_spaces != 'ph'!
-        prefactor = Rational(
-            1, factorial(self.isr.order_spaces[mvp_space]) ** 2
+        # Lifting index restrictions leads to a prefactor of p = 1/(no! * nv!).
+        # In order to keep the resulting MVP normalized, a factor of sqrt(p)
+        # is hidden inside the MVP vector, while the other part (sqrt(p))
+        # is visible in the MVP expression
+        # For PP ADC this leads to 1/(n!)^2 * <R|R>, which keeps the
+        # normalization of the MVP.
+        n_ov = get_n_ov_from_space(mvp_space)
+        prefactor = 1 / sqrt(
+            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
-        if prefactor == 1:
-            print("no prefactor from sec matrix side")
-            return evaluate_deltas((m * y).expand())
-        else:
-            print("prefactor from sec matrix side: ", 2 * prefactor)
-            return (
-                evaluate_deltas((2 * prefactor * m * y).expand())
-            )
+        print("prefactor from sec matrix side: ", prefactor)
+        return evaluate_deltas((prefactor * m * y).expand())

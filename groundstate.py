@@ -39,6 +39,18 @@ class Hamiltonian:
         print("H1 = ", latex(h1))
         return h1
 
+    @cached_property
+    def one_particle(self):
+        p, q = symbols('p,q', cls=Dummy)
+        pq = Fd(p) * F(q)
+        return pq
+
+    @cached_property
+    def two_paricle(self):
+        p, q, r, s = symbols('p,q,r,s', cls=Dummy)
+        pqsr = Fd(p) * Fd(q) * F(s) * F(r)
+        return Rational(1, 4) * pqsr
+
 
 class ground_state:
     def __init__(self, hamiltonian, first_order_singles=False):
