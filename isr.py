@@ -173,7 +173,7 @@ class intermediate_states:
         return res
 
     @cached_member
-    def overlap(self, order, space, indices):
+    def overlap_precursor(self, order, space, indices):
         """Method to obtain precursor overlap matrices
            for a given order and space. Indices of the resulting
            overlap matrix element need to be provided in the form 'ia,jb'
@@ -230,16 +230,14 @@ class intermediate_states:
                   f"str, not {type(indices)}")
             exit()
 
-        overlap = {}
-        for o in range(order + 1):
-            overlap[o] = self.overlap(order, space, indices=indices)
-
-        prefactors, orders = self.expand_S_taylor(order)
+        prefactors, orders = self.expand_S_taylor(order, min_order=2)
         res = 0
         for exponent, termlist in orders.items():
             for term in termlist:
-                for o in range(len(term)):
-                    res += (prefactors[exponent] * overlap[term[o]]).expand()
+                i1 = prefactors[exponent]
+                for o in term:
+                    i1 *= self.overlap_precursor(o, space, indices=indices)
+                res += i1.expand()
         print(f"Build {space} S_root_({indices})^({order}) = {latex(res)}")
         return res
 
@@ -279,6 +277,9 @@ class intermediate_states:
         print(f"Build {space} ISR_({idx_is} <- {idx_pre})^({order}) {braket} "
               f"= {latex(res)}")
         return res
+
+    def overlap_isr(self, order, space, indices):
+        pass
 
     def amplitude_vector(self, space, indices, lr="right"):
         """Returns an amplitude vector for the requested space using
@@ -334,7 +335,6 @@ class intermediate_states:
         diffs = {0: 1}
         f = (1 + x) ** -0.5
         intermediate = f
-        # for o in range(1, int(order / 2) + 1):
         for o in range(1, int(order/min_order) + 1):
             intermediate = diff(intermediate, x)
             diffs[o] = nsimplify(intermediate.subs(x, 0) * 1 / factorial(o))
@@ -411,7 +411,7 @@ class intermediate_states:
                   f"{list(indices.keys())}.")
             exit()
         return make_pretty(
-            self.overlap(order, space, indices[space])
+            self.overlap_precursor(order, space, indices[space])
         )
 
     def pretty_s_root(self, order, space):

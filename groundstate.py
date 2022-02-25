@@ -1,10 +1,12 @@
-from sympy import symbols, Rational, latex, Dummy
+from sympy import nsimplify, symbols, Rational, latex, Dummy, diff, sympify
 from sympy.physics.secondquant import (
     AntiSymmetricTensor, NO, F, Fd, wicks, substitute_dummies
 )
 from math import factorial
 from indices import pretty_indices, indices
 from misc import cached_member, cached_property
+
+from isr import gen_order_S, get_order_two
 
 
 class Hamiltonian:
@@ -46,10 +48,10 @@ class Hamiltonian:
         return pq
 
     @cached_property
-    def two_paricle(self):
+    def two_particle(self):
         p, q, r, s = symbols('p,q,r,s', cls=Dummy)
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
-        return Rational(1, 4) * pqsr
+        return pqsr
 
 
 class ground_state:
@@ -142,3 +144,132 @@ class ground_state:
             psi += - prefactor * t * NO(operators)
         print(f"Build gs^({order}) {braket} = ", latex(psi))
         return psi
+
+    @cached_member
+    def overlap(self, order):
+        """Computes the ground state overlap matrix."""
+
+        # import gs wavefunctions
+        if order == 0:
+            return sympify(1)
+        wfn = {}
+        for o in range(order + 1):
+            if o not in wfn:
+                wfn[o] = {}
+            for bk in ["bra", "ket"]:
+                wfn[o][bk] = self.psi(o, bk)
+
+        orders = get_order_two(order)
+        res = 0
+        for term in orders:
+            i1 = wfn[term[0]]["bra"] * wfn[term[1]]["ket"]
+            res += wicks(i1, keep_only_fully_contracted=True,
+                         simplify_kronecker_deltas=True)
+        print(f"Build GS S^({order}) = {latex(res)}")
+        return res
+
+    @cached_member
+    def one_particle_dm(self, order):
+        """Computes the one particle density matrix for the ground state.
+           """
+
+        res = 0
+        orders = get_order_two(order)
+        for term in orders:
+            d = self.d_one_particle(term[1])
+            a = self.account_for_norm(term[0])
+            res += (a * d).expand()
+        return res
+
+    @cached_member
+    def two_particle_dm(self, order):
+        """Computes the two particle density matrix for the ground state.
+           Did not check any results obtained with that function!
+           Also it may be necessary to introduce a prefactor.
+           """
+
+        res = 0
+        orders = get_order_two(order)
+        for term in orders:
+            d = self.d_two_particle(term[1])
+            a = self.account_for_norm(term[0])
+            res += (a * d).expand()
+        return res
+
+    @cached_member
+    def d_one_particle(self, order):
+        """Computes the matrix element <psi|pq|psi>^(n)."""
+
+        wfn = {}
+        for o in range(order + 1):
+            wfn[o] = {}
+            for bk in ["bra", "ket"]:
+                wfn[o][bk] = self.psi(o, bk)
+
+        orders = get_order_two(order)
+        res = 0
+        for term in orders:
+            i1 = (wfn[term[0]]["bra"] * self.h.one_particle *
+                  wfn[term[1]]["ket"])
+            res += wicks(i1, keep_only_fully_contracted=True,
+                         simplify_kronecker_deltas=True)
+        return res
+
+    @cached_member
+    def d_two_particle(self, order):
+        """Computes the matrix element <psi|pqsr|psi>^(n)."""
+
+        wfn = {}
+        for o in range(order + 1):
+            wfn[o] = {}
+            for bk in ["bra", "ket"]:
+                wfn[o][bk] = self.psi(o, bk)
+
+        orders = get_order_two(order)
+        res = 0
+        for term in orders:
+            i1 = (wfn[term[0]]["bra"] * self.h.two_particle *
+                  wfn[term[1]]["ket"])
+            res += wicks(i1, keep_only_fully_contracted=True,
+                         simplify_kronecker_deltas=True)
+        return res
+
+    @cached_member
+    def account_for_norm(self, order):
+        """Computes all nth order terms of:
+           1 - sum_i S^(i) + (sum_i S^(i))^2 - ...
+           This accounts in the one and two particle dm for the
+           normalization of higher order terms.
+           S = a^2 sum_i=0 S^(i) = 1 -> a^2 = [sum_i=0 S^(i)]^(-1)
+           """
+
+        prefactors, orders = self.expand_norm_factor(order, min_order=2)
+        norm_factor = 0
+        for exponent, termlist in orders.items():
+            for o_tuple in termlist:
+                i1 = prefactors[exponent]
+                for o in o_tuple:
+                    i1 *= self.overlap(o)
+                norm_factor += i1.expand()
+        return norm_factor
+
+    def expand_norm_factor(self, order, min_order=2):
+        """Expands f = (1 + x)^(-1) in a taylor series, where x is defined as
+           x = sum_i S^(i) - the sum of overlap matrices of order i.
+           The parameter min_order defines the first non_vanishing contribution
+           to S. All lower contributions are assumed to give either 1 or 0.
+           """
+
+        x = symbols('x')
+        f = (1 + x) ** -1.0
+        intermediate = f
+        diffs = {0: 1}
+        for o in range(1, int(order/min_order) + 1):
+            intermediate = diff(intermediate, x)
+            diffs[o] = nsimplify(intermediate.subs(x, 0) * 1 / factorial(o))
+        orders = gen_order_S(order, min_order=min_order)
+        # if order below min_order just return the order, i.e. the overlap
+        # matrix of order x will be used (which then sould give either 1 or 0)
+        if not orders:
+            orders[0] = [(order,)]
+        return (diffs, orders)
