@@ -1,6 +1,7 @@
 import sympy as sy
 from sympy import symbols, Dummy, Add, S
 from sympy.physics.secondquant import substitute_dummies
+from misc import Inputerror
 
 pretty_indices = {
     "below": "ijklmno",
@@ -105,13 +106,11 @@ class indices:
         valid = ['n_occ', 'n_virt']
         for key, value in kwargs.items():
             if key not in valid:
-                print(f"{key} is not a valid option for requesting gs",
-                      "indices.")
-                exit()
+                raise Inputerror(f"{key} is not a valid option for requesting",
+                                 " gs indices.")
             if not isinstance(value, int):
-                print("Number of requested gs indices must be int, not",
-                      type(value))
-                exit()
+                raise Inputerror("Number of requested gs indices must be int, "
+                                 f"not {type(value)}.")
 
         used = self.used_indices["gs"][braket]
         return self.__get_generic_indices(used, **kwargs)
@@ -124,13 +123,11 @@ class indices:
         valid = ['n_occ', 'n_virt']
         for key, value in kwargs.items():
             if key not in valid:
-                print(f"{key} is not a valid option for requesting gs",
-                      "indices.")
-                exit()
+                raise Inputerror(f"{key} is not a valid option for requesting "
+                                 "isr indices.")
             if not isinstance(value, int):
-                print("Number of requested gs indices must be int, not",
-                      type(value))
-                exit()
+                raise Inputerror("Number of requested gs indices must be int, "
+                                 f"not {type(value)}")
 
         if parent_indices not in self.used_indices["isr"]:
             self.used_indices["isr"][parent_indices] = {'occ': [], 'virt': []}
@@ -147,13 +144,11 @@ class indices:
         get_ov = {'n_occ': "occ", 'n_virt': "virt"}
         for key, value in kwargs.items():
             if key not in get_ov:
-                print(f"{key} is not a valid option for requesting new",
-                      "generic indices.")
-                exit()
+                raise Inputerror(f"{key} is not a valid option for requesting "
+                                 "new generic indices.")
             if not isinstance(value, int):
-                print("Number of requested generic indices must be int, not",
-                      type(value))
-                exit()
+                raise Inputerror("Number of requested generic indices must be "
+                                 f"int, not {type(value)}")
 
         # no need to check any used list, just create new generic indices
         used = self.used_indices["new"]
@@ -201,9 +196,8 @@ class indices:
            """
 
         if not isinstance(indices, str):
-            print("Requested indices need to be of type str (e.g. 'ai'), not",
-                  type(indices))
-            exit()
+            raise Inputerror("Requested indices need to be of type str (e.g. "
+                             f"'ai'), not {type(indices)}")
 
         separated = split_idxstring(indices)
 
@@ -235,12 +229,11 @@ class indices:
         available = (self.specific_indices if case == "specific" else
                      self.generic_indices)
         if not available[ov]:
-            print(f"No {ov} indices for case {case} available anymore.")
-            exit()
+            raise RuntimeError(f"No {ov} indices for case {case} available "
+                               "anymore.")
         if idx not in available[ov]:
-            print(f"Could not find {ov} index {idx} in available indices "
+            raise RuntimeError(f"Could not find {ov} index {idx} in available indices "
                   f"for case {case}.")
-            exit()
 
         symbol = self.__make_symbol_new(ov, idx)
         self.__remove(case, ov, symbol, used)
@@ -257,13 +250,12 @@ class indices:
            used indices."""
 
         if not isinstance(symbol, sy.core.symbol.Dummy):
-            print("Index that is to be removed from the available list",
-                  f"needs to be a sympy symbol. Not type {type(symbol)}")
-            exit()
+            raise Inputerror("Index that is to be removed needs to be a sympy "
+                             f"symbol. Not type {type(symbol)}")
         if case not in ["generic", "specific"]:
-            print(f"Case is not recognized. Can't remove for case {case}."
-                  f"Valid cases are 'generic' and 'specific'.")
-            exit()
+            raise Inputerror(f"Case is not recognized. Can't remove for case "
+                             f"{case}. Valid cases are 'generic' and "
+                             "'specific'.")
 
         idx = symbol.name
         available = (self.specific_indices[ov] if case == "specific" else
@@ -276,10 +268,11 @@ class indices:
         # have the specific used list as used.)
         if case == "generic":
             if symbol in self.used_indices["specific"][ov]:
-                print(f"The symbol {symbol} that was already created and used "
-                      "at some point was attempted to create again, altough it"
-                      " should have been looked up in the used list.")
-                exit()
+                raise RuntimeError(f"The symbol {symbol} that was already "
+                                   "created and used at some point was "
+                                   "attempted to create again, altough it "
+                                   "should have been looked up in the used "
+                                   "list.")
             self.used_indices["specific"][ov].append(symbol)
 
     def substitute_indices(self, expr):
@@ -381,9 +374,9 @@ class indices:
         sub = []
         for ov in old_sym:
             if len(old_sym[ov]) != len(new_sym[ov]):
-                print(f"Cannot replace {len(old_sym[ov])} old indices",
-                      f"with {len(new_sym[ov])} new generic indices.")
-                exit()
+                raise RuntimeError(f"Cannot replace {len(old_sym[ov])} old ",
+                                   f"indices with {len(new_sym[ov])} new "
+                                   "generic indices.")
             for i in range(len(old_sym[ov])):
                 sub.append((old_sym[ov][i], new_sym[ov][i]))
         return expr.subs(sub, simultaneous=True)
@@ -402,8 +395,8 @@ def assign_index(idx):
     elif idx[0] in ["p", "q", "r", "s"]:
         return "general"
     else:
-        print(f"Could not assign index {idx} to occ, virt or general.")
-        exit()
+        raise Inputerror(f"Could not assign index {idx} to occ, virt or "
+                         "general.")
 
 
 def split_idxstring(string_tosplit):
@@ -472,8 +465,9 @@ def get_n_ov_from_space(space_str):
         elif letter == "p":
             ret["n_virt"] += 1
         else:
-            print(f"Invalid letter found in space string: {letter}.")
-            exit()
+            raise Inputerror(
+                f"Invalid letter found in space string {space_str}: {letter}."
+            )
     return ret
 
 

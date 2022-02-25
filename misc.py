@@ -1,5 +1,8 @@
 from functools import wraps
-from indices import split_idxstring
+
+
+class Inputerror(ValueError):
+    pass
 
 
 def cached_member(function):
@@ -8,6 +11,7 @@ def cached_member(function):
        member variable '_function_cache' of the class instance.
        """
 
+    from indices import split_idxstring
     fname = function.__name__
 
     @wraps(function)
@@ -25,11 +29,7 @@ def cached_member(function):
         # if indices in args, its also fine, however they are not
         # sorted which may cause additional calculations.
         for indices in kwargs.values():
-            if type(indices) != str:
-                print("Indices provided as kwargs musst be of type str "
-                      f"not {type(indices)}.")
-                exit()
-            idx = indices.split(",")
+            idx = transform_to_tuple(indices)
             sorted_idx = []
             for idxstring in idx:
                 sorted_idx.append("".join(
@@ -62,3 +62,16 @@ def cached_property(function):
     get.__doc__ = function.__doc__
 
     return property(get)
+
+
+def transform_to_tuple(input):
+    convertor = {
+        str: lambda x: tuple(i for i in x.split(",")),
+        list: lambda x: tuple(x),
+        tuple: lambda x: x
+    }
+    conversion = convertor.get(type(input))
+    if not conversion:
+        raise Inputerror(f"{input} of type {type(input)} is not convertable "
+                         "to tuple.")
+    return conversion(input)

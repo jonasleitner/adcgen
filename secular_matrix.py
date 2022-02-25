@@ -7,7 +7,7 @@ from itertools import product
 from isr import get_orders_three
 from indices import (check_repeated_indices, split_idxstring,
                      get_n_ov_from_space)
-from misc import cached_member
+from misc import Inputerror, cached_member, transform_to_tuple
 
 
 class secular_matrix:
@@ -41,26 +41,24 @@ class secular_matrix:
            indices by hand for those terms to cancel correctly.
            """
 
-        if len(block.split(",")) != 2 or len(indices.split(",")) != 2:
-            print("Precursor matrix requires two block and indice strings that"
-                  f"are separated by a ','. Block {block} and indice {indices}"
-                  "are not valid.")
-            exit()
-        for space in block.split(","):
+        block = transform_to_tuple(block)
+        indices = transform_to_tuple(indices)
+        if len(block) != 2 or len(indices) != 2:
+            raise Inputerror("Precursor matrix requires two block and indice "
+                  f"strings. Block {block} and indice {indices} are not valid")
+        for space in block:
             if not self.isr.check_valid_space(space):
-                print("Requested the matrix block {block} with the invalid "
-                      f"excitation space {space} for {self.isr.variant} ADC.")
-                exit()
+                raise Inputerror("Requested the matrix block {block} with the "
+                                 f"invalid excitation space {space} for "
+                                 f"{self.isr.variant} ADC.")
 
-        if check_repeated_indices(indices.split(",")[0],
-                                  indices.split(",")[1]):
-            print("Indices for precursor secular matrix should not be equal."
-                  f"Provided indice string: {indices}")
-            exit()
+        if check_repeated_indices(indices[0], indices[1]):
+            raise Inputerror("Indices for precursor secular matrix should not "
+                             f"be equal. Provided indice string: {indices}")
 
         space_idx = {
-            "bra": (block.split(",")[0], indices.split(",")[0]),
-            "ket": (block.split(",")[1], indices.split(",")[1])
+            "bra": (block[0], indices[0]),
+            "ket": (block[1], indices[1])
         }
         # import precursor states up to requested order
         pre = {}
@@ -92,26 +90,25 @@ class secular_matrix:
            terms by hand was necessary.
            """
 
-        if len(block.split(",")) != 2 or len(indices.split(",")) != 2:
-            print("Precursor matrix requires two block and indice strings that"
-                  f"are separated by a ','. Block {block} and indice {indices}"
-                  "are not valid.")
-            exit()
-        for space in block.split(","):
+        block = transform_to_tuple(block)
+        indices = transform_to_tuple(indices)
+        if len(block) != 2 or len(indices) != 2:
+            raise Inputerror("Precursor matrix requires two block and indice "
+                             f"strings. Block {block} and indice {indices}"
+                             "are not valid.")
+        for space in block:
             if not self.isr.check_valid_space(space):
-                print(f"Requested the matrix block {block} with an invalid "
-                      f"excitation space {space} for {self.isr.variant} ADC.")
-                exit()
+                raise Inputerror(f"Requested the matrix block {block} with an "
+                                 f"invalid excitation space {space} for "
+                                 f"{self.isr.variant} ADC.")
 
-        if check_repeated_indices(indices.split(",")[0],
-                                  indices.split(",")[1]):
-            print("Indices for isr secular matrix should not be equal.",
-                  f"Provided indice string: {indices}")
-            exit()
+        if check_repeated_indices(indices[0], indices[1]):
+            raise Inputerror("Indices for isr secular matrix should not be ",
+                             f"equal. Provided indice string: {indices}")
 
         space_idx = {
-            "bra": (block.split(",")[0], indices.split(",")[0]),
-            "ket": (block.split(",")[1], indices.split(",")[1])
+            "bra": (block[0], indices[0]),
+            "ket": (block[1], indices[1])
         }
         # import the ISR states up to the requested order
         isr = {}
@@ -161,17 +158,18 @@ class secular_matrix:
            (interchange some indice names).
            """
 
+        block = transform_to_tuple(block)
+        indices = transform_to_tuple(indices)[0]
         if len(mvp_space) != len(split_idxstring(indices)):
-            print(f"The indices {indices} are insufficient for the"
-                  f" {mvp_space} mvp.")
-            exit()
-        if mvp_space != block.split(",")[0]:
-            print(f"The desired MVP space {mvp_space} has to be identical"
-                  f"to the first secular matrix space: {block}.")
-            exit()
+            raise Inputerror(f"The indices {indices} are insufficient for the"
+                             f" {mvp_space} mvp.")
+        if mvp_space != block[0]:
+            raise Inputerror(f"The desired MVP space {mvp_space} has to be "
+                             f"identical to the first secular matrix space: "
+                             f"{block}.")
 
         # generate additional indices for the secular matrix block
-        b2 = block.split(",")[1]
+        b2 = block[1]
         n_ov = get_n_ov_from_space(b2)
         idx = self.indices.get_new_gen_indices(
             n_occ=n_ov["n_occ"], n_virt=n_ov["n_virt"]

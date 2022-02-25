@@ -4,7 +4,7 @@ from sympy.physics.secondquant import (
 )
 from math import factorial
 from indices import pretty_indices, indices
-from misc import cached_member, cached_property
+from misc import cached_member, cached_property, Inputerror
 
 from isr import gen_order_S, get_order_two
 
@@ -59,17 +59,14 @@ class ground_state:
         self.indices = indices()
         self.h = hamiltonian
         self.singles = first_order_singles
-        # self.energy = {}
-        # self.wfn = {}
 
     @cached_member
     def energy(self, order):
         """Returns the ground state energy of specified order."""
 
         if not isinstance(order, int):
-            print("Order for obtaining ground state wavefunction/energy"
-                  f"needs to of type int. {type(order)} is not valid.")
-            exit()
+            raise Inputerror("Order for obtaining ground state energy needs to"
+                             f" be a int. {type(order)} is not valid.")
 
         def H(o): return self.h.h0 if o == 0 else self.h.h1
         h = H(order)
@@ -99,18 +96,17 @@ class ground_state:
            """
 
         if not isinstance(order, int):
-            print("Order for obtaining ground state wavefunction/energy"
-                  f"needs to of type int. {type(order)} is not valid.")
-            exit()
+            raise Inputerror("Order for obtaining ground state wavefunction"
+                             f"needs to of type int. {type(order)} is not "
+                             "valid.")
         if braket not in ["ket", "bra"]:
-            print("Only possible to build 'bra' or 'ket' gs wavefunction"
-                  f"{braket} is not valid")
-            exit()
+            raise Inputerror("Only possible to build 'bra' or 'ket' gs "
+                             f"wavefunction {braket} is not valid")
 
         # catch 0th order wavefunction
         if order == 0:
             print(f"Build gs^({order} {braket} = 1")
-            return 1
+            return sympify(1)
 
         # generalized gs wavefunction generation
         tensor_string = {
@@ -139,7 +135,7 @@ class ground_state:
                 operators *= Fd(symbol)
             for symbol in reversed(idx["".join(get_ov[braket]('occ'))]):
                 operators *= F(symbol)
-            # prefactor correct?
+            # prefactor for lifting index restrictions
             prefactor = Rational(1, factorial(excitation) ** 2)
             psi += - prefactor * t * NO(operators)
         print(f"Build gs^({order}) {braket} = ", latex(psi))
@@ -149,9 +145,10 @@ class ground_state:
     def overlap(self, order):
         """Computes the ground state overlap matrix."""
 
-        # import gs wavefunctions
+        # catch zeroth order
         if order == 0:
             return sympify(1)
+        # import gs wavefunctions
         wfn = {}
         for o in range(order + 1):
             if o not in wfn:

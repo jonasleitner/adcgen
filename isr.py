@@ -12,7 +12,7 @@ from indices import (
     split_idxstring, make_pretty, check_repeated_indices,
     get_n_ov_from_space, assign_index
 )
-from misc import cached_member
+from misc import cached_member, Inputerror, transform_to_tuple
 
 
 class intermediate_states:
@@ -22,9 +22,8 @@ class intermediate_states:
 
         variants = ["pp", "ea", "ip"]
         if variant not in variants:
-            print(f"The ADC variant {variant} is not valid. "
-                  f"Supported variants are {variants}.")
-            exit()
+            raise Inputerror(f"The ADC variant {variant} is not valid. "
+                             f"Supported variants are {variants}.")
         self.variant = variant
 
     @cached_member
@@ -35,44 +34,45 @@ class intermediate_states:
            (e.g. indices='ia' produces |PSI_{ia}^#>).
            """
 
-        if not self.check_valid_space(space):
-            print(f"{space} is not a valid space for a {self.variant} "
-                  "ISR state.")
-            exit()
+        space = transform_to_tuple(space)
+        indices = transform_to_tuple(indices)
+        if len(space) > 1 or len(indices) > 1:
+            raise Inputerror(f"{space} or {indices} are not valid to "
+                             "construct a precursor state.")
+        if not self.check_valid_space(space[0]):
+            raise Inputerror(f"{space} is not a valid space for a "
+                             f"{self.variant} precursor state.")
         if braket not in ["bra", "ket"]:
-            print(f"Unknown precursor wavefuntion type {braket}."
-                  "Only 'bra' and 'ket' are valid.")
-            exit()
+            raise Inputerror(f"Unknown precursor wavefuntion type {braket}."
+                             "Only 'bra' and 'ket' are valid.")
 
         # check compatibiliity of indices and space
         idx_ov = {'occ': 0, 'virt': 0, 'general': 0}
-        for idx in split_idxstring(indices):
+        for idx in split_idxstring(indices[0]):
             idx_ov[assign_index(idx)] += 1
         if idx_ov['general']:
-            print(f"The provided indices {indices} include a general index.")
-            exit()
-        n_ov_space = get_n_ov_from_space(space)
+            raise Inputerror(f"The provided indices {indices} include a "
+                             "general index.")
+        n_ov_space = get_n_ov_from_space(space[0])
         if idx_ov["occ"] != n_ov_space["n_occ"] or \
                 idx_ov["virt"] != n_ov_space["n_virt"]:
-            print(f"The provided indices {indices} (occ: {idx_ov['occ']} / "
-                  f"virt: {idx_ov['virt']}) do not match the required amount "
-                  f"of indices for the space {space} (occ: "
-                  f"{n_ov_space['n_occ']} / virt: {n_ov_space['n_virt']}).")
-            exit()
+            raise Inputerror(f"The provided indices {indices} (occ: "
+                             f"{idx_ov['occ']} / virt: {idx_ov['virt']}) do "
+                             "not match the required amount of indices for the"
+                             f" space {space} (occ:{n_ov_space['n_occ']} / "
+                             f"virt: {n_ov_space['n_virt']}).")
 
         # import all bra and ket gs wavefunctions up to requested order
-        # for nicer indices iterate first over bk
         mp = {}
-        for bk in ["bra", "ket"]:
-            for o in range(order + 1):
-                if o not in mp:
-                    mp[o] = {}
+        for o in range(order + 1):
+            mp[o] = {}
+            for bk in ["bra", "ket"]:
                 mp[o][bk] = self.gs.psi(o, bk)
 
         # get all possible combinations a*b*c of the desired order
         orders = get_orders_three(order)
 
-        idx = self.indices.get_indices(indices)
+        idx = self.indices.get_indices(indices[0])
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
         # ADC results.
@@ -113,7 +113,7 @@ class intermediate_states:
                 res -= state * i1
 
         # iterate over lower excitated spaces
-        lower_spaces = self.__generate_lower_spaces(space)
+        lower_spaces = self.__generate_lower_spaces(space[0])
         for lower_space in lower_spaces:
             # get generic unique indices to generate the lower_isr_states.
             n_ov = get_n_ov_from_space(lower_space)
@@ -168,8 +168,8 @@ class intermediate_states:
                 )
                 res -= state * i1
 
-        print(f"Build precursor {space}_({indices})^({order}) {braket}:",
-              latex(res))
+        print(f"Build precursor {space[0]}_({indices[0]})^({order}) {braket}:"
+              f" {latex(res)}")
         return res
 
     @cached_member
@@ -180,42 +180,40 @@ class intermediate_states:
            which will produce S_{ia,jb}.
            """
 
-        if not isinstance(indices, str):
-            print("Indices for precursor overlap matrix must be of type",
-                  f"str, not {type(indices)}")
-            exit()
+        space = transform_to_tuple(space)
+        indices = transform_to_tuple(indices)
+        if len(indices) != 2 or len(space) != 2:
+            raise Inputerror("Necessary to provide 2 index and space strings "
+                             "for contructing a precursor overlap matrix."
+                             f"Provided: {indices}")
 
-        splitted = indices.split(",")
-        if len(splitted) != 2:
-            print("Only provide 2 strings of indices separated by a ','"
-                  f"e.g. 'ia,jb'. {indices} is not valid.")
-            exit()
-        if check_repeated_indices(splitted[0], splitted[1]):
-            print("Repeated index found in indices of overlap matrix "
-                  f"{splitted[0]}, {splitted[1]}.")
-            exit()
+        if check_repeated_indices(indices[0], indices[1]):
+            raise Inputerror("Repeated index found in indices of precursor "
+                             f"overlap matrix: {indices}.")
 
         # calculate the required precursor states.
-        get_idx = {
-            'bra': indices.split(",")[0],
-            'ket': indices.split(",")[1]
+        idx_sp = {
+            'bra': (indices[0], space[0]),
+            'ket': (indices[1], space[1])
         }
         precursor = {}
-        for o in range(order + 1):
-            precursor[o] = {}
-            for braket in ["bra", "ket"]:
-                precursor[o][braket] = self.precursor(
-                    o, space, braket, indices=get_idx[braket]
+        for braket in ["bra", "ket"]:
+            precursor[braket] = {}
+            sp = idx_sp[braket][1]
+            idx = idx_sp[braket][0]
+            for o in range(order + 1):
+                precursor[braket][o] = self.precursor(
+                    o, sp, braket, indices=idx
                 )
 
         orders = get_order_two(order)
 
         res = 0
         for term in orders:
-            res += precursor[term[0]]["bra"] * precursor[term[1]]["ket"]
+            res += precursor["bra"][term[0]] * precursor["ket"][term[1]]
         res = wicks(res, keep_only_fully_contracted=True,
                     simplify_kronecker_deltas=True)
-        print(f"Build overlap {space} S_({indices})^({order}) = {latex(res)}")
+        print(f"Build overlap {space} S_{indices}^({order}) = {latex(res)}")
         return res
 
     @cached_member
@@ -225,10 +223,12 @@ class intermediate_states:
            e.g. indices='ia,jb' produces (S^{-0.5})_{ia,jb}
            """
 
-        if not isinstance(indices, str):
-            print("Indices for S_root must be of type "
-                  f"str, not {type(indices)}")
-            exit()
+        space = transform_to_tuple(space)
+        indices = transform_to_tuple(indices)
+        if len(indices) != 2 or len(space) != 2:
+            raise Inputerror("Necessary to provide 2 index and space strings "
+                             "for contructing a precursor overlap matrix."
+                             f"Provided: {indices}")
 
         prefactors, orders = self.expand_S_taylor(order, min_order=2)
         res = 0
@@ -250,32 +250,40 @@ class intermediate_states:
            runs over idx_pre.
            """
 
+        idx_is = transform_to_tuple(idx_is)
+        idx_pre = transform_to_tuple(idx_pre)
+        space = transform_to_tuple(space)
+        if len(idx_is) != 1 or len(idx_pre) != 1 or len(space) != 1:
+            raise Inputerror("Necessary to provide 2x 1 index string and 1 "
+                             "string for contructing an intermediate state."
+                             f"Provided: space {space}, idx_is {idx_is}, "
+                             f"idx_pre {idx_pre}")
         get_s_indices = {
-            'bra': ",".join([idx_is, idx_pre]),
-            'ket': ",".join([idx_pre, idx_is])
+            'bra': ",".join([idx_is[0], idx_pre[0]]),
+            'ket': ",".join([idx_pre[0], idx_is[0]])
         }
         precursor = {}
         s_root = {}
         for o in range(order + 1):
             precursor[o] = self.precursor(
-                o, space, braket, indices=idx_pre
+                o, space[0], braket, indices=idx_pre
             )
             s_root[o] = self.s_root(
-                o, space, indices=get_s_indices[braket]
+                o, (space[0], space[0]), indices=get_s_indices[braket]
             )
 
-        orders = get_order_two(order)
-        n_ov = get_n_ov_from_space(space)
+        n_ov = get_n_ov_from_space(space[0])
         prefactor = Rational(
             1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
+        orders = get_order_two(order)
         res = 0
         for term in orders:
             res += (prefactor * s_root[term[0]] * precursor[term[1]]).expand()
         res = evaluate_deltas(res)
-        print(f"Build {space} ISR_({idx_is} <- {idx_pre})^({order}) {braket} "
-              f"= {latex(res)}")
+        print(f"Build {space[0]} ISR_({idx_is[0]} <- {idx_pre[0]})^({order}) "
+              f"{braket} = {latex(res)}")
         return res
 
     def overlap_isr(self, order, space, indices):
@@ -289,8 +297,7 @@ class intermediate_states:
            """
 
         if len(space) != len(split_idxstring(indices)):
-            print(f"Indices {indices} not valid for space {space}.")
-            exit()
+            raise Inputerror(f"Indices {indices} not valid for space {space}.")
 
         idx = self.indices.get_indices(indices)
         for ov in ["occ", "virt"]:
