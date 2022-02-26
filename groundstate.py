@@ -45,13 +45,15 @@ class Hamiltonian:
     def one_particle(self):
         p, q = symbols('p,q', cls=Dummy)
         pq = Fd(p) * F(q)
-        return pq
+        d = AntiSymmetricTensor('d', (p,), (q,))
+        return d * pq
 
     @cached_property
     def two_particle(self):
         p, q, r, s = symbols('p,q,r,s', cls=Dummy)
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
-        return pqsr
+        d = AntiSymmetricTensor('d', (p, q), (r, s))
+        return Rational(1, 4) * d * pqsr
 
 
 class ground_state:
@@ -166,8 +168,11 @@ class ground_state:
         return res
 
     @cached_member
-    def one_particle_dm(self, order):
-        """Computes the one particle density matrix for the ground state.
+    def one_particle_operator(self, order):
+        """Computes the expectation value of a one particle operator
+           for the ground state. Opted to implement the expectation value
+           instead of the OPDM, beacuse the results are more easily
+           readable (and the OPDM may be easily extracted from the result).
            """
 
         res = 0
@@ -179,8 +184,9 @@ class ground_state:
         return res
 
     @cached_member
-    def two_particle_dm(self, order):
-        """Computes the two particle density matrix for the ground state.
+    def two_particle_operator(self, order):
+        """Computes the expectation value of a two particle operator
+           for the ground state.
            Did not check any results obtained with that function!
            Also it may be necessary to introduce a prefactor.
            """
@@ -195,7 +201,9 @@ class ground_state:
 
     @cached_member
     def d_one_particle(self, order):
-        """Computes the matrix element <psi|pq|psi>^(n)."""
+        """Computes the matrix element
+           sum_pq d_{pq} <psi|pq|psi>^(n).
+           """
 
         wfn = {}
         for o in range(order + 1):
@@ -214,7 +222,9 @@ class ground_state:
 
     @cached_member
     def d_two_particle(self, order):
-        """Computes the matrix element <psi|pqsr|psi>^(n)."""
+        """Computes the matrix element
+           1/4 sum_{pqrs} d_{pqsr} <psi|pqsr|psi>^(n).
+           """
 
         wfn = {}
         for o in range(order + 1):

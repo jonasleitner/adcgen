@@ -158,8 +158,14 @@ class secular_matrix:
            (interchange some indice names).
            """
 
+        mvp_space = transform_to_tuple(mvp_space)
         block = transform_to_tuple(block)
-        indices = transform_to_tuple(indices)[0]
+        indices = transform_to_tuple(indices)
+        if len(mvp_space) != 1 or len(indices) != 1 or len(block) != 2:
+            raise Inputerror(f"Bad input for MVP: mvp_space {mvp_space} / "
+                             f"matrix block {block} / mvp indices {indices}.")
+        mvp_space = mvp_space[0]
+        indices = indices[0]
         if len(mvp_space) != len(split_idxstring(indices)):
             raise Inputerror(f"The indices {indices} are insufficient for the"
                              f" {mvp_space} mvp.")
@@ -169,11 +175,8 @@ class secular_matrix:
                              f"{block}.")
 
         # generate additional indices for the secular matrix block
-        b2 = block[1]
-        n_ov = get_n_ov_from_space(b2)
-        idx = self.indices.get_new_gen_indices(
-            n_occ=n_ov["n_occ"], n_virt=n_ov["n_virt"]
-        )
+        n_ov = get_n_ov_from_space(block[1])
+        idx = self.indices.get_new_gen_indices(**n_ov)
         idx_str = []
         for symbols in idx.values():
             idx_str.extend([s.name for s in symbols])
@@ -183,23 +186,45 @@ class secular_matrix:
         m = self.isr_matrix(order, block, indices=(indices + "," + idx_str))
 
         # obtain the amplitude vector
-        y = self.isr.amplitude_vector(b2, idx_str)
+        y = self.isr.amplitude_vector(idx_str)
 
         # Lifting index restrictions leads to a prefactor of p = 1/(no! * nv!).
-        # In order to keep the resulting MVP normalized, a factor of sqrt(p)
-        # is hidden inside the MVP vector, while the other part (sqrt(p))
-        # is visible in the MVP expression
+        # In order to keep the resulting amplitude vector normalized, a factor
+        # of sqrt(p) is hidden inside the MVP vector, while the other part
+        # (sqrt(p)) is visible in the MVP expression. This prefactor cares
+        # only about the norm of the MVP that we compute with this function.
+        # For the contraction with the guess amplitude vector another prefactor
+        # (see below) has to be introduced.
         # For PP ADC this leads to 1/(n!)^2 * <R|R>, which keeps the
         # normalization of the MVP.
         n_ov = get_n_ov_from_space(mvp_space)
-        prefactor = 1 / sqrt(
+        prefactor_mvp = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
-        print("prefactor from sec matrix side: ", prefactor)
-        return evaluate_deltas((prefactor * m * y).expand())
+        # The same argument leads to a similar prefactor for the contraction
+        # with amplitude vector. Instead of introducing a prefactor that
+        # seamingly just appears out of nowhere the prefactor that is present
+        # due to the contraction over the amplitude vector indices needs to be
+        # adjusted. Essentially the same formula and argumentation may be used
+        # only applied to a different space, namely block[1] - which is the
+        # space the sum contracts.
+        n_ov = get_n_ov_from_space(block[1])
+        prefactor_ampl = 1 / sqrt(
+            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+        )
+
+        print(f"prefactors for {mvp_space} MVP from block {block}: "
+              f"{prefactor_mvp}, {prefactor_ampl}.")
+        return evaluate_deltas(
+            (prefactor_mvp * prefactor_ampl * m * y).expand()
+        )
 
     def get_max_ptorder_spaces(self, order):
+        """Returns a dict with the maximum pt order of each space at the
+           ADC(n) level.
+           """
+
         # TODO: CHECK IF THIS IS CORRECT!!
         smallest = {
             "pp": "ph",

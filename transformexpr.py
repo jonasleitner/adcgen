@@ -1,6 +1,7 @@
 from sympy import KroneckerDelta, Add, S, latex
 from sympy.physics.secondquant import AntiSymmetricTensor
 from indices import assign_index
+from misc import Inputerror
 
 
 def sort_by_n_deltas(expr):
@@ -54,31 +55,31 @@ def sort_by_type_deltas(expr):
     return res
 
 
-def sort_by_type_fock(expr):
+def sort_by_type_tensor(expr, t_string):
     expr = expr.expand()
     if not isinstance(expr, Add):
-        print(f"Can only sort an expression that is of type {Add}."
-              f"Provided eypression is of type {type(expr)}.")
-        exit()
-    fock = {}
+        raise Inputerror(f"Can only sort expressions that are of type {Add}."
+                         f" Provided expression is of type {type(expr)}.")
+    tensor = {}
     for term in expr.args:
-        temp = set()
+        temp = []
         for t in term.args:
-            if isinstance(t, AntiSymmetricTensor) and t.symbol.name == "f":
+            if isinstance(t, AntiSymmetricTensor) and \
+                    t.symbol.name == t_string:
                 ov1 = assign_index(t.upper[0].name)
                 ov2 = assign_index(t.lower[0].name)
-                temp.add("".join(sorted(ov1[0] + ov2[0])))
-        temp = tuple(temp)
+                temp.append("".join(sorted(ov1[0] + ov2[0])))
+        temp = tuple(sorted(temp))
         if not temp:
-            temp = "no_fock"
+            temp = f"no_{t_string}"
         try:
-            fock[temp].append(term)
+            tensor[temp].append(term)
         except KeyError:
-            fock[temp] = []
-            fock[temp].append(term)
+            tensor[temp] = []
+            tensor[temp].append(term)
     res = {}
-    for f, term in fock.items():
-        res[f] = Add(*[t for t in term])
+    for ten, term in tensor.items():
+        res[ten] = Add(*[t for t in term])
     return res
 
 

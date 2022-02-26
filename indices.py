@@ -232,8 +232,8 @@ class indices:
             raise RuntimeError(f"No {ov} indices for case {case} available "
                                "anymore.")
         if idx not in available[ov]:
-            raise RuntimeError(f"Could not find {ov} index {idx} in available indices "
-                  f"for case {case}.")
+            raise RuntimeError(f"Could not find {ov} index {idx} in available "
+                               f"indices for case {case}.")
 
         symbol = self.__make_symbol_new(ov, idx)
         self.__remove(case, ov, symbol, used)

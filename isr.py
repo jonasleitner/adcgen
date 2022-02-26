@@ -1,9 +1,8 @@
-from sympy.core.function import diff
 from sympy.physics.secondquant import (
     F, Fd, evaluate_deltas, wicks, NO, AntiSymmetricTensor,
     Dagger
 )
-from sympy import symbols, latex, nsimplify, Rational, sqrt
+from sympy import symbols, latex, nsimplify, Rational, diff
 
 import numpy as np
 from math import factorial
@@ -39,7 +38,9 @@ class intermediate_states:
         if len(space) > 1 or len(indices) > 1:
             raise Inputerror(f"{space} or {indices} are not valid to "
                              "construct a precursor state.")
-        if not self.check_valid_space(space[0]):
+        space = space[0]
+        indices = indices[0]
+        if not self.check_valid_space(space):
             raise Inputerror(f"{space} is not a valid space for a "
                              f"{self.variant} precursor state.")
         if braket not in ["bra", "ket"]:
@@ -48,12 +49,12 @@ class intermediate_states:
 
         # check compatibiliity of indices and space
         idx_ov = {'occ': 0, 'virt': 0, 'general': 0}
-        for idx in split_idxstring(indices[0]):
+        for idx in split_idxstring(indices):
             idx_ov[assign_index(idx)] += 1
         if idx_ov['general']:
             raise Inputerror(f"The provided indices {indices} include a "
                              "general index.")
-        n_ov_space = get_n_ov_from_space(space[0])
+        n_ov_space = get_n_ov_from_space(space)
         if idx_ov["occ"] != n_ov_space["n_occ"] or \
                 idx_ov["virt"] != n_ov_space["n_virt"]:
             raise Inputerror(f"The provided indices {indices} (occ: "
@@ -72,7 +73,7 @@ class intermediate_states:
         # get all possible combinations a*b*c of the desired order
         orders = get_orders_three(order)
 
-        idx = self.indices.get_indices(indices[0])
+        idx = self.indices.get_indices(indices)
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
         # ADC results.
@@ -113,7 +114,7 @@ class intermediate_states:
                 res -= state * i1
 
         # iterate over lower excitated spaces
-        lower_spaces = self.__generate_lower_spaces(space[0])
+        lower_spaces = self.__generate_lower_spaces(space)
         for lower_space in lower_spaces:
             # get generic unique indices to generate the lower_isr_states.
             n_ov = get_n_ov_from_space(lower_space)
@@ -168,7 +169,7 @@ class intermediate_states:
                 )
                 res -= state * i1
 
-        print(f"Build precursor {space[0]}_({indices[0]})^({order}) {braket}:"
+        print(f"Build precursor {space}_({indices})^({order}) {braket}:"
               f" {latex(res)}")
         return res
 
@@ -238,7 +239,7 @@ class intermediate_states:
                 for o in term:
                     i1 *= self.overlap_precursor(o, space, indices=indices)
                 res += i1.expand()
-        print(f"Build {space} S_root_({indices})^({order}) = {latex(res)}")
+        print(f"Build {space} S_root_{indices}^({order}) = {latex(res)}")
         return res
 
     @cached_member
@@ -258,21 +259,25 @@ class intermediate_states:
                              "string for contructing an intermediate state."
                              f"Provided: space {space}, idx_is {idx_is}, "
                              f"idx_pre {idx_pre}")
+        idx_is = idx_is[0]
+        idx_pre = idx_pre[0]
+        space = space[0]
+
         get_s_indices = {
-            'bra': ",".join([idx_is[0], idx_pre[0]]),
-            'ket': ",".join([idx_pre[0], idx_is[0]])
+            'bra': ",".join([idx_is, idx_pre]),
+            'ket': ",".join([idx_pre, idx_is])
         }
         precursor = {}
         s_root = {}
         for o in range(order + 1):
             precursor[o] = self.precursor(
-                o, space[0], braket, indices=idx_pre
+                o, space, braket, indices=idx_pre
             )
             s_root[o] = self.s_root(
-                o, (space[0], space[0]), indices=get_s_indices[braket]
+                o, (space, space), indices=get_s_indices[braket]
             )
 
-        n_ov = get_n_ov_from_space(space[0])
+        n_ov = get_n_ov_from_space(space)
         prefactor = Rational(
             1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
@@ -282,45 +287,67 @@ class intermediate_states:
         for term in orders:
             res += (prefactor * s_root[term[0]] * precursor[term[1]]).expand()
         res = evaluate_deltas(res)
-        print(f"Build {space[0]} ISR_({idx_is[0]} <- {idx_pre[0]})^({order}) "
+        print(f"Build {space} ISR_({idx_is} <- {idx_pre})^({order}) "
               f"{braket} = {latex(res)}")
         return res
 
-    def overlap_isr(self, order, space, indices):
-        pass
+    def overlap_isr(self, order, spaces, indices):
+        """Computes the overlap matrix <I|J> in the ISR basis."""
 
-    def amplitude_vector(self, space, indices, lr="right"):
+        spaces = transform_to_tuple(spaces)
+        indices = transform_to_tuple(indices)
+        if len(spaces) != 2 or len(indices) != 2:
+            raise Inputerror("Constructing a ISR overlap matrix requires two "
+                             f"index and block strings. Provided: {spaces} / "
+                             f"{indices}.")
+
+        sp_idx = {"bra": (spaces[0], indices[0]),
+                  "ket": (spaces[1], indices[1])}
+        isr = {}
+        for bk in ["bra", "ket"]:
+            isr[bk] = {}
+            sp = sp_idx[bk][0]
+            idx = sp_idx[bk][1]
+
+            # generate additional indices for the precursor state
+            n_ov = get_n_ov_from_space(sp)
+            sym_pre = self.indices.get_isr_indices(idx, **n_ov)
+            idx_pre = []
+            for s_list in sym_pre.values():
+                idx_pre.extend([s.name for s in s_list])
+            idx_pre = "".join(idx_pre)
+
+            for o in range(order + 1):
+                isr[bk][o] = self.intermediate_state(
+                    o, sp, bk, idx_is=idx, idx_pre=idx_pre
+                )
+
+        orders = get_order_two(order)
+        res = 0
+        for term in orders:
+            i1 = isr["bra"][term[0]] * isr["ket"][term[1]]
+            res += wicks(i1, keep_only_fully_contracted=True,
+                         simplify_kronecker_deltas=True)
+        print(f"Build ISR overlap {spaces} S_{indices}^({order}) = ",
+              latex(res))
+        return res
+
+    def amplitude_vector(self, indices, lr="right"):
         """Returns an amplitude vector for the requested space using
            the provided indices.
-           Note that, also a prefactor is returned that keeps the
-           normalization of Y if the index restrictions are dropped.
            """
 
-        if len(space) != len(split_idxstring(indices)):
-            raise Inputerror(f"Indices {indices} not valid for space {space}.")
-
         idx = self.indices.get_indices(indices)
+        # add empty list if e.g. only occ indices have been provided (IP)
         for ov in ["occ", "virt"]:
             if ov not in idx:
                 idx[ov] = []
-
-        # normally when lifting the index restrictions a prefactor of
-        # p = 1/(no! * nv!) is necessary
-        # However, in order to keep the amplitude vector normalized
-        # sqrt(p) is packed in each amplitude vector.
-        # For PP ADC this gives 1/(n!)^2 * <Y|Y> which keeps the normalization
-        # of Y. The remaining factor sqrt(p) is visible in the MVP expression
-        n_ov = get_n_ov_from_space(space)
-        prefactor = 1 / sqrt(
-            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
-        )
 
         t_string = {
             "right": "Y",
             "left": "X",
         }
-        print("prefactor from ampl side: ", prefactor)
-        return prefactor * AntiSymmetricTensor(
+        return AntiSymmetricTensor(
             t_string[lr], tuple(idx["virt"]), tuple(idx["occ"])
         )
 
