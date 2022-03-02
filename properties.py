@@ -8,7 +8,7 @@ from misc import Inputerror, cached_member, transform_to_tuple
 from secular_matrix import secular_matrix
 
 
-class operator:
+class properties:
     def __init__(self, isr):
         self.isr = isr
         self.gs = isr.gs
@@ -16,18 +16,18 @@ class operator:
         self.indices = isr.gs.indices
         self.variant = isr.variant
 
-    def __get_shifted_opdm_operator(self, order):
+    def __shifted_one_particle_op(self, order):
         d = self.h.one_particle if order == 0 else 0
         return d - self.gs.one_particle_operator(order)
 
-    def __get_shifted_tpdm_operator(self, order):
+    def __shifted_two_particle_op(self, order):
         d = self.h.two_particle if order == 0 else 0
         return d - self.gs.two_particle_operator(order)
 
     @cached_member
     def one_particle_block(self, order, block, indices):
         """Computes sum_pq d_{pq} <I|pq|J>^(n).
-           The prefactors are not correct!
+           Results checked for ADC(2)!
            """
 
         block = transform_to_tuple(block)
@@ -74,7 +74,7 @@ class operator:
         res = 0
         for term in orders:
             i1 = (prefactor_l * prefactor_r * left * isr["bra"][term[0]] *
-                  self.__get_shifted_opdm_operator(term[1]) *
+                  self.__shifted_one_particle_op(term[1]) *
                   isr["ket"][term[2]] * right)
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
@@ -100,12 +100,13 @@ class operator:
                 idx0 = "".join(idx0)
                 idx1 = "".join(idx1)
                 res += self.opdm_block(order, b, idx0 + "," + idx1)
-        return res
+        return NotImplementedError()
 
     @cached_member
-    def d_two_particle(self, order, block, indices):
-        """Computes <I|pqsr|J>^(n)."""
-        # TODO: Prefactors here?
+    def two_particle_block(self, order, block, indices):
+        """Computes 1/4 sum_pqrs d_{pqrs} <I|pqsr|J>^(n).
+           Did not check any results yet!
+           """
 
         block = transform_to_tuple(block)
         indices = transform_to_tuple(indices)
@@ -139,7 +140,7 @@ class operator:
         # what about prefactors here??
         for term in orders:
             i1 = (isr["bra"][term[0]] *
-                  self.__get_shifted_tpdm_operator(term[1]) *
+                  self.__shifted_two_particle_op(term[1]) *
                   isr["ket"][term[2]])
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)

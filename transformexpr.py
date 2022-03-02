@@ -66,9 +66,11 @@ def sort_by_type_tensor(expr, t_string):
         for t in term.args:
             if isinstance(t, AntiSymmetricTensor) and \
                     t.symbol.name == t_string:
-                ov1 = assign_index(t.upper[0].name)
-                ov2 = assign_index(t.lower[0].name)
-                temp.append("".join(sorted(ov1[0] + ov2[0])))
+                ovu = [assign_index(idx.name)[0] for idx in t.upper]
+                ovl = [assign_index(idx.name)[0] for idx in t.lower]
+                # ov1 = assign_index(t.upper[0].name)
+                # ov2 = assign_index(t.lower[0].name)
+                temp.append("".join(ovu) + "".join(ovl))
         temp = tuple(sorted(temp))
         if not temp:
             temp = f"no_{t_string}"
