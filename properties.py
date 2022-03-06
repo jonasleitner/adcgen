@@ -135,13 +135,27 @@ class properties:
                     o, sp, bk, idx_is=idx, idx_pre=idx_pre
                 )
 
+        left = self.isr.amplitude_vector(indices[0], "left")
+        right = self.isr.amplitude_vector(indices[1], "right")
+        # again not use the full prefactors from lifting the sum restrictions
+        # but sqrt(1/(no! * nv!)) to keep the left and right amplitude vectors
+        # normalized.
+        n_ov = get_n_ov_from_space(block[0])
+        prefactor_l = 1 / sqrt(
+            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+        )
+        n_ov = get_n_ov_from_space(block[1])
+        prefactor_r = 1 / sqrt(
+            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+        )
+
         orders = get_orders_three(order)
         res = 0
         # what about prefactors here??
         for term in orders:
-            i1 = (isr["bra"][term[0]] *
+            i1 = (prefactor_l * prefactor_r * left * isr["bra"][term[0]] *
                   self.__shifted_two_particle_op(term[1]) *
-                  isr["ket"][term[2]])
+                  isr["ket"][term[2]] * right)
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
         return res
