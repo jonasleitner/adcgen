@@ -12,6 +12,7 @@ def cached_member(function):
        """
 
     from indices import split_idxstring
+    from inspect import signature
     fname = function.__name__
 
     @wraps(function)
@@ -24,18 +25,62 @@ def cached_member(function):
         except KeyError:
             fun_cache = self._function_cache[fname] = {}
 
-        # Indices should be in kwargs -> sort them before using
-        # them as key in the cache.
-        # if indices in args, its also fine, however they are not
-        # sorted which may cause additional calculations.
-        for indices in kwargs.values():
-            idx = transform_to_tuple(indices)
-            sorted_idx = []
-            for idxstring in idx:
-                sorted_idx.append("".join(
-                    sorted(split_idxstring(idxstring))
-                ))
-            args += (",".join(sorted_idx),)
+        # all spaces and indices that are in kwargs are sorted
+        # to bring them in a common form to avoid unneccesary
+        # additional calculations
+        # NOTE: This currently requires the name of all function arguments
+        # that describe indices to start with an i
+        kwargs_key = {}
+        for var, value in kwargs.items():
+            # catch orders -> hand over as int
+            if isinstance(value, int):
+                kwargs_key[var] = value
+                continue
+            val = transform_to_tuple(value)
+            # catch braket -> hand them over as str
+            if len(val) == 1 and val[0] in ["bra", "ket"]:
+                kwargs_key[var] = value
+                continue
+            if var == "braket":
+                raise Inputerror("Probably a typo in 'bra'/'ket'. Provided "
+                                 f"braket string '{value}'.")
+            # check whether the str is a space or index
+            is_index = False
+            for sp in val:
+                for letter in sp:
+                    # the second condition allows to request the single
+                    # index "h".. for whatever reason one should do that
+                    # but restricts the name of all arguments that describe
+                    # indices to start with an "i"
+                    if letter not in ["p,h"] and var[0] == "i":
+                        is_index = True
+            # sort: indices, idx_pre, idx_is -> hand over as str
+            if is_index:
+                sorted_idx = []
+                for idxstring in val:
+                    sorted_idx.append("".join(
+                        sorted(split_idxstring(idxstring))
+                    ))
+                kwargs_key[var] = ",".join(sorted_idx)
+            # sort: space, block, mvp_space -> hand over as str
+            else:
+                sorted_sp = []
+                for sp in val:
+                    sorted_sp.append("".join(sorted(sp)))
+                kwargs_key[var] = ",".join(sorted_sp)
+
+        # add the kwargs arguments in the appropriate order to args
+        for argument in signature(function).parameters.keys():
+            try:
+                args += (kwargs_key[argument],)
+                del kwargs_key[argument]
+            except KeyError:
+                continue
+        if kwargs_key:
+            raise TypeError("Wrong or too many arguments provided for function"
+                            f" '{function.__name__}'. The function takes: "
+                            f"{list(signature(function).parameters.keys())}. "
+                            f"Provided: {list(kwargs.keys())}.")
 
         try:
             return fun_cache[args]

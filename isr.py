@@ -44,8 +44,8 @@ class intermediate_states:
             raise Inputerror(f"{space} is not a valid space for a "
                              f"{self.variant} precursor state.")
         if braket not in ["bra", "ket"]:
-            raise Inputerror(f"Unknown precursor wavefuntion type {braket}."
-                             "Only 'bra' and 'ket' are valid.")
+            raise Inputerror(f"Unknown precursor wavefuntion type '{braket}'."
+                             " Only 'bra' and 'ket' are valid.")
 
         # check compatibiliity of indices and space
         idx_ov = {'occ': 0, 'virt': 0, 'general': 0}
@@ -394,17 +394,17 @@ class intermediate_states:
            """
 
         smallest = {
-            "pp": "ph",
-            "ip": "h",
-            "ea": "p",
+            "pp": ["ph", "hp"],
+            "ip": ["h"],
+            "ea": ["p"],
         }
-        if space_str == smallest[self.variant]:
+        if space_str in smallest[self.variant]:
             return True
 
         lower_spaces = self.__generate_lower_spaces(space_str)
         valid = False
         for s in lower_spaces:
-            if s == smallest[self.variant]:
+            if s in smallest[self.variant]:
                 valid = True
         return valid
 
