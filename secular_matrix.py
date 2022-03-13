@@ -26,7 +26,7 @@ class secular_matrix:
         return h - self.gs.energy(order)
 
     @cached_member
-    def precursor_matrix(self, order, block, indices):
+    def precursor_matrix_block(self, order, block, indices):
         """Computes a certain block of the secular matrix in the
            basis of the precursor states.
            Substitute_dummies: 1) messes around with the indices -> very hard
@@ -79,12 +79,12 @@ class secular_matrix:
         return res
 
     @cached_member
-    def isr_matrix(self, order, block, indices):
+    def isr_matrix_block(self, order, block, indices):
         """Computes a specific block of a specific order of the secular matrix.
            Substitute_dummie: 1) messes around with the indices (see
-           precursor_matrix) 2) for the coupling blocks and the 'pphh,pphh'
-           block wrong index substitution causes all terms to cancel - which
-           is wrong.
+           precursor_matrix_block) 2) for the coupling blocks and the
+           'pphh,pphh' block wrong index substitution causes all terms to
+           cancel - which is wrong.
            The custom substitute_indices function may be used instead. It
            gives correct results for ADC(2). No additional manipulation of
            terms by hand was necessary.
@@ -144,7 +144,7 @@ class secular_matrix:
         return res
 
     @cached_member
-    def mvp(self, order, mvp_space, block, indices):
+    def mvp_block_order(self, order, mvp_space, block, indices):
         """Computes the Matrix vector product for the provided space by
            contracting the specified matrix block with an Amplitudevector.
            For example:
@@ -183,7 +183,9 @@ class secular_matrix:
         idx_str = "".join(idx_str)
 
         # contruct the secular matrix
-        m = self.isr_matrix(order, block, indices=(indices + "," + idx_str))
+        m = self.isr_matrix_block(
+            order, block, indices=(indices + "," + idx_str)
+        )
 
         # obtain the amplitude vector
         y = self.isr.amplitude_vector(idx_str)
@@ -191,8 +193,8 @@ class secular_matrix:
         # Lifting index restrictions leads to a prefactor of p = 1/(no! * nv!).
         # In order to keep the resulting amplitude vector normalized, a factor
         # of sqrt(p) is hidden inside the MVP vector, while the other part
-        # (sqrt(p)) is visible in the MVP expression. This prefactor cares
-        # only about the norm of the MVP that we compute with this function.
+        # (sqrt(p)) is visible in the MVP expression. This prefactor takes care
+        # about the norm of the resulting MVP.
         # For the contraction with the guess amplitude vector another prefactor
         # (see below) has to be introduced.
         # For PP ADC this leads to 1/(n!)^2 * <R|R>, which keeps the
@@ -208,7 +210,7 @@ class secular_matrix:
         # due to the contraction over the amplitude vector indices needs to be
         # adjusted. Essentially the same formula and argumentation may be used
         # only applied to a different space, namely block[1] - which is the
-        # space the sum contracts.
+        # space the sum contracts over.
         n_ov = get_n_ov_from_space(block[1])
         prefactor_ampl = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
@@ -220,12 +222,11 @@ class secular_matrix:
             (prefactor_mvp * prefactor_ampl * m * y).expand()
         )
 
-    def get_max_ptorder_spaces(self, order):
+    def max_ptorder_spaces(self, order):
         """Returns a dict with the maximum pt order of each space at the
            ADC(n) level.
            """
 
-        # TODO: CHECK IF THIS IS CORRECT!!
         smallest = {
             "pp": "ph",
             "ip": "h",
@@ -245,7 +246,7 @@ class secular_matrix:
            Returns a dict with the block tuple (s1, s2) as key.
            """
 
-        max_orders = self.get_max_ptorder_spaces(order)
+        max_orders = self.max_ptorder_spaces(order)
         min_space = min(max_orders)
         blocks = list(product(max_orders.keys(), max_orders.keys()))
         ret = {}

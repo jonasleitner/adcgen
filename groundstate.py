@@ -55,6 +55,18 @@ class Hamiltonian:
         d = AntiSymmetricTensor('d', (p, q), (r, s))
         return Rational(1, 4) * d * pqsr
 
+    @cached_property
+    def ip_transition(self):
+        p = symbols('p', cls=Dummy)
+        d = AntiSymmetricTensor('d', (), (p,))
+        return d * F(p)
+
+    @cached_property
+    def ea_transition(self):
+        p = symbols('p', cls=Dummy)
+        d = AntiSymmetricTensor('d', (p,), ())
+        return d * Fd(p)
+
 
 class ground_state:
     def __init__(self, hamiltonian, first_order_singles=False):

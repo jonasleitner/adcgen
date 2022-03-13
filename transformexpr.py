@@ -1,4 +1,4 @@
-from sympy import KroneckerDelta, Add, S, latex
+from sympy import KroneckerDelta, Add, S, Mul, latex
 from sympy.physics.secondquant import AntiSymmetricTensor
 from indices import assign_index
 from misc import Inputerror
@@ -7,9 +7,8 @@ from misc import Inputerror
 def sort_by_n_deltas(expr):
     expr = expr.expand()
     if not isinstance(expr, Add):
-        print(f"Can only sort an expression that is of type {Add}."
-              f"Provided expression is of type {type(expr)}")
-        exit()
+        raise Inputerror("Can only filter an expression that is of "
+                         f"type {Add}. Provided: {type(expr)}")
     deltas = {}
     for term in expr.args:
         delta_count = 0
@@ -30,9 +29,8 @@ def sort_by_n_deltas(expr):
 def sort_by_type_deltas(expr):
     expr = expr.expand()
     if not isinstance(expr, Add):
-        print(f"Can only sort an expression that is of type {Add}."
-              f"Provided eypression is of type {type(expr)}.")
-        exit()
+        raise Inputerror("Can only filter an expression that is of "
+                         f"type {Add}. Provided: {type(expr)}")
     deltas = {}
     for term in expr.args:
         temp = []
@@ -56,6 +54,11 @@ def sort_by_type_deltas(expr):
 
 
 def sort_by_type_tensor(expr, t_string):
+    """Sorts an expression according the blocks of a Tensor, i.e.
+       the upper and lower indices are assigned to occ/virt.
+       The terms are collected in a dict with e.g. 'ov' or 'ooov'
+       as keys."""
+
     expr = expr.expand()
     if not isinstance(expr, Add):
         raise Inputerror(f"Can only sort expressions that are of type {Add}."
@@ -66,11 +69,9 @@ def sort_by_type_tensor(expr, t_string):
         for t in term.args:
             if isinstance(t, AntiSymmetricTensor) and \
                     t.symbol.name == t_string:
-                ovu = [assign_index(idx.name)[0] for idx in t.upper]
-                ovl = [assign_index(idx.name)[0] for idx in t.lower]
-                # ov1 = assign_index(t.upper[0].name)
-                # ov2 = assign_index(t.lower[0].name)
-                temp.append("".join(ovu) + "".join(ovl))
+                ov_up = [assign_index(s.name)[0] for s in t.upper]
+                ov_lo = [assign_index(s.name)[0] for s in t.lower]
+                temp.append("".join(ov_up + ov_lo))
         temp = tuple(sorted(temp))
         if not temp:
             temp = f"no_{t_string}"
@@ -88,16 +89,24 @@ def sort_by_type_tensor(expr, t_string):
 def filter_tensor(expr, t_string):
     """Returns all terms of an expression that contain an AntiSymmetriTensor
        with a certain name. Also returns terms that contain the comlpex
-       conjugate assuming that the cc. Tensor shares the same name but includes
-       just one or two 'c' additionally."""
+       conjugate assuming that the c.c. Tensor shares the same name but
+       includes just additional 'c' (possible multiple).
+       """
 
     expr = expr.expand()
     if not isinstance(expr, Add):
-        print(f"Can only filter an expression that is of type {Add}."
-              f" Provided expression is of type {type(expr)}.")
-        exit()
+        raise Inputerror("Can only filter an expression that is of "
+                         f"type {Add}. Provided: {type(expr)}")
     tensor = []
     for term in expr.args:
+        # if the term only only consists of a single object the loop
+        # below does not work
+        if not isinstance(term, Mul):
+            try:
+                if term.symbol.name.replace('c', '') == t_string:
+                    tensor.append(term)
+            except AttributeError:
+                continue
         for t in term.args:
             if isinstance(t, AntiSymmetricTensor) and \
                     t.symbol.name.replace('c', '') == t_string:
@@ -107,16 +116,15 @@ def filter_tensor(expr, t_string):
 
 def sort_tensor_sum_indices(expr, t_string):
     """Sorts an expression by sorting the terms depending on the
-       number of indices of an AntiSymmetricTensor that are summed
-       over. There is an additional splitting that depends on the
-       kind of index (occ/virt).
+       number and type (ovv/virt) of indices of an AntiSymmetricTensor
+       that are contracted. The function assumes that indices are summed
+       if they appear more than once in the term.
        """
 
     expr = expr.expand()
     if not isinstance(expr, Add):
-        print(f"Can only filter an expression that is of type {Add}."
-              f" Provided expression is of type {type(expr)}.")
-        exit()
+        raise Inputerror("Can only filter an expression that is of "
+                         f"type {Add}. Provided: {type(expr)}")
     # prefilter all terms that contain the desired tensor
     tensor = filter_tensor(expr, t_string)
     if len(tensor.args) < 2:
@@ -167,3 +175,51 @@ def sort_tensor_sum_indices(expr, t_string):
     for ov, terms in temp.items():
         ret[ov] = Add(*[t for t in terms])
     return ret
+
+
+def change_tensor_name(expr, old, new):
+    """Changes the Name of a AntiSymmetricTensor from old to new,
+       while keeping the indices as they are.
+       """
+
+    if not isinstance(old, str) and not isinstance(new, str):
+        raise Inputerror(f"Tensor strings need to be of type {str}. "
+                         f"Provided: {type(old)} old, {type(new)} new.")
+    expr = expr.expand()
+    if not isinstance(expr, Add):
+        raise Inputerror("Can only filter an expression that is of "
+                         f"type {Add}. Provided: {type(expr)}")
+
+    to_change = filter_tensor(expr, old)
+    if to_change is S.Zero:
+        print(f"There is no Tensor with name '{old}' present in:\n{expr}")
+        return expr
+    remaining = expr - to_change  # gives S.Zero if all terms contain old
+
+    def replace(term, old, new):
+        ret = 1
+        # term consists only of a single term, e.g. x
+        if not isinstance(term, Mul):
+            try:
+                if term.symbol.name == old:
+                    ret *= AntiSymmetricTensor(new, term.upper, term.lower)
+            except AttributeError:
+                raise RuntimeError("Something went wrong during filtering."
+                                   f"Trying to replace Tensor '{old}' in "
+                                   f"{expr}, but do not find the tensor.")
+        else:  # multiple terms, e.g. x*y
+            for t in term.args:
+                if isinstance(t, AntiSymmetricTensor) and t.symbol.name == old:
+                    ret *= AntiSymmetricTensor(new, t.upper, t.lower)
+                else:
+                    ret *= t
+        return ret
+
+    ret = 0
+    if isinstance(to_change, Add):
+        for term in to_change.args:
+            ret += replace(term, old, new)
+    # to_change consists only of 1 term
+    else:
+        ret += replace(to_change, old, new)
+    return ret + remaining
