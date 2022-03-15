@@ -86,32 +86,43 @@ def sort_by_type_tensor(expr, t_string):
     return res
 
 
-def filter_tensor(expr, t_string):
-    """Returns all terms of an expression that contain an AntiSymmetriTensor
-       with a certain name. Also returns terms that contain the comlpex
-       conjugate assuming that the c.c. Tensor shares the same name but
-       includes just additional 'c' (possible multiple).
+def filter_tensor(expr, *t_string):
+    """Returns terms of an expression that contain all of the requested
+       tensors. The function also filters for the complex conjugate
+       tensors, where it is assumed that the names of T and T* differ only
+       by (one or more) 'c'.
        """
 
+    for t in t_string:
+        if "c" in t:
+            raise Inputerror("Can not search for a tensor with 'c' in it's "
+                             "name. The function filters it to "
+                             "also return the complex conjugate of the desired"
+                             f" tensor. Provided tensor strings: {t_string}.")
+
+    def check_term(term, *t_string):
+        found = []
+        if isinstance(term, Mul):
+            for t in term.args:
+                if isinstance(t, AntiSymmetricTensor) and \
+                        t.symbol.name.replace("c", "") in t_string:
+                    found.append(t.symbol.name.replace("c", ""))
+        else:
+            if isinstance(term, AntiSymmetricTensor) and \
+                    term.symbol.name.replace("c", "") in t_string:
+                found.append(term.symbol.name.replace("c", ""))
+        if all(t in found for t in t_string):
+            return term
+        return S.Zero
+
     expr = expr.expand()
-    if not isinstance(expr, Add):
-        raise Inputerror("Can only filter an expression that is of "
-                         f"type {Add}. Provided: {type(expr)}")
-    tensor = []
-    for term in expr.args:
-        # if the term only only consists of a single object the loop
-        # below does not work
-        if not isinstance(term, Mul):
-            try:
-                if term.symbol.name.replace('c', '') == t_string:
-                    tensor.append(term)
-            except AttributeError:
-                continue
-        for t in term.args:
-            if isinstance(t, AntiSymmetricTensor) and \
-                    t.symbol.name.replace('c', '') == t_string:
-                tensor.append(term)
-    return Add(*tensor)
+    tensor = 0
+    if isinstance(expr, Add):
+        for term in expr.args:
+            tensor += check_term(term, *t_string)
+    else:
+        tensor += check_term(expr, *t_string)
+    return tensor
 
 
 def sort_tensor_sum_indices(expr, t_string):
@@ -223,3 +234,123 @@ def change_tensor_name(expr, old, new):
     else:
         ret += replace(to_change, old, new)
     return ret + remaining
+
+
+def make_real(expr):
+    """Makes all tensors real, i.e. removes the cc in their names.
+       Additionally, the function tries to simplify the expression
+       by allowing V_ab^ij = V_ij^ab // <ij||ab> = <ab||ij>.
+       """
+    # 3) for symmetric tensors: d_ij = d_ji... but how to define symmetric
+    #    tensors?
+    #    maybe create another function where the user can specify symmetric
+    #    tensors
+    #    But e.g. the fock matrix is always symmetric
+    # and how to deal with V and symmetric f simultaneously? would require:
+    # switching first f -> check all ERI if simplify possible -> second f etc.
+
+    expr = expr.expand()
+
+    def make_tensor_real(term):
+        ret = 1
+        if not isinstance(term, Mul):
+            try:
+                real_string = term.symbol.name.replace('c', '')
+                ret *= AntiSymmetricTensor(real_string, term.upper, term.lower)
+            except AttributeError:
+                ret *= term
+        else:
+            for t in term.args:
+                try:
+                    real_string = t.symbol.name.replace('c', '')
+                    ret *= AntiSymmetricTensor(real_string, t.upper, t.lower)
+                except AttributeError:
+                    ret *= t
+        return ret
+
+    ret = 0
+    # 1) replace txcc with tx
+    if isinstance(expr, Add):
+        for term in expr.args:
+            ret += make_tensor_real(term)
+    else:
+        ret += make_tensor_real(expr)
+
+    def interchange_upper_lower(term, t_string):
+        ret = 1
+        if not isinstance(term, Mul):
+            try:
+                if term.symbol.name == t_string:
+                    ret *= AntiSymmetricTensor(
+                        t_string, term.lower, term.upper
+                    )
+            except AttributeError:
+                raise RuntimeError("Something went wrong during filtering."
+                                   f"Trying swap upper and lower ERI indices "
+                                   f"in {expr}, but do not find the ERI.")
+        else:
+            for t in term.args:
+                if isinstance(t, AntiSymmetricTensor) and \
+                        t.symbol.name == t_string:
+                    ret *= AntiSymmetricTensor(t_string, t.lower, t.upper)
+                else:
+                    ret *= t
+        return ret
+
+    def swap_eri_braket(eri_terms):
+        # iterate over all ERI terms. If it is possible to simplify
+        # the expression by interchanging the ERI bra/ket, the function
+        # will be called again with the simplified expression, until
+        # no simplifications are possible anymore (or only a single
+        # term is left).
+        for term in eri_terms.args:
+            interchanged = interchange_upper_lower(term, "V")
+            new = eri_terms - term + interchanged
+            if not isinstance(new, Add):  # only 1 term left -> finished
+                return new
+            elif len(new.args) < len(eri_terms.args):
+                return swap_eri_braket(new)
+        return eri_terms
+
+    # 2) allow V_ij^ab = V_ab^ij
+    eri_terms = filter_tensor(ret, "V")
+    remaining = ret - eri_terms
+    if isinstance(eri_terms, Add):
+        eri_terms = swap_eri_braket(eri_terms)
+        ret = remaining + eri_terms
+    return ret
+
+
+def remove_tensor(expr, t_string):
+    """Removes a tensor that is present in each term of the expression."""
+
+    expr = expr.expand()
+    to_remove = filter_tensor(expr, t_string)
+    if expr - to_remove is not S.Zero:
+        raise RuntimeError(f"Not all terms in {latex(expr)} contain "
+                           f"the tensor {t_string}.")
+
+    def remove(term, t_string):
+        ret = 1
+        if isinstance(term, Mul):
+            for t in term.args:
+                if isinstance(t, AntiSymmetricTensor) and \
+                        t.symbol.name == t_string:
+                    continue
+                ret *= t
+        else:  # only a single object: x... must be the tensor to remove
+            if not isinstance(term, AntiSymmetricTensor) and \
+                    term.symbol.name != t_string:
+                raise RuntimeError("Something went wrong during filtering. "
+                                   f"The term {term} does not contain the "
+                                   f"tensor {t_string}.")
+            ret *= term
+        return ret
+
+    ret = 0
+    if isinstance(expr, Add):
+        for term in expr.args:
+            ret += remove(term, t_string)
+    else:
+        ret += remove(expr, t_string)
+    return ret
