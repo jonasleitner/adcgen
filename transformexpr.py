@@ -1,5 +1,5 @@
 from sympy import KroneckerDelta, Add, S, Mul, latex
-from sympy.physics.secondquant import AntiSymmetricTensor
+from sympy.physics.secondquant import AntiSymmetricTensor, F, Fd
 from indices import assign_index
 from misc import Inputerror
 
@@ -236,20 +236,15 @@ def change_tensor_name(expr, old, new):
     return ret + remaining
 
 
-def make_real(expr):
+def make_real(expr, *sym_tensors):
     """Makes all tensors real, i.e. removes the cc in their names.
        Additionally, the function tries to simplify the expression
-       by allowing V_ab^ij = V_ij^ab // <ij||ab> = <ab||ij>.
+       by allowing V_ab^ij = V_ij^ab // <ij||ab> = <ab||ij> and
+       f_ij = f_ji. Additional tensors may be provided.
+       Multiple occurences of the same tensor in a term are not
+       supported atm.
        """
-    # 3) for symmetric tensors: d_ij = d_ji... but how to define symmetric
-    #    tensors?
-    #    maybe create another function where the user can specify symmetric
-    #    tensors
-    #    But e.g. the fock matrix is always symmetric
-    # and how to deal with V and symmetric f simultaneously? would require:
-    # switching first f -> check all ERI if simplify possible -> second f etc.
-
-    expr = expr.expand()
+    from itertools import combinations
 
     def make_tensor_real(term):
         ret = 1
@@ -268,14 +263,6 @@ def make_real(expr):
                     ret *= t
         return ret
 
-    ret = 0
-    # 1) replace txcc with tx
-    if isinstance(expr, Add):
-        for term in expr.args:
-            ret += make_tensor_real(term)
-    else:
-        ret += make_tensor_real(expr)
-
     def interchange_upper_lower(term, t_string):
         ret = 1
         if not isinstance(term, Mul):
@@ -286,8 +273,9 @@ def make_real(expr):
                     )
             except AttributeError:
                 raise RuntimeError("Something went wrong during filtering."
-                                   f"Trying swap upper and lower ERI indices "
-                                   f"in {expr}, but do not find the ERI.")
+                                   f"Trying swap upper and lower {t_string} "
+                                   f"indices in {latex(expr)}, but do not find"
+                                   f" {t_string}.")
         else:
             for t in term.args:
                 if isinstance(t, AntiSymmetricTensor) and \
@@ -297,28 +285,162 @@ def make_real(expr):
                     ret *= t
         return ret
 
-    def swap_eri_braket(eri_terms):
-        # iterate over all ERI terms. If it is possible to simplify
-        # the expression by interchanging the ERI bra/ket, the function
-        # will be called again with the simplified expression, until
-        # no simplifications are possible anymore (or only a single
-        # term is left).
-        for term in eri_terms.args:
-            interchanged = interchange_upper_lower(term, "V")
-            new = eri_terms - term + interchanged
-            if not isinstance(new, Add):  # only 1 term left -> finished
-                return new
-            elif len(new.args) < len(eri_terms.args):
-                return swap_eri_braket(new)
-        return eri_terms
+    def swap_tensors(t_terms, *t_strings):
+        # swap the indices of all possible combinations of the requested
+        # tensors, e.g. for V, f -> V / f / V,f
+        # iterate over all terms and try all combinations in each term
+        # if two terms match and may be combined -> start over again from
+        # the beginning with the new expression
+        # t_terms needs to contain all t_strings
 
-    # 2) allow V_ij^ab = V_ab^ij
-    eri_terms = filter_tensor(ret, "V")
-    remaining = ret - eri_terms
-    if isinstance(eri_terms, Add):
-        eri_terms = swap_eri_braket(eri_terms)
-        ret = remaining + eri_terms
-    return ret
+        combs = [
+            list(combinations(t_strings, i))
+            for i in range(1, len(t_strings) + 1)
+            ]
+        for term in t_terms.args:
+            for n_swaps in combs:
+                for comb in n_swaps:
+                    temp = term
+                    for tensor in comb:
+                        interchanged = interchange_upper_lower(temp, tensor)
+                        new = t_terms - temp + interchanged
+                        if not isinstance(new, Add):
+                            return new
+                        elif len(new.args) < len(t_terms.args):
+                            return swap_tensors(new, *t_strings)
+                        temp = interchanged
+        return t_terms
+
+    def prescan_terms(t_terms, *t_strings):
+        # prescan and collect the indices of of all terms that
+        # are wothwhile trying to simplify
+
+        # collect all indices of the desired tensors
+        indices = []  # list(dict(set()))
+        for term in t_terms.args:
+            temp = {}
+            if not isinstance(term, Mul):
+                if isinstance(term, AntiSymmetricTensor) and \
+                        term.symbol.name in t_strings:
+                    up = "".join(sorted([s.name for s in term.upper]))
+                    lo = "".join(sorted([s.name for s in term.lower]))
+                    temp[term.symbol.name] = {up, lo}
+                else:
+                    raise RuntimeError("Something went wrong during filtering."
+                                       " Do not find {t_string} in {term}.")
+            else:
+                for t in term.args:
+                    if isinstance(t, AntiSymmetricTensor) and \
+                            t.symbol.name in t_strings:
+                        up = "".join(sorted([s.name for s in t.upper]))
+                        lo = "".join(sorted([s.name for s in t.lower]))
+                        temp[t.symbol.name] = {up, lo}
+            indices.append(temp)
+        if len(t_terms.args) != len(indices):
+            raise RuntimeError(f"Found {len(indices)} occurences of tensor "
+                               f"{t_strings}, but have only "
+                               f"{len(t_terms.args)} terms.")
+        matching_terms = []
+        # store all terms that are already matched -> avoid double counting
+        matched = []
+        for i, term in enumerate(indices):
+            temp = [i]
+            if i in matched:
+                continue
+            matched.append(i)
+            for j in range(i + 1, len(indices)):
+                match = True
+                for t, idx in term.items():
+                    if idx == indices[j][t]:
+                        continue
+                    else:
+                        match = False
+                if match:
+                    temp.append(j)
+                    matched.append(j)
+            if len(temp) > 1:
+                matching_terms.append(temp)
+        return matching_terms
+
+    for t in sym_tensors:
+        if not isinstance(t, str):
+            raise Inputerror("Tensor string must be of type str, not "
+                             f"{type(t)} {t}.")
+    expr = expr.expand()
+    ret = 0
+    # 1) replace txcc with tx
+    if isinstance(expr, Add):
+        for term in expr.args:
+            ret += make_tensor_real(term)
+    else:
+        ret += make_tensor_real(expr)
+
+    # 2) allow V_ij^ab = V_ab^ij / f_ij = f_ji / d_ij = d_ji for any other
+    #    user provided tensor
+
+    for t in ["V", "f"]:  # add V and f to tensors if not provided
+        if t not in sym_tensors:
+            sym_tensors += (t,)
+    combs = [
+        list(combinations(sym_tensors, r))
+        for r in range(1, len(sym_tensors) + 1)
+    ]
+    # partition the terms according the tensors included, e.g. terms with
+    # (only!) V, (only!) f and terms with V and f
+    t_terms = {}
+    for n_tensors in combs:
+        for comb in n_tensors:
+            terms = filter_tensor(ret, *comb)
+            if terms is not S.Zero:
+                t_terms[comb] = terms
+    only_t = {}
+    # iterate over combinations, starting with the full combination
+    for comb in sorted(t_terms, key=len, reverse=True):
+        # combination of all tensors -> nothing to subtract (V*f)
+        if len(comb) == len(sym_tensors):
+            only_t[comb] = t_terms[comb]
+        # smaller combination -> need to subtract all pure higher combinations
+        # to obtain only terms that contain the combination and nothing else
+        # (atm V also contains terms V*f etc)
+        else:
+            temp = t_terms[comb]
+            for only_comb, only_terms in only_t.items():
+                if len(only_comb) > len(comb) and \
+                        set(comb).issubset(only_comb):
+                    temp -= only_terms
+            only_t[comb] = temp
+    # collect terms without any relevant tensors
+    remaining = ret
+    for terms in only_t.values():
+        remaining -= terms
+
+    # check if partition is correct
+    is_zero = ret - remaining
+    for terms in only_t.values():
+        is_zero -= terms
+    if is_zero is not S.Zero:
+        raise RuntimeError("Partition did not work correctly. The following "
+                           f"should be 0:\n{latex(is_zero)}")
+
+    res = remaining
+    for t_strings, terms in only_t.items():
+        if not isinstance(terms, Add):
+            res += terms
+            continue
+        # indices of terms that may be simplified
+        matching_terms = prescan_terms(terms, *t_strings)
+        temp = 0
+        swapped = []
+        for match in matching_terms:
+            to_check = Add(*[terms.args[i] for i in match])
+            swapped.extend(match)
+            temp += swap_tensors(to_check, *t_strings)
+        temp += Add(*[
+            terms.args[i] for i in range(len(terms.args)) if i not in swapped
+        ])
+        res += temp
+
+    return res
 
 
 def remove_tensor(expr, t_string):
@@ -354,3 +476,149 @@ def remove_tensor(expr, t_string):
     else:
         ret += remove(expr, t_string)
     return ret
+
+
+def simplify(expr, *sym_tensors):
+    # simplify expr by interchanging indice names to collect terms
+
+    def index_positions(obj, *sym_tensors):
+        # input: a single object that is part of the Mul object, e.g. t_ij^ab
+        # tensor: name, upper/lower // delta // create // annihilate
+        ret = {}
+        if isinstance(obj, AntiSymmetricTensor):
+            upper = [i for i in obj.upper]
+            lower = [i for i in obj.lower]
+            # if tensor is symmetric f_ia = f_ai -> upper=lower
+            if obj.symbol.name in sym_tensors:
+                idx = upper + lower
+                for i in idx:
+                    if i not in ret:
+                        ret[i] = []
+                    ret[i].append("tensor_" + obj.symbol.name)
+            else:
+                for i in upper:
+                    if i not in ret:
+                        ret[i] = []
+                    ret[i].append("tensor_" + obj.symbol.name + "_upper")
+                for i in lower:
+                    if i not in ret:
+                        ret[i] = []
+                    ret[i].append("tensor_" + obj.symbol.name + "_lower")
+        elif isinstance(obj, KroneckerDelta):
+            for i in obj.free_symbols:
+                ret[i] = ["delta"]
+        elif isinstance(obj, F):
+            i = next(iter(obj.free_symbols))  # there can only be 1 index
+            ret[i] = ["create"]
+        elif isinstance(obj, Fd):
+            i = next(iter(obj.free_symbols))  # there can only be one index
+            ret[i] = ["annihilate"]
+        # in case of prefactors return empty dict
+        return ret
+
+    def term_pattern(term, *sym_tensors):
+        ret = {"occ": [], "virt": []}
+        indices = {}
+        if isinstance(term, Mul):
+            for t in term.args:
+                for i, occurence in index_positions(t, *sym_tensors).items():
+                    if i not in indices:
+                        indices[i] = []
+                    indices[i].extend(occurence)
+        else:  # term consists only of a single obj x
+            for i, occurence in index_positions(term, *sym_tensors).items():
+                if i not in indices:
+                    indices[i] = []
+                indices[i].extend(occurence)
+        for i, occurence in indices.items():
+            ret[assign_index(i.name)].append((i, *occurence))
+        return ret
+
+    for t in sym_tensors:
+        if not isinstance(t, str):
+            raise Inputerror(f"Tensor string {t} must be of type str, "
+                             f"not {type(t)}.")
+
+    expr = expr.expand()
+    if not isinstance(expr, Add):
+        print("Can't simplify an expression that consists of a single term.")
+        return expr
+
+    # collect index name, type and occurence in each term
+    pattern = {}  # {#_term: {length: l, pattern: {ov: [(name, occurence)]}}}
+    for i, term in enumerate(expr.args):
+        pattern[i] = {}
+        # number of tensors deltas etc. in the term, including prefactors!
+        pattern[i]["length"] = len(term.args) if isinstance(term, Mul) else 1
+        pattern[i]["pattern"] = term_pattern(term, *sym_tensors)
+    # print(pattern)
+
+    equal_terms = {}
+    matched_terms = []
+    # iterate over terms and compare length and pattern
+    for term_n, lp in pattern.items():
+        matched_terms.append(term_n)
+        for other_term_n, other_lp in pattern.items():
+            # skip term_n and terms that have been matched already
+            if other_term_n in matched_terms:
+                continue
+            # the length of the terms may only differ by 1 (by a prefactor)
+            # and the terms need to share the same amount of o/v indices
+            if not abs(lp["length"] - other_lp["length"]) <= 1 or not \
+                    len(lp["pattern"]["occ"]) == \
+                    len(other_lp["pattern"]["occ"]) or not \
+                    len(lp["pattern"]["virt"]) == \
+                    len(other_lp["pattern"]["virt"]):
+                continue
+            matched_ov = []
+            sub = []  # collect equal indices as tuple
+            for ov in ["occ", "virt"]:
+                if not all(matched_ov):
+                    continue  # occ already did not match -> skip virt
+                p1 = lp["pattern"][ov]  # [(name, occurences),]
+                p2 = other_lp["pattern"][ov]
+                equal_idx = []  # count equal indices independent of their name
+                # can only map each index in term2 to 1 index in term1
+                # makes logically sense and otherwise weird stuf may happen
+                matched_idx = []
+                # check which indices in both terms are equal
+                # if all occurences are equal the indices are equal
+                for idx1 in p1:
+                    for idx2 in p2:
+                        if idx2[0] in matched_idx:
+                            continue
+                        if all(ele in idx2[1:] for ele in idx1[1:]):
+                            matched_idx.append(idx2[0])
+                            equal_idx.append((idx2[0], idx1[0]))
+                            break
+                # found a match for all indices
+                if len(equal_idx) == len(p1):
+                    matched_ov.append(True)
+                    sub_idx = []  # only need idx pairs that are not equal
+                    for pair in equal_idx:
+                        if pair[0] != pair[1]:
+                            sub_idx.append(pair)
+                    sub.extend(sub_idx)
+            # term and other_term are equal if all indices are matched for o/v.
+            # But only when there is something to do, i.e. some indices need to
+            # be in sub (possible to be empty if a symmetric tensor is defined,
+            # but indices are already equal and only need to be swapt
+            # -> make real needs to be used in this case)
+            if matched_ov and all(matched_ov) and sub:
+                if term_n not in equal_terms:
+                    equal_terms[term_n] = {}
+                equal_terms[term_n][other_term_n] = sub
+                matched_terms.append(other_term_n)
+    ret = 0
+    matched_terms = []  # to construct the unchanged remainder
+    for term_n in equal_terms:
+        matched_terms.append(term_n)
+        ret += expr.args[term_n]
+        for other_term_n in equal_terms[term_n]:
+            matched_terms.append(other_term_n)
+            # substitute indices in other_term
+            sub = equal_terms[term_n][other_term_n]
+            ret += expr.args[other_term_n].subs(sub, simultaneous=True)
+    remainder = Add(*[expr.args[i] for i in range(len(expr.args))
+                      if i not in matched_terms])
+    return ret + remainder

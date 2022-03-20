@@ -58,14 +58,19 @@ class Hamiltonian:
     @cached_property
     def ip_transition(self):
         p = symbols('p', cls=Dummy)
-        d = AntiSymmetricTensor('d', (), (p,))
+        d = AntiSymmetricTensor('d', tuple(), (p,))
         return d * F(p)
 
     @cached_property
     def ea_transition(self):
         p = symbols('p', cls=Dummy)
-        d = AntiSymmetricTensor('d', (p,), ())
+        d = AntiSymmetricTensor('d', (p,), tuple())
         return d * Fd(p)
+
+    def dip_transition(self):
+        p, q = symbols('p,q', cls=Dummy)
+        d = AntiSymmetricTensor('d', tuple(), (p, q))
+        return Rational(1, 2) * d * F(p) * F(q)
 
 
 class ground_state:

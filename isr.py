@@ -19,11 +19,18 @@ class intermediate_states:
         self.gs = mp
         self.indices = mp.indices
 
-        variants = ["pp", "ea", "ip"]
-        if variant not in variants:
+        variants = {
+            "pp": ["ph", "hp"],
+            "ea": ["p"],
+            "ip": ["h"],
+            "dip": ["hh"],
+        }
+        if variant not in variants.keys():
             raise Inputerror(f"The ADC variant {variant} is not valid. "
-                             f"Supported variants are {variants}.")
+                             "Supported variants are "
+                             f"{list(variants.keys())}.")
         self.variant = variant
+        self.min_space = variants[variant]
 
     @cached_member
     def precursor(self, order, space, braket, indices):
@@ -332,9 +339,10 @@ class intermediate_states:
               latex(res))
         return res
 
+    @cached_member
     def amplitude_vector(self, indices, lr="right"):
-        """Returns an amplitude vector for the requested space using
-           the provided indices.
+        """Returns an amplitude vector using the provided indices.
+           They are sorted alphabetically before use.
            """
 
         idx = self.indices.get_indices(indices)
@@ -393,18 +401,13 @@ class intermediate_states:
            the chosen ADC variant.
            """
 
-        smallest = {
-            "pp": ["ph", "hp"],
-            "ip": ["h"],
-            "ea": ["p"],
-        }
-        if space_str in smallest[self.variant]:
+        if space_str in self.min_space:
             return True
 
         lower_spaces = self.__generate_lower_spaces(space_str)
         valid = False
         for s in lower_spaces:
-            if s in smallest[self.variant]:
+            if s in self.min_space:
                 valid = True
         return valid
 

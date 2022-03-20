@@ -20,9 +20,10 @@ class properties:
     def __transition_operator(self, order):
         operator = {
             "pp": self.__shifted_one_particle_op,
-            # D_0 = <Psi|D|Psi> = 0 for ip and ea -> no shift
+            # D_0 = <Psi|D|Psi> = 0 for ip, ea and dip -> no shift
             "ip": lambda o: self.h.ip_transition if o == 0 else 0,
             "ea": lambda o: self.h.ea_transition if o == 0 else 0,
+            "dip": lambda o: self.h.dip_transition if o == 0 else 0,
         }
         op = operator.get(self.variant, None)
         if op:
@@ -72,8 +73,8 @@ class properties:
                     o, sp, bk, idx_is=idx, idx_pre=idx_pre
                 )
 
-        left = self.isr.amplitude_vector(indices[0], "left")
-        right = self.isr.amplitude_vector(indices[1], "right")
+        left = self.isr.amplitude_vector(indices=indices[0], lr="left")
+        right = self.isr.amplitude_vector(indices=indices[1], lr="right")
         # again not use the full prefactors from lifting the sum restrictions
         # but sqrt(1/(no! * nv!)) to keep the left and right amplitude vectors
         # normalized.
@@ -173,8 +174,8 @@ class properties:
                     o, sp, bk, idx_is=idx, idx_pre=idx_pre
                 )
 
-        left = self.isr.amplitude_vector(indices[0], "left")
-        right = self.isr.amplitude_vector(indices[1], "right")
+        left = self.isr.amplitude_vector(indices=indices[0], lr="left")
+        right = self.isr.amplitude_vector(indices=indices[1], lr="right")
         # again not use the full prefactors from lifting the sum restrictions
         # but sqrt(1/(no! * nv!)) to keep the left and right amplitude vectors
         # normalized.
@@ -277,7 +278,7 @@ class properties:
             )
 
         # import left amplitude vector
-        amplitude = self.isr.amplitude_vector(indices, "left")
+        amplitude = self.isr.amplitude_vector(indices=indices, lr="left")
         prefactor = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )

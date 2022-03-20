@@ -188,7 +188,7 @@ class secular_matrix:
         )
 
         # obtain the amplitude vector
-        y = self.isr.amplitude_vector(idx_str)
+        y = self.isr.amplitude_vector(indices=idx_str, lr="right")
 
         # Lifting index restrictions leads to a prefactor of p = 1/(no! * nv!).
         # In order to keep the resulting amplitude vector normalized, a factor
@@ -227,12 +227,7 @@ class secular_matrix:
            ADC(n) level.
            """
 
-        smallest = {
-            "pp": "ph",
-            "ip": "h",
-            "ea": "p",
-        }
-        space = smallest[self.isr.variant]
+        space = self.isr.min_space[0]
         ret = {space: order}
         for s in range(1, int(order/2) + 1):
             space = "p" + space + "h"

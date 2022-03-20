@@ -37,13 +37,16 @@ def cached_member(function):
                 kwargs_key[var] = value
                 continue
             val = transform_to_tuple(value)
-            # catch braket -> hand them over as str
-            if len(val) == 1 and val[0] in ["bra", "ket"]:
+            # catch brakek and lr (amplitude) -> hand them over as str
+            if len(val) == 1 and val[0] in ["bra", "ket", "left", "right"]:
                 kwargs_key[var] = value
                 continue
             if var == "braket":
                 raise Inputerror("Probably a typo in 'bra'/'ket'. Provided "
                                  f"braket string '{value}'.")
+            elif var == "lr":
+                raise Inputerror("Probably a typo in 'left'/'right'. "
+                                 f"Provided string: {value}.")
             # check whether the str is a space or index
             is_index = False
             for sp in val:
