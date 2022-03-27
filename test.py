@@ -12,8 +12,8 @@ from secular_matrix import secular_matrix
 from transformexpr import make_real, change_tensor_name, filter_tensor, remove_tensor, simplify, sort_by_n_deltas, sort_by_type_deltas, sort_by_type_tensor, sort_tensor_sum_indices
 from misc import cached_member, transform_to_tuple
 
-# i, j, k, l, m, n, o = symbols('i,j,k,l,m,n,o', below_fermi=True, cls=Dummy)
-# a, b, c, d, e, f, g = symbols('a,b,c,d,e,f,g', above_fermi=True, cls=Dummy)
+i, j, k, l, m, n, o = symbols('i,j,k,l,m,n,o', below_fermi=True, cls=Dummy)
+a, b, c, d, e, f, g = symbols('a,b,c,d,e,f,g', above_fermi=True, cls=Dummy)
 # p, q, r, s = symbols('p,q,r,s', cls=Dummy)
 
 h = Hamiltonian(canonical=False)
@@ -23,37 +23,35 @@ m = secular_matrix(isr)
 op = properties(isr)
 
 # TODO: check canonical hamiltonian result.
-a = op.one_particle_operator(adc_order=2)
-a = mp.indices.substitute_indices(a)
-a = change_tensor_name(a, "Y", "X")
-print(latex(a))
-a = sort_by_type_tensor(a, "d")
-for t, expr in a.items():
-    print(f"{len(expr.args)} terms with d {t}:\n{latex(expr)}")
-b = a[("ov",)] + a[("vo",)]
-b = make_real(b, "d")
-b = simplify(b, "d")
-b = make_real(b, "d")
-b = simplify(b, "d")
+bla = op.one_particle_operator(2)
+bla = mp.indices.substitute_indices(bla)
+bla = change_tensor_name(bla, "X", "Y")
+# print(latex(bla))
+bla = sort_by_type_tensor(bla, "d", symmetric=False)
+for t, expr in bla.items():
+    s = simplify(expr, True, "d")
+    print(f"{len(expr.args)} terms with d {t}:\n{latex(expr)}\n\n",
+          latex(s), "\n", len(s.args))
+
 print()
-print(latex(b))
+s = simplify(bla[("ov",)] - bla[("vo",)], True, "d")
+print(latex(s))
+if s == S.Zero:
+    print("IT WORKS!!1!!!!!111!!!!")
 
 # v = AntiSymmetricTensor("V", (i,j), (a,b))
-# v1 = AntiSymmetricTensor("V", (j,i), (b,a))
+# v1 = AntiSymmetricTensor("V", (k,l), (a,b))
 # v2 = AntiSymmetricTensor("V", (a,b), (i,j))
 # t = AntiSymmetricTensor("t", tuple(), tuple())
 # f = AntiSymmetricTensor("f", (i,), (a,))
-# f1 = AntiSymmetricTensor("f", (k,), (b,))
-# f2 = AntiSymmetricTensor("f", (k,), (a,))
-# d = AntiSymmetricTensor("d", tuple(), tuple())
+# f1 = AntiSymmetricTensor("f", (j,), (b,))
+# f2 = AntiSymmetricTensor("f", (a,), (i,))
+# d = AntiSymmetricTensor("d", (i,), (a,))
+# d1 = AntiSymmetricTensor("d", (j,), (b,))
 
 # print(latex(make_real(
-#     v*f*t + v2*f*t + v*f1*t + v2*f1*t + v*t + v2*t + f*t + f1*t + v1*t + f2*t + v1*f2*t + d + f*d, "d"
+#     v*f*t + v2*f*t + v*f2*t + v2*f2*t + v1*f*t + v*t + v2*t + v1*t + f*t + f2*t + f1*t + v
 # )))
-
-# print(latex(simplify(v*f + v1*f1)))
-# print(KroneckerDelta(i,j).free_symbols)
-# print(next(iter(F(i).free_symbols)))
-# print(Fd(i).free_symbols)
-# print(AntiSymmetricTensor("t", (i,j), (a,b)).upper)
-# Rational(1,2).free_symbols
+# print(latex(make_real(
+#     v*f*f1 + v*f + f + v + f*f1
+# )))
