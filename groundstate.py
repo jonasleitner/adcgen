@@ -10,21 +10,19 @@ from isr import gen_order_S, get_order_two
 
 
 class Hamiltonian:
-    def __init__(self, canonical=True):
-        self.canonical = canonical
 
     @cached_property
     def h0(self):
         p = symbols('p', cls=Dummy)
-        if self.canonical:
-            f = AntiSymmetricTensor('f', (p,), (p,))
-            pp = Fd(p) * F(p)
-            h0 = f * pp
-        else:
-            q = symbols('q', cls=Dummy)
-            f = AntiSymmetricTensor('f', (p,), (q,))
-            pq = Fd(p) * F(q)
-            h0 = f * pq
+        # if self.canonical:
+        #     f = AntiSymmetricTensor('f', (p,), (p,))
+        #     pp = Fd(p) * F(p)
+        #     h0 = f * pp
+        # else:
+        q = symbols('q', cls=Dummy)
+        f = AntiSymmetricTensor('f', (p,), (q,))
+        pq = Fd(p) * F(q)
+        h0 = f * pq
         print("H0 = ", latex(h0))
         return h0
 
