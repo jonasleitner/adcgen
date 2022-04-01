@@ -5,52 +5,69 @@ from misc import Inputerror, transform_to_tuple
 
 
 def sort_by_n_deltas(expr):
+    """Sort terms in the expression according to the number of deltas"""
+
+    def count_deltas(term):
+        counter = 0
+        if isinstance(term, Mul):
+            for t in term.args:
+                data = __obj_data(t)
+                if data["type"] == "delta":
+                    counter += 1
+        else:
+            data = __obj_data(term)
+            if data["type"] == "delta":
+                counter += data["exponent"]
+        return counter
+
     expr = expr.expand()
-    if not isinstance(expr, Add):
-        raise Inputerror("Can only filter an expression that is of "
-                         f"type {Add}. Provided: {type(expr)}")
-    deltas = {}
-    for term in expr.args:
-        delta_count = 0
-        for t in term.args:
-            if isinstance(t, KroneckerDelta):
-                delta_count += 1
-        try:
-            deltas[delta_count].append(term)
-        except KeyError:
-            deltas[delta_count] = []
-            deltas[delta_count].append(term)
-    res = {}
-    for n_d, terms in deltas.items():
-        res[n_d] = Add(*[t for t in terms])
-    return res
+    ret = {}
+    if isinstance(expr, Add):
+        for term in expr.args:
+            key = count_deltas(term)
+            if key not in ret:
+                ret[key] = 0
+            ret[key] += term
+    else:
+        ret[count_deltas(expr)] = expr
+    return ret
 
 
 def sort_by_type_deltas(expr):
+    """Sort the terms in an expression according to the type of deltas
+       (if the delta indices are occ or virt indices).
+       """
+
+    def delta_types(term):
+        ret = []
+        if isinstance(term, Mul):
+            for t in term.args:
+                data = __obj_data(t)
+                if data["type"] == "delta":
+                    ov1 = assign_index(data["preferred"].name)[0]
+                    ov2 = assign_index(data["killable"].name)[0]
+                    ret.append("".join(sorted(ov1 + ov2)))
+        else:
+            data = __obj_data(term)
+            if data["type"] == "delta":
+                ov1 = assign_index(data["preferred"].name)[0]
+                ov2 = assign_index(data["killable"].name)[0]
+                ret.append("".join(sorted(ov1 + ov2)))
+        if not ret:
+            ret = ["no_deltas"]
+        return tuple(ret)
+
     expr = expr.expand()
-    if not isinstance(expr, Add):
-        raise Inputerror("Can only filter an expression that is of "
-                         f"type {Add}. Provided: {type(expr)}")
-    deltas = {}
-    for term in expr.args:
-        temp = []
-        for t in term.args:
-            if isinstance(t, KroneckerDelta):
-                ov1 = assign_index(t.preferred_index.name)
-                ov2 = assign_index(t.killable_index.name)
-                temp.append("".join(sorted(ov1[0] + ov2[0])))
-        temp = tuple(temp)
-        if not temp:
-            temp = "no_deltas"
-        try:
-            deltas[temp].append(term)
-        except KeyError:
-            deltas[temp] = []
-            deltas[temp].append(term)
-    res = {}
-    for d, terms in deltas.items():
-        res[d] = Add(*[t for t in terms])
-    return res
+    ret = {}
+    if isinstance(expr, Add):
+        for term in expr.args:
+            key = delta_types(term)
+            if key not in ret:
+                ret[key] = 0
+            ret[key] += term
+    else:
+        ret[delta_types(expr)] = expr
+    return ret
 
 
 def __obj_data(obj):
@@ -66,25 +83,28 @@ def __obj_data(obj):
     }
 
     ret = {}
-    if isinstance(obj, Pow):
+    if isinstance(obj, Pow):  # Power object
         ret.update(__obj_data(obj.args[0]))
         ret["exponent"] = obj.args[1]
         return ret
     try:
         ret["type"] = types[type(obj)]
-    except KeyError:
+    except KeyError:   # prefactor / unknown objects
         ret["type"] = "prefactor"
+        if len(obj.free_symbols) != 0:
+            raise Inputerror(f"Unknown object {latex(obj)} of type "
+                             f"{type(obj)}.")
         return ret
     if isinstance(obj, AntiSymmetricTensor):
         ret["name"] = obj.symbol.name
         ret["upper"] = obj.upper
         ret["lower"] = obj.lower
-        ret["exponent"] = 1
     elif isinstance(obj, KroneckerDelta):
         ret["preferred"] = obj.preferred_index
         ret["killable"] = obj.killable_index
     else:  # create/annihilate
         ret["index"] = obj.args[0]
+    ret["exponent"] = 1
     return ret
 
 
@@ -93,36 +113,55 @@ def sort_by_type_tensor(expr, t_string, symmetric=False):
        the upper and lower indices are assigned to occ/virt.
        The terms are collected in a dict with e.g. 'ov' or 'ooov'
        as keys."""
-    # TODO: treat Pow objects
+
+    def assign_term(term, t_string, symmetric):
+        # determines which block of the desired tensor occures in the term
+        # (if the tensor occures at all)
+        ret = []
+        if isinstance(term, Mul):
+            for t in term.args:
+                data = __obj_data(t)
+                if data["type"] == "tensor" and data["name"] == t_string:
+                    ov_up = sorted(
+                        [assign_index(s.name)[0] for s in data["upper"]]
+                    )
+                    ov_lo = sorted(
+                        [assign_index(s.name)[0] for s in data["lower"]]
+                    )
+                    if symmetric:
+                        ov = "".join(sorted(ov_up + ov_lo))
+                    else:
+                        ov = "".join(ov_up + ov_lo)
+                    ret.append(ov)
+        else:
+            data = __obj_data(term)
+            if data["type"] == "tensor" and data["name"] == t_string:
+                ov_up = sorted(
+                    [assign_index(s.name)[0] for s in data["upper"]]
+                )
+                ov_lo = sorted(
+                    [assign_index(s.name)[0] for s in data["lower"]]
+                )
+                if symmetric:
+                    ov = "".join(sorted(ov_up + ov_lo))
+                else:
+                    ov = "".join(ov_up, ov_lo)
+                ret.append(ov)
+        if not ret:
+            ret = [f"no_{t_string}"]
+        return tuple(ret)
 
     expr = expr.expand()
-    if not isinstance(expr, Add):
-        raise Inputerror(f"Can only sort expressions that are of type {Add}."
-                         f" Provided expression is of type {type(expr)}.")
-    tensor = {}
-    for term in expr.args:
-        temp = []
-        for t in term.args:
-            if isinstance(t, AntiSymmetricTensor) and \
-                    t.symbol.name == t_string:
-                ov_up = [assign_index(s.name)[0] for s in t.upper]
-                ov_lo = [assign_index(s.name)[0] for s in t.lower]
-                if symmetric:
-                    temp.append("".join(sorted(ov_up + ov_lo)))
-                else:
-                    temp.append("".join(ov_up + ov_lo))
-        temp = tuple(sorted(temp))
-        if not temp:
-            temp = f"no_{t_string}"
-        try:
-            tensor[temp].append(term)
-        except KeyError:
-            tensor[temp] = []
-            tensor[temp].append(term)
-    res = {}
-    for ten, term in tensor.items():
-        res[ten] = Add(*[t for t in term])
-    return res
+    ret = {}
+    if isinstance(expr, Add):
+        for term in expr.args:
+            key = assign_term(term, t_string, symmetric)
+            if key not in ret:
+                ret[key] = 0
+            ret[key] += term
+    else:
+        ret[assign_term(term, t_string, symmetric)] = expr
+    return ret
 
 
 def filter_tensor(expr, t_strings, strict=False):
@@ -200,78 +239,102 @@ def sort_tensor_contracted_indices(expr, t_string):
        that are contracted. The function assumes that indices are summed
        if they appear more than once in the term.
        """
-    # TODO: treat Pow objects
 
-    expr = expr.expand()
-    if not isinstance(expr, Add):
-        raise Inputerror("Can only filter an expression that is of "
-                         f"type {Add}. Provided: {type(expr)}")
-    # prefilter all terms that contain the desired tensor
-    tensor = filter_tensor(expr, t_string, strict=False)
-    if len(tensor.args) < 2:
-        print("The expression contains at most 1 term with "
-              f"the tensor {t_string}. No need to filter according "
-              "to contracted tensor indices.")
-        return tensor
-    ret = {}
-    # get all terms that do not contain the tensor
-    if expr - tensor != S.Zero:
-        ret[f'no_{t_string}'] = expr - tensor
-
-    temp = {}
-    for term in tensor.args:
-        # first get all the indices that are present in the Mul object
-        # and count how often they occur
+    def term_tensor_contr(term, t_string):
+        # 1) count how often each index occurs in the term
         idx = {}
-        for t in term.args:
-            for s in t.free_symbols:
+        if isinstance(term, Mul):
+            for t in term.args:
+                for s in t.free_symbols:
+                    if isinstance(s, Dummy):
+                        if s in idx:
+                            idx[s] += 1
+                        else:
+                            idx[s] = 0
+        else:
+            for s in term.free_symbols:
                 if isinstance(s, Dummy):
                     if s in idx:
                         idx[s] += 1
                     else:
                         idx[s] = 0
-        # now check how many indices in upper and lower occur more
-        # than once in the expr (einstein sum convention).
-        found = False
-        for t in term.args:
-            if isinstance(t, AntiSymmetricTensor) and \
-                    t.symbol.name.replace('c', '') == t_string:
-                if found:
-                    print(f"Found more than occurence of the tensor {t_string}"
-                          f" in {latex(term)}. The function assumes there "
-                          "exists only 1.")
-                    exit()
-                upper_sum = [
-                    assign_index(s.name)[0] for s in t.upper if idx[s]
+        # 2) check how often each index of the desired tensor occurs in the
+        #    term, i.e. if it is contracted or not (einstein sum convention)
+        ret = {}
+        contracted = ""
+        if isinstance(term, Mul):
+            for t in term.args:
+                data = __obj_data(t)
+                if data["type"] == "tensor" and data["name"] == t_string:
+                    contr_up = [
+                        assign_index(s.name)[0] for s in data["upper"]
+                        if idx[s]
+                    ]
+                    contr_lo = [
+                        assign_index(s.name)[0] for s in data["lower"]
+                        if idx[s]
+                    ]
+                    c = "".join(sorted(contr_up + contr_lo))
+                    if contracted and contracted != c:
+                        raise Inputerror("Found more than one occurence of "
+                                         f"tensor {t_string} in {latex(term)} "
+                                         "with different contracted indices.")
+                    contracted = c
+        else:  # single obj
+            data = __obj_data(term)
+            if data["type"] == "tensor" and data["name"] == t_string:
+                contr_up = [
+                    assign_index(s.name) for s in data["upper"] if idx[s]
                 ]
-                lower_sum = [
-                    assign_index(s.name)[0] for s in t.lower if idx[s]
+                contr_lo = [
+                    assign_index(s.name) for s in data["lower"] if idx[s]
                 ]
-                sum_ov = "".join(sorted(lower_sum + upper_sum))
-                if not sum_ov:
-                    sum_ov = "no_indices"
-                if sum_ov not in temp:
-                    temp[sum_ov] = []
-                temp[sum_ov].append(term)
+                c = "".join(sorted(contr_up + contr_lo))
+                if contracted and contracted != c:
+                    raise Inputerror("Found more than one occurence of "
+                                     f"tensor {t_string} in {latex(term)} "
+                                     "with different contracted indices.")
+        if not contracted:
+            contracted = "none"
+        ret[contracted] = term
+        return ret
 
-    for ov, terms in temp.items():
-        ret[ov] = Add(*[t for t in terms])
+    expr = expr.expand()
+    # prefilter all terms that contain the desired tensor
+    tensor = filter_tensor(expr, t_string, strict=False)
+
+    ret = {}
+    # get all terms that do not contain the tensor
+    if expr - tensor != S.Zero:
+        ret[f'no_{t_string}'] = expr - tensor
+    # we only have terms that do not contain the tensor-
+    if ret[f'no_{t_string}'] == expr:
+        return ret
+
+    ret = {}
+    if isinstance(expr, Add):
+        for term in tensor.args:
+            term_contr = term_tensor_contr(term, t_string)
+            for contr, t in term_contr.items():
+                if contr not in ret:
+                    ret[contr] = 0
+                ret[contr] += t
+    else:  # only a single term
+        term_contr = term_tensor_contr(expr, t_string)
+        for contr, t in term_contr.items():
+            ret[contr] = t
     return ret
 
 
 def change_tensor_name(expr, old, new):
     """Changes the Name of a AntiSymmetricTensor from old to new,
-       while keeping the indices as they are.
+       while leaving the indices unchanged.
        """
-    # TODO: treat Pow objects
 
     if not isinstance(old, str) and not isinstance(new, str):
         raise Inputerror(f"Tensor strings need to be of type {str}. "
                          f"Provided: {type(old)} old, {type(new)} new.")
     expr = expr.expand()
-    if not isinstance(expr, Add):
-        raise Inputerror("Can only filter an expression that is of "
-                         f"type {Add}. Provided: {type(expr)}")
 
     to_change = filter_tensor(expr, old, strict=False)
     if to_change is S.Zero:
@@ -281,31 +344,35 @@ def change_tensor_name(expr, old, new):
 
     def replace(term, old, new):
         ret = 1
-        # term consists only of a single term, e.g. x
-        if not isinstance(term, Mul):
-            try:
-                if term.symbol.name == old:
-                    ret *= AntiSymmetricTensor(new, term.upper, term.lower)
-            except AttributeError:
-                raise RuntimeError("Something went wrong during filtering."
-                                   f"Trying to replace Tensor '{old}' in "
-                                   f"{expr}, but do not find the tensor.")
-        else:  # multiple terms, e.g. x*y
+        if isinstance(term, Mul):
             for t in term.args:
-                if isinstance(t, AntiSymmetricTensor) and t.symbol.name == old:
-                    ret *= AntiSymmetricTensor(new, t.upper, t.lower)
+                data = __obj_data(t)
+                if data["type"] == "tensor" and data["name"] == old:
+                    ret *= Pow(
+                        AntiSymmetricTensor(new, data["upper"], data["lower"]),
+                        data["exponent"]
+                    )
                 else:
                     ret *= t
+        else:  # single obj
+            data = __obj_data(term)
+            if data["type"] == "tensor" and data["name"] == old:
+                ret *= Pow(
+                    AntiSymmetricTensor(new, data["upper"], data["lower"]),
+                    data["exponent"]
+                )
+            else:
+                ret *= term
         return ret
 
-    ret = 0
+    ret = remaining
     if isinstance(to_change, Add):
         for term in to_change.args:
             ret += replace(term, old, new)
     # to_change consists only of 1 term
     else:
         ret += replace(to_change, old, new)
-    return ret + remaining
+    return ret
 
 
 def make_tensor_names_real(expr):
@@ -783,6 +850,7 @@ def simplify(expr, real=False, *sym_tensors):
        to fully simplify the expression by trying to swap the indices of all
        symmetric tensors (by default only 'V' and 'f').
        """
+    from collections import Counter
 
     def obj_name(obj):
         # returns a string that describes the object (part of Mul)
@@ -811,45 +879,48 @@ def simplify(expr, real=False, *sym_tensors):
                                    f"{list(naming.values())}.")
         return name
 
+    def descriptive_string(data):
+        name = data["type"]
+        if name == "tensor":
+            len_up = len(data["upper"])
+            len_lo = len(data["lower"])
+            name = "_".join(
+                [name, data["name"], str(len_up)+str(len_lo),
+                 str(data["exponent"])]
+            )
+        elif name in ["delta", "annihilate", "create"]:
+            name = "_".join([name, str(data["exponent"])])
+        # nothing to do for prefactor
+        return name
+
     def index_positions(obj, coupling="", *sym_tensors):
         # input: a single object that is part of the Mul object, e.g. t_ij^ab
         # return a dictionary with the positions of all indices of the obj
         # as descriptive string
+        # coupling defines the coupling to other tensors in the same term or
+        # assigns equivalent tensors a number to differentiate them
+        # if necessary
 
-        if len(obj.free_symbols) == 0:  # prefactor
-            return {}
         ret = {}
-        name = obj_name(obj)
-        if name is None:  # just in case
-            raise RuntimeError(f"Something went wrong with naming. Could not "
-                               "find a name, but also did not raise an error. "
-                               f"Got None for an {type(obj)} object.")
-        if isinstance(obj, AntiSymmetricTensor) or isinstance(obj, Pow) and \
-                isinstance(obj.args[0], AntiSymmetricTensor):
-            # if tensor is symmetric f_ia = f_ai -> upper=lower
-            sym = False
-            if name.split("_")[1] in sym_tensors:
-                sym = True
-            symbols = {
-                AntiSymmetricTensor:
-                    lambda ob: [(ob.upper, "u"), (ob.lower, "l")],
-                Pow: lambda ob:
-                    [(ob.args[0].upper, "u"), (ob.args[0].lower, "l")],
-            }
-            for uplo in symbols[type(obj)](obj):
-                for s in uplo[0]:
+        data = __obj_data(obj)
+        name = descriptive_string(data)
+        if data["type"] == "prefactor":  # return empty dict
+            pass
+        # attach the position of the indices in the tensor to the descriptive
+        # string of the tensor
+        elif data["type"] == "tensor":
+            for uplo in ["upper", "lower"]:
+                for s in data[uplo]:
                     if s not in ret:
                         ret[s] = []
-                    if sym:  # u/l are equal
-                        p = name + "_ul"
+                    # upper = lower -> no need to differentiate for sym tensor
+                    if data["name"] in sym_tensors:
+                        pos = "_".join([name, "ul"])
                     else:
-                        p = name + "_" + uplo[1]
+                        pos = "_".join([name, uplo[0]])
                     if coupling:
-                        p += "_" + coupling
-                    # return the occurence n times, where n is the exponent of
-                    # the tensor
-                    for exponent in range(int(name.split("_")[3])):
-                        ret[s].append(p)
+                        pos += "_" + coupling
+                    ret[s].extend([pos for i in range(data["exponent"])])
         # because the name differs for Pow obj, it should be fine to just add
         # the coupling here for delta/create/annihilate
         else:
@@ -885,8 +956,9 @@ def simplify(expr, real=False, *sym_tensors):
         # relevant (the two X are not identical). The same is true for the t's.
 
         if not isinstance(term, Mul):
+            # in case a non mul obj slips in... but should not be possible
             return {}
-        # coupling stores the coupling of other_t
+        # determine the coupling of all objects in the Mul term
         coupling = {}  # {name: {n: [position_in_other_object]}}
         for i, t in enumerate(term.args):
             for other_i, other_t in enumerate(term.args):
@@ -895,50 +967,53 @@ def simplify(expr, real=False, *sym_tensors):
                 c = obj_coupling(t, other_t, *sym_tensors)
                 if not c:  # the obj are not coupled
                     continue
-                name = obj_name(t)
+                # name = obj_name(t)
+                data = __obj_data(t)
+                name = descriptive_string(data)
                 if name not in coupling:
                     coupling[name] = {}
                 if i not in coupling[name]:
                     coupling[name][i] = []
                 coupling[name][i].extend(c)
-        ret = {}  # {n: [coupling]}
-        # check whether the coupling is relevant. Not relevant when:
+        # check whether the collected coupling is relevant. Not relevant when:
         # - the tensor only occurs once
         # - the tensor occurs more than once, but coupling occurs always to the
         #   same other tensor in the same position
+        # If the coupling is not relevant for, because its equal for all
+        # occurences of the tensor, the tensors are labeled by a number to
+        # differentiate them from another.
+        ret = {}  # {n: [coupling]}
         for t, coupl in coupling.items():
             # only one object of the same type -> no need to check coupling
             if len(coupl.keys()) == 1:
                 continue
-            elif len(coupl.keys()) < 2:  # just in case i messed up
-                raise Inputerror("Something went wrong while defining the "
-                                 f"coupling {coupling} for term {latex(term)}")
-            equal = True
-            checked = []
             # iterate over obj index (position in term) and compare the
             # coupling to the coupling of other identical tensors
+            equal_couplings = []
+            matched = []
             for i, c in coupl.items():
-                if not equal:
-                    break
-                checked.append(i)
+                if i in matched:
+                    continue
+                matched.append(i)
+                temp = [i]
+                count_c = Counter(c)
                 for other_i, other_c in coupl.items():
-                    if other_i in checked:  # iterate over i+1
+                    if other_i in matched:  # self and double counting
                         continue
-                    if not all(name in other_c for name in c):
-                        equal = False
-                        break
-            # coupling of all identical tensors is not equal -> relevant
-            if not equal:
-                ret.update(coupl)
-            # equal coupling for tensors that occur at least two times:
-            # define the coupling as counter that counts the occurences of the
-            # tensor, i.e. first f -> 1, second f -> 2 etc.
-            # to differentiate them from each other and assign indices
-            # specifically to one of the tensors
-            else:
+                    if count_c == Counter(other_c):  # coupling is identical
+                        temp.append(other_i)
+                        matched.append(other_i)
+                equal_couplings.append(temp)
+            # iterate over the equal couplings (e.g. of in total 4 'X' tensors
+            # pairs of two share the same coupling: c1 and c2) Attach a counter
+            # to each coupling to differentiate identical tensors with
+            # identical coupling from each other, i.e. objects with identical
+            # coupling are numbered (f*f' -> f1*f2)
+            for equal_coupl in equal_couplings:
                 temp = {}
-                for n, i in enumerate(coupl.keys()):
-                    temp[i] = str(n+1)
+                for n, i in enumerate(equal_coupl):
+                    coupl[i].append(str(n+1))
+                    temp[i] = coupl[i]
                 ret.update(temp)
         # terms without coupling don't need to be treated seperately,
         # because in this case all indices should be target indices
@@ -946,7 +1021,9 @@ def simplify(expr, real=False, *sym_tensors):
         return ret
 
     def term_pattern(term, *sym_tensors):
-        # get the pattern of all indices that are present in a term
+        # determine the pattern of all indices in a term.
+        # only return the pattern for indices that are contracted according
+        # to the einstein sum convention
         # returns {ov: [(name, occurences),]}
 
         # indices and their occurences are first collected in the indices dict
@@ -988,8 +1065,10 @@ def simplify(expr, real=False, *sym_tensors):
                              f"not {type(t)}.")
 
     expr = expr.expand()
+    # cant collect any terms... can only make real if requested
     if not isinstance(expr, Add):
-        print("Can't simplify an expression that consists of a single term.")
+        if real:
+            expr = make_real(expr)
         return expr
 
     # if real is given all tensors need to be real, i.e.
@@ -1056,10 +1135,13 @@ def simplify(expr, real=False, *sym_tensors):
                 # if all occurences are equal the indices are equal
                 # in this case possibly idx2 will be renamed to idx1
                 for idx1 in p1:
+                    count1 = Counter(idx1[1:])
                     for idx2 in p2:
                         if idx2[0] in matched_idx:
                             continue
-                        if all(ele in idx2[1:] for ele in idx1[1:]):
+                        # if pattern are identical -> found a match for idx1 in
+                        # the other_term -> break and continue with next idx
+                        if count1 == Counter(idx2[1:]):
                             matched_idx.append(idx2[0])
                             equal_idx.append((idx2[0], idx1[0]))
                             break
@@ -1067,12 +1149,10 @@ def simplify(expr, real=False, *sym_tensors):
                 if len(equal_idx) == len(p1):
                     matched_ov.append(True)
                     sub_idx = []
-                    # only need to do sth if indices are not equal?
+                    # only need to do sth if indices are not equal
                     for pair in equal_idx:
                         if pair[0] != pair[1]:
                             sub_idx.append(pair)
-                        # if names are equal -> compare the names of the other
-                        # tensors that occur at both tensors?
                     sub.extend(sub_idx)
                 else:  # terms do not match
                     matched_ov.append(False)
@@ -1085,7 +1165,7 @@ def simplify(expr, real=False, *sym_tensors):
             # only includes target indices that are not contracted)
             if matched_ov and all(matched_ov):
                 # if sub is empty there is nothing to do in this function
-                # but they are matched anyway. Make real should catch
+                # but they are matched. Make real should catch
                 # the terms
                 if sub:
                     if term_n not in equal_terms:
@@ -1097,6 +1177,7 @@ def simplify(expr, real=False, *sym_tensors):
     ret = 0
     matched_terms = []  # to construct the unchanged remainder
     for term_n in equal_terms:
+        # keep term_n as is
         matched_terms.append(term_n)
         ret += expr.args[term_n]
         for other_term_n in equal_terms[term_n]:
@@ -1104,9 +1185,10 @@ def simplify(expr, real=False, *sym_tensors):
             # substitute indices in other_term
             sub = equal_terms[term_n][other_term_n]
             ret += expr.args[other_term_n].subs(sub, simultaneous=True)
-    # Add the remaining terms that could have been matched
+    # Add the remaining terms that were not matched
     ret += Add(*[expr.args[i] for i in range(len(expr.args))
                  if i not in matched_terms])
-    if real:  # try swapping indices of symmetric tensors
+    # try swapping indices of symmetric tensors to fully simplify the expr
+    if real:
         ret = make_real(ret, *sym_tensors)
     return ret

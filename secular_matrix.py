@@ -216,8 +216,8 @@ class secular_matrix:
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
-        print(f"prefactors for {mvp_space} MVP from block {block}: "
-              f"{prefactor_mvp}, {prefactor_ampl}.")
+        # print(f"prefactors for {mvp_space} MVP from block {block}: "
+        #       f"{prefactor_mvp}, {prefactor_ampl}.")
         return evaluate_deltas(
             (prefactor_mvp * prefactor_ampl * m * y).expand()
         )
