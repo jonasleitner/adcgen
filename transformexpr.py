@@ -1,5 +1,7 @@
 from sympy import KroneckerDelta, Add, S, Mul, Pow, latex, Dummy
-from sympy.physics.secondquant import AntiSymmetricTensor, F, Fd
+from sympy.physics.secondquant import (
+    AntiSymmetricTensor, F, Fd, evaluate_deltas
+)
 from indices import assign_index
 from misc import Inputerror, transform_to_tuple
 
@@ -233,6 +235,29 @@ def filter_tensor(expr, t_strings, strict=False):
     return tensor
 
 
+def __term_contracted_indices(term):
+    """Count how often an index occurs in a term, i.e. if the index is
+       contracted or a target index (0 corresponds to 1 occurence).
+       """
+    idx = {}
+    if isinstance(term, Mul):
+        for t in term.args:
+            for s in t.free_symbols:
+                if isinstance(s, Dummy):
+                    if s in idx:
+                        idx[s] += 1
+                    else:
+                        idx[s] = 0
+    else:
+        for s in term.free_symbols:
+            if isinstance(s, Dummy):
+                if s in idx:
+                    idx[s] += 1
+                else:
+                    idx[s] = 0
+    return idx
+
+
 def sort_tensor_contracted_indices(expr, t_string):
     """Sorts an expression by sorting the terms depending on the
        number and type (ovv/virt) of indices of an AntiSymmetricTensor
@@ -242,22 +267,7 @@ def sort_tensor_contracted_indices(expr, t_string):
 
     def term_tensor_contr(term, t_string):
         # 1) count how often each index occurs in the term
-        idx = {}
-        if isinstance(term, Mul):
-            for t in term.args:
-                for s in t.free_symbols:
-                    if isinstance(s, Dummy):
-                        if s in idx:
-                            idx[s] += 1
-                        else:
-                            idx[s] = 0
-        else:
-            for s in term.free_symbols:
-                if isinstance(s, Dummy):
-                    if s in idx:
-                        idx[s] += 1
-                    else:
-                        idx[s] = 0
+        idx = __term_contracted_indices(term)
         # 2) check how often each index of the desired tensor occurs in the
         #    term, i.e. if it is contracted or not (einstein sum convention)
         ret = {}
@@ -1192,3 +1202,76 @@ def simplify(expr, real=False, *sym_tensors):
     if real:
         ret = make_real(ret, *sym_tensors)
     return ret
+
+
+def make_canonical(expr):
+    """Diagonalize the Fock matrix by replacing elements
+       f_pq with delta_pq * f_pq. The deltas are evaluated manually to
+       avoid loss of information inf the expression (loosing a target index).
+       However, this implies that if evaluate deltas is called afterwards,
+       the target index is lost anyway. (only important for f_pq with p and q
+       target indices)
+       """
+
+    def replace_f(term):
+        # 1) determine which indices are contracted in the term
+        idx = __term_contracted_indices(term)
+        # 2) replace f_ij -> delta_ij * f_ii
+        ret = 1
+        deltas = []
+        if isinstance(term, Mul):
+            for t in term.args:
+                data = __obj_data(t)
+                if data["type"] == "tensor" and data["name"] == "f":
+                    delta = KroneckerDelta(data["upper"][0], data["lower"][0])
+                    # delta_ov = 0 -> term is zero (off diagonal fock block)
+                    if delta is S.Zero:
+                        return S.Zero
+                    ret *= delta * t
+                    if delta is not S.One:
+                        deltas.append(delta)
+                else:
+                    ret *= t
+        else:
+            data = __obj_data(term)
+            if data["type"] == "tensor" and data["name"] == "f":
+                delta = KroneckerDelta(data["upper"][0], data["lower"][0])
+                if delta is S.Zero:
+                    return S.Zero
+                ret *= delta * t
+                if delta is not S.One:
+                    deltas.append(delta)
+            else:
+                ret *= t
+
+        # manually evalute the deltas. In case of more than one delta
+        # (fock element) per term: do it recursively
+        for delta in deltas:
+            # killable is contracted -> kill him
+            if idx[delta.killable_index]:
+                ret = ret.subs(delta.killable_index, delta.preferred_index)
+                if len(deltas) > 1:
+                    return replace_f(ret)
+            # only preferred is contracted -> kill him instead
+            elif idx[delta.preferred_index]:
+                ret = ret.subs(delta.preferred_index, delta.killable_index)
+                if len(deltas) > 1:
+                    return replace_f(ret)
+            # None is contracted -> kill None and keep delta
+            else:
+                pass
+        return ret
+
+    expr = expr.expand()
+    # get all terms that contain f
+    fock_terms = filter_tensor(expr, "f", strict=False)
+    # terms without fock
+    remaining = expr - fock_terms
+
+    ret = remaining
+    if isinstance(fock_terms, Add):
+        for term in fock_terms.args:
+            ret += replace_f(term)
+    else:
+        ret += replace_f(fock_terms)
+    return evaluate_deltas(ret)
