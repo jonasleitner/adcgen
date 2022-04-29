@@ -13,27 +13,27 @@ def evaluate(expr):
     return ret
 
 
-h = Hamiltonian(canonical=False)
+h = Hamiltonian()
 mp = ground_state(h, first_order_singles=True)
-e0 = mp.get_energy(0)
-e1 = mp.get_energy(1)
-e2 = mp.get_energy(2)
-ketpsi0 = mp.get_psi(0, "ket")
-brapsi0 = mp.get_psi(0, "bra")
-brapsi1 = mp.get_psi(1, "bra")
-ketpsi1 = mp.get_psi(1, "ket")
-brapsi2 = mp.get_psi(2, "bra")
-ketpsi2 = mp.get_psi(2, "ket")
+e0 = mp.energy(0)
+e1 = mp.energy(1)
+e2 = mp.energy(2)
+ketpsi0 = mp.psi(0, "ket")
+brapsi0 = mp.psi(0, "bra")
+brapsi1 = mp.psi(1, "bra")
+ketpsi1 = mp.psi(1, "ket")
+brapsi2 = mp.psi(2, "bra")
+ketpsi2 = mp.psi(2, "ket")
 
-term1 = brapsi1 * (h.get_H0 - e0) * ketpsi1
+term1 = brapsi1 * (h.h0 - e0) * ketpsi1
 term1 = evaluate(term1)
 print(latex(term1), "\n correct!!\n\n")
 
-term2 = brapsi1 * (h.get_H1 - e1) * ketpsi0
+term2 = brapsi1 * (h.h1 - e1) * ketpsi0
 term2 = evaluate(term2)
 print(latex(term2), "\nCorrect!!!\n\n")
 
-term3 = brapsi0 * (h.get_H1 - e1) * ketpsi1
+term3 = brapsi0 * (h.h1 - e1) * ketpsi1
 term3 = evaluate(term3)
 print(latex(term3), "\nCorrect!!!\n\n")
 
@@ -43,23 +43,23 @@ print("second order Hylleraas energy: ", latex(res), "\n\n")
 
 print("THIRD ORDER")
 
-term1 = brapsi2 * (h.get_H1 - e1) * ketpsi0
+term1 = brapsi2 * (h.h1 - e1) * ketpsi0
 term1 = evaluate(term1)
 print(latex(term1), "\nprobably correct.\n\n")
 
-term2 = brapsi0 * (h.get_H1 - e1) * ketpsi2
+term2 = brapsi0 * (h.h1 - e1) * ketpsi2
 term2 = evaluate(term2)
 print(latex(term2), "\nprobably correct.\n\n")
 
-term3 = brapsi1 * (h.get_H1 - e1) * ketpsi1
+term3 = brapsi1 * (h.h1 - e1) * ketpsi1
 term3 = evaluate(term3)
 print(latex(term3), "\n\n")
 
-term4 = brapsi2 * (h.get_H0 - e0) * ketpsi1
+term4 = brapsi2 * (h.h0 - e0) * ketpsi1
 term4 = evaluate(term4)
 print(latex(term4), "\n\n")
 
-term5 = brapsi1 * (h.get_H0 - e0) * ketpsi2
+term5 = brapsi1 * (h.h0 - e0) * ketpsi2
 term5 = evaluate(term5)
 print(latex(term5), "\n\n")
 
@@ -73,10 +73,10 @@ print("Third order Hylleraas energy: ", latex(res), "\n\n")
 
 print("FOURTH ORDER (PARTIAL)")
 
-term3 = brapsi2 * (h.get_H1 - e1) * ketpsi1
+term3 = brapsi2 * (h.h1 - e1) * ketpsi1
 term3 = evaluate(term3)
 print(latex(term3), "\n\n")
 
-term7 = brapsi2 * (h.get_H0 - e0) * ketpsi2
+term7 = brapsi2 * (h.h0 - e0) * ketpsi2
 term7 = evaluate(term7)
 print(latex(term7))

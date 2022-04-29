@@ -6,6 +6,11 @@ from indices import assign_index
 from misc import Inputerror, transform_to_tuple
 
 
+# TODO: support non integer denominator, i.e. Add may occur as part of a
+#       Mul object. Currently all functions only support Mul as
+#       part of Add. (needed for canonical amplitude equation)
+# TODO: support NO objects
+
 def sort_by_n_deltas(expr):
     """Sort terms in the expression according to the number of deltas"""
 

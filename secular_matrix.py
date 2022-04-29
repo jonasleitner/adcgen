@@ -1,10 +1,10 @@
 from sympy.physics.secondquant import wicks, evaluate_deltas
-from sympy import sqrt
+from sympy import sqrt, S
 
 from math import factorial
 from itertools import product
 
-from isr import get_orders_three
+from isr import get_order_two, get_orders_three
 from indices import (check_repeated_indices, split_idxstring,
                      get_n_ov_from_space)
 from misc import Inputerror, cached_member, transform_to_tuple
@@ -56,26 +56,30 @@ class secular_matrix:
             raise Inputerror("Indices for precursor secular matrix should not "
                              f"be equal. Provided indice string: {indices}")
 
-        space_idx = {
-            "bra": (block[0], indices[0]),
-            "ket": (block[1], indices[1])
-        }
-        # import precursor states up to requested order
-        pre = {}
-        for o in range(order + 1):
-            pre[o] = {}
-            for bk in ["bra", "ket"]:
-                sp = space_idx[bk][0]
-                idx = space_idx[bk][1]
-                pre[o][bk] = self.isr.precursor(o, sp, bk, indices=idx)
-
-        orders = get_orders_three(order)
+        orders = get_order_two(order)
         res = 0
-        for term in orders:
-            i1 = pre[term[0]]["bra"] * self.__get_shifted_h(term[1]) * \
-                 pre[term[2]]["ket"]
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
+        # 1) iterate through all combinations of norm_factor*M^#
+        for norm_term in orders:
+            norm = self.gs.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # 2) construct M^# for a given norm_factor
+            # the overall order is split between the norm factor and M^#
+            orders_M = get_orders_three(norm_term[1])
+            matrix = 0
+            for term in orders_M:
+                i1 = (self.isr.precursor(
+                        term[0], block[0], "bra", indices=indices[0]
+                    ) * self.__get_shifted_h(term[1]) *
+                    self.isr.precursor(
+                        term[2], block[1], "ket", indices=indices[1]
+                    )
+                )
+                i1 = wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+                matrix += i1
+            # evaluate_deltas should not be necessary here
+            res += (norm * matrix).expand()
         return res
 
     @cached_member
@@ -106,41 +110,32 @@ class secular_matrix:
             raise Inputerror("Indices for isr secular matrix should not be ",
                              f"equal. Provided indice string: {indices}")
 
-        space_idx = {
-            "bra": (block[0], indices[0]),
-            "ket": (block[1], indices[1])
-        }
-        # import the ISR states up to the requested order
-        isr = {}
-        for bk in ["bra", "ket"]:
-            sp = space_idx[bk][0]
-            idx = space_idx[bk][1]
-
-            # generate additional generic indices to construct additional
-            # precursor states for the ISR basis
-            n_ov = get_n_ov_from_space(sp)
-            gen_idx = self.indices.get_isr_indices(
-                idx, n_occ=n_ov["n_occ"], n_virt=n_ov["n_virt"]
-            )
-            idx_pre = []
-            for symbols in gen_idx.values():
-                idx_pre.extend([s.name for s in symbols])
-            idx_pre = "".join(idx_pre)
-
-            for o in range(order + 1):
-                if o not in isr:
-                    isr[o] = {}
-                isr[o][bk] = self.isr.intermediate_state(
-                    o, sp, bk, idx_is=idx, idx_pre=idx_pre
-                )
-
-        orders = get_orders_three(order)
+        orders = get_order_two(order)
         res = 0
-        for term in orders:
-            i1 = isr[term[0]]["bra"] * self.__get_shifted_h(term[1]) * \
-                 isr[term[2]]["ket"]
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
+        # 1) iterate through all combinations of norm_factor*M
+        for norm_term in orders:
+            norm = self.gs.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # 2) construct M for a given norm_factor
+            # the overall order is split between the norm_factor and M
+            orders_M = get_orders_three(norm_term[1])
+            matrix = 0
+            for term in orders_M:
+                i1 = (
+                    self.isr.intermediate_state(
+                        term[0], block[0], "bra", indices=indices[0]
+                    ) *
+                    self.__get_shifted_h(term[1]) *
+                    self.isr.intermediate_state(
+                        term[2], block[1], "ket", indices=indices[1]
+                    )
+                )
+                i1 = wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+                matrix += i1
+            # evaluate deltas should not be necessary here
+            res += (norm * matrix).expand()
         return res
 
     @cached_member
@@ -210,7 +205,7 @@ class secular_matrix:
         # due to the contraction over the amplitude vector indices needs to be
         # adjusted. Essentially the same formula and argumentation may be used
         # only applied to a different space, namely block[1] - which is the
-        # space the sum contracts over.
+        # space the sum contracts.
         n_ov = get_n_ov_from_space(block[1])
         prefactor_ampl = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])

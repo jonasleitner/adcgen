@@ -1,8 +1,8 @@
-from sympy import sqrt
+from sympy import sqrt, S
 from sympy.physics.secondquant import wicks
 from math import factorial
 
-from isr import get_orders_three
+from isr import get_orders_three, get_order_two
 from indices import get_n_ov_from_space
 from misc import Inputerror, cached_member, transform_to_tuple
 from secular_matrix import secular_matrix
@@ -26,7 +26,7 @@ class properties:
             "dip": lambda o: self.h.dip_transition if o == 0 else 0,
         }
         op = operator.get(self.variant, None)
-        if op:
+        if op is not None:
             return op(order)
         else:
             raise KeyError(f"No operator provided for {self.variant} ADC "
@@ -52,30 +52,10 @@ class properties:
         if len(block) != 2 or len(indices) != 2:
             raise Inputerror("2 space and index strings required."
                              f"Provided: {block} / {indices}.")
-        sp_idx = {"bra": (block[0], indices[0]),
-                  "ket": (block[1], indices[1])}
-        isr = {}
-        for bk in ["bra", "ket"]:
-            isr[bk] = {}
-            sp = sp_idx[bk][0]
-            idx = sp_idx[bk][1]
-
-            # generate indices for the isr states.
-            n_ov = get_n_ov_from_space(sp)
-            sym_pre = self.indices.get_isr_indices(idx, **n_ov)
-            idx_pre = []
-            for s_list in sym_pre.values():
-                idx_pre.extend([s.name for s in s_list])
-            idx_pre = "".join(idx_pre)
-
-            for o in range(order + 1):
-                isr[bk][o] = self.isr.intermediate_state(
-                    o, sp, bk, idx_is=idx, idx_pre=idx_pre
-                )
 
         left = self.isr.amplitude_vector(indices=indices[0], lr="left")
         right = self.isr.amplitude_vector(indices=indices[1], lr="right")
-        # again not use the full prefactors from lifting the sum restrictions
+        # again not use the full prefactors from lifting the sum restrictions,
         # but sqrt(1/(no! * nv!)) to keep the left and right amplitude vectors
         # normalized.
         n_ov = get_n_ov_from_space(block[0])
@@ -87,14 +67,33 @@ class properties:
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
-        orders = get_orders_three(order)
+        orders = get_order_two(order)
         res = 0
-        for term in orders:
-            i1 = (prefactor_l * prefactor_r * left * isr["bra"][term[0]] *
-                  self.__shifted_one_particle_op(term[1]) *
-                  isr["ket"][term[2]] * right)
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
+        # iterate over all norm*d combinations of n'th order
+        for norm_term in orders:
+            norm = self.gs.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # compute d for a given norm (the total order is split inbetween
+            # both factors)
+            orders_d = get_orders_three(norm_term[1])
+            density = 0
+            for term in orders_d:
+                i1 = (
+                    prefactor_l * prefactor_r * left *
+                    self.isr.intermediate_state(
+                        term[0], block[0], "bra", indices=indices[0]
+                    )
+                    * self.__shifted_one_particle_op(term[1]) *
+                    self.isr.intermediate_state(
+                        term[2], block[1], "ket", indices=indices[1]
+                    )
+                    * right
+                )
+                i1 = wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+                density += i1
+            res += (norm * density).expand()
         return res
 
     @cached_member
@@ -120,6 +119,7 @@ class properties:
                 continue
 
             # get indices for the two blocks
+            # TODO: create a function for this
             n_ov = get_n_ov_from_space(b[0])
             sym = self.indices.get_new_gen_indices(**n_ov)
             idx0 = []
@@ -153,27 +153,6 @@ class properties:
             raise Inputerror("2 space and index strings required."
                              f"Provided: {block} / {indices}.")
 
-        sp_idx = {"bra": (block[0], indices[0]),
-                  "ket": (block[1], indices[1])}
-        isr = {}
-        for bk in ["bra", "ket"]:
-            isr[bk] = {}
-            sp = sp_idx[bk][0]
-            idx = sp_idx[bk][1]
-
-            # generate indices for the precursor states of the ISR states
-            n_ov = get_n_ov_from_space(sp)
-            sym_pre = self.indices.get_isr_indices(idx, **n_ov)
-            idx_pre = []
-            for s_list in sym_pre.values():
-                idx_pre.extend([s.name for s in s_list])
-            idx_pre = "".join(idx_pre)
-
-            for o in range(order + 1):
-                isr[bk][o] = self.isr.intermediate_state(
-                    o, sp, bk, idx_is=idx, idx_pre=idx_pre
-                )
-
         left = self.isr.amplitude_vector(indices=indices[0], lr="left")
         right = self.isr.amplitude_vector(indices=indices[1], lr="right")
         # again not use the full prefactors from lifting the sum restrictions
@@ -188,15 +167,33 @@ class properties:
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
-        orders = get_orders_three(order)
+        orders = get_order_two(order)
         res = 0
-        # what about prefactors here??
-        for term in orders:
-            i1 = (prefactor_l * prefactor_r * left * isr["bra"][term[0]] *
-                  self.__shifted_two_particle_op(term[1]) *
-                  isr["ket"][term[2]] * right)
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
+        # iterate over all norm*d combinations of n'th order
+        for norm_term in orders:
+            norm = self.gs.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # compute d for a given norm factor (the total order is split
+            # between norm and d)
+            orders_d = get_orders_three(norm_term[1])
+            density = 0
+            for term in orders_d:
+                i1 = (
+                    prefactor_l * prefactor_r * left *
+                    self.isr.intermediate_state(
+                        term[0], block[0], "bra", indices=indices[0]
+                    )
+                    * self.__shifted_two_particle_op(term[1]) *
+                    self.isr.intermediate_state(
+                        term[2], block[1], "ket", indices=indices[1]
+                    )
+                    * right
+                )
+                i1 = wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+                density += i1
+            res += (norm * density).expand()
         return res
 
     @cached_member
@@ -243,56 +240,52 @@ class properties:
         return res
 
     def transition_moment_space(self, order, space, indices):
-        """Computes sum_x X_I <I|x|Psi>^(n),
+        """Computes sum_x X_I <I|x|Psi_0>^(n),
            where x is the appropriate transition operator for the
            ADC variant, i.e. p+q for pp-ADC, p for ip-ADC and p+ for ea-ADC.
 
-           Checked transition moments up to pp-ADC(2): correct besides 1 term
-           that is missing in the literature and the implemented results:
-           F_ia <- + 1/8 * d_ai sum_bcjk t_jk^bc tcc_jk^bc
-           However, so far the origin of the term seems legit and it is not
-           clear how to get rid of it.
+           Checked transition moments for pp-ADC(2)!
            """
 
         space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
         if len(space) != 1 or len(indices) != 1:
-            raise Inputerror("1 space and index strings required."
+            raise Inputerror("1 space and index string required."
                              f"Provided: {space} / {indices}.")
         space = space[0]
         indices = indices[0]
 
-        # generate additional indices for Intermediate State
-        n_ov = get_n_ov_from_space(space)
-        sym_pre = self.indices.get_isr_indices(indices, **n_ov)
-        idx_pre = []
-        for s_list in sym_pre.values():
-            idx_pre.extend([s.name for s in s_list])
-        idx_pre = "".join(idx_pre)
-
-        # import ISR for the space up to the requested order
-        isr = {}
-        for o in range(order + 1):
-            isr[o] = self.isr.intermediate_state(
-                o, space, "bra", idx_is=indices, idx_pre=idx_pre
-            )
-
         # import left amplitude vector
         amplitude = self.isr.amplitude_vector(indices=indices, lr="left")
+        n_ov = get_n_ov_from_space(space)
         prefactor = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
-        orders = get_orders_three(order)
+        orders = get_order_two(order)
         res = 0
-        for term in orders:
-            i1 = (prefactor * amplitude * isr[term[0]] *
-                  self.__transition_operator(term[1]) *
-                  self.gs.psi(term[2], "ket")
-                  )
-            i1 = wicks(i1, keep_only_fully_contracted=True,
-                       simplify_kronecker_deltas=True)
-            res += i1
+        # iterate over all norm*d combinations of n'th order
+        for norm_term in orders:
+            norm = self.gs.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # compute d for a given norm factor (the overall order is split
+            # between the two factors)
+            orders_d = get_orders_three(norm_term[1])
+            transition_d = 0
+            for term in orders_d:
+                i1 = (
+                    prefactor * amplitude *
+                    self.isr.intermediate_state(
+                        term[0], space, "bra", indices=indices
+                    )
+                    * self.__transition_operator(term[1]) *
+                    self.gs.psi(term[2], "ket")
+                )
+                i1 = wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+                transition_d += i1
+            res += (norm * transition_d).expand()
         return res
 
     def transition_moment(self, adc_order, order=None):

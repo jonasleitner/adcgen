@@ -9,12 +9,12 @@ from groundstate import ground_state, Hamiltonian
 from isr import gen_order_S, intermediate_states
 from properties import properties
 from secular_matrix import secular_matrix
-from transformexpr import make_real, change_tensor_name, filter_tensor, remove_tensor, simplify, sort_by_n_deltas, sort_by_type_deltas, sort_by_type_tensor, sort_tensor_contracted_indices
+from transformexpr import make_canonical, make_real, change_tensor_name, filter_tensor, remove_tensor, simplify, sort_by_n_deltas, sort_by_type_deltas, sort_by_type_tensor, sort_tensor_contracted_indices
 from misc import cached_member, transform_to_tuple
 
-# i, j, k, l, m, n, o = symbols('i,j,k,l,m,n,o', below_fermi=True, cls=Dummy)
-# a, b, c, d, e, f, g = symbols('a,b,c,d,e,f,g', above_fermi=True, cls=Dummy)
-# p, q, r, s = symbols('p,q,r,s', cls=Dummy)
+i, j, k, l, m, n, o = symbols('i,j,k,l,m,n,o', below_fermi=True, cls=Dummy)
+a, b, c, d, e, f, g = symbols('a,b,c,d,e,f,g', above_fermi=True, cls=Dummy)
+p, q, r, s = symbols('p,q,r,s', cls=Dummy)
 
 h = Hamiltonian()
 mp = ground_state(h, first_order_singles=False)
@@ -22,11 +22,14 @@ isr = intermediate_states(mp, variant="pp")
 m = secular_matrix(isr)
 op = properties(isr)
 
-bla = m.precursor_matrix_block(2, "ph,ph", "ia,jb")
-bla = mp.indices.substitute_indices(bla)
-# bla = change_tensor_name(bla, "X", "Ycc")
+bla = op.transition_moment(2)
 print(latex(bla))
+bla = mp.indices.substitute_indices(bla)
+# bla = make_canonical(bla)
+# bla = change_tensor_name(bla, "X", "Ycc")
+print()
 bla = simplify(bla, True, "d")
-bla = sort_by_type_deltas(bla)
+print(latex(bla))
+bla = sort_by_type_tensor(bla, "d", False)
 for t, expr in bla.items():
     print(f"{len(expr.args)} terms with d {t}:\n{latex(expr)}\n\n")

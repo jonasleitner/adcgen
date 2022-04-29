@@ -3,8 +3,8 @@ from sympy.physics.secondquant import (
     AntiSymmetricTensor, NO, F, Fd, wicks, substitute_dummies
 )
 from math import factorial
-from indices import pretty_indices, indices
-from misc import cached_member, cached_property, Inputerror
+from indices import get_n_ov_from_space, pretty_indices, indices
+from misc import cached_member, cached_property, Inputerror, transform_to_tuple
 
 from isr import gen_order_S, get_order_two
 
@@ -14,11 +14,6 @@ class Hamiltonian:
     @cached_property
     def h0(self):
         p = symbols('p', cls=Dummy)
-        # if self.canonical:
-        #     f = AntiSymmetricTensor('f', (p,), (p,))
-        #     pp = Fd(p) * F(p)
-        #     h0 = f * pp
-        # else:
         q = symbols('q', cls=Dummy)
         f = AntiSymmetricTensor('f', (p,), (q,))
         pq = Fd(p) * F(q)
@@ -159,6 +154,56 @@ class ground_state:
         return psi
 
     @cached_member
+    def amplitude(self, order, space, indices):
+        # not working really. The denominator is only represented as symbolic
+        # delta without any indices and therefore it is not possible to
+        # subtract: - E*t properly
+        space = transform_to_tuple(space)
+        indices = transform_to_tuple(indices)
+        if len(space) != 1 or len(indices) != 1:
+            raise Inputerror("Expected only 1 space and indice string. "
+                             f"Got space {space}, indices {indices}.")
+        space = space[0]
+        indices = indices[0]
+
+        n_ov = get_n_ov_from_space(space)
+        if n_ov["n_occ"] != n_ov["n_virt"]:
+            raise Inputerror("Invalid space string for a MP-t amplitude: "
+                             f"{space}.")
+        # if the space is not present at the requested order return 0
+        if n_ov["n_occ"] > 2 * order:
+            return 0
+
+        idx = self.indices.get_indices(indices)
+        if n_ov["n_occ"] != len(idx["occ"]) or \
+                n_ov["n_virt"] != len(idx["virt"]):
+            raise Inputerror(f"Provided indices {indices} are not adequate for"
+                             f" space {space}.")
+        bra = 1
+        # need to build a symmetric tensor object to represent the denominator
+        # properly?
+        denom = AntiSymmetricTensor("delta", tuple(), tuple())
+        for s in idx["occ"]:
+            bra *= Fd(s)
+        for s in reversed(idx["virt"]):
+            bra *= F(s)
+
+        # construct <k|H1|psi^(n-1)>
+        ret = bra * self.h.h1 * self.psi(order-1, "ket")
+        ret = wicks(ret, keep_only_fully_contracted=True,
+                    simplify_kronecker_deltas=True)
+
+        # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
+        terms = get_order_two(order)
+        for term in terms:
+            if any(o == 0 for o in term):
+                continue
+            # possibly also only represent E symbolic?
+            ret -= self.energy(term[0]) * \
+                AntiSymmetricTensor(f"t{term[1]}", idx["occ"], idx["virt"])
+        return (ret * denom).expand()
+
+    @cached_member
     def overlap(self, order):
         """Computes the ground state overlap matrix."""
 
@@ -194,7 +239,7 @@ class ground_state:
         orders = get_order_two(order)
         for term in orders:
             d = self.d_one_particle(term[1])
-            a = self.account_for_norm(term[0])
+            a = self.norm_factor(term[0])
             res += (a * d).expand()
         return res
 
@@ -210,7 +255,7 @@ class ground_state:
         orders = get_order_two(order)
         for term in orders:
             d = self.d_two_particle(term[1])
-            a = self.account_for_norm(term[0])
+            a = self.norm_factor(term[0])
             res += (a * d).expand()
         return res
 
@@ -257,7 +302,7 @@ class ground_state:
         return res
 
     @cached_member
-    def account_for_norm(self, order):
+    def norm_factor(self, order):
         """Computes all nth order terms of:
            1 - sum_i S^(i) + (sum_i S^(i))^2 - ...
            This accounts in the one and two particle dm for the
@@ -273,6 +318,7 @@ class ground_state:
                 for o in o_tuple:
                     i1 *= self.overlap(o)
                 norm_factor += i1.expand()
+        print(f"norm_factor^({order}): {latex(norm_factor)}")
         return norm_factor
 
     def expand_norm_factor(self, order, min_order=2):

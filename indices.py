@@ -10,6 +10,7 @@ pretty_indices = {
 }
 
 
+# TODO: remove isr_indices
 class indices:
     """Book keeping class that keeps track of the used and available indices.
        Necessary, because only 1 Dummy symbols instance should exist for each
@@ -429,6 +430,7 @@ def check_repeated_indices(string_a, string_b):
     for idx in split_a:
         if idx in split_b:
             repeated = True
+            break
     return repeated
 
 

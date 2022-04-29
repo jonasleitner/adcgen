@@ -2,7 +2,7 @@ from sympy.physics.secondquant import (
     F, Fd, evaluate_deltas, wicks, NO, AntiSymmetricTensor,
     Dagger
 )
-from sympy import symbols, latex, nsimplify, Rational, diff
+from sympy import symbols, latex, nsimplify, Rational, diff, S
 
 import numpy as np
 from math import factorial
@@ -70,15 +70,10 @@ class intermediate_states:
                              f" space {space} (occ:{n_ov_space['n_occ']} / "
                              f"virt: {n_ov_space['n_virt']}).")
 
-        # import all bra and ket gs wavefunctions up to requested order
-        mp = {}
-        for o in range(order + 1):
-            mp[o] = {}
-            for bk in ["bra", "ket"]:
-                mp[o][bk] = self.gs.psi(o, bk)
-
         # get all possible combinations a*b*c of the desired order
-        orders = get_orders_three(order)
+        # orders = get_orders_three(order)
+        # get all terms of a*b of the desired order
+        orders = get_order_two(order)
 
         idx = self.indices.get_indices(indices)
         # in contrast to the gs, here the operators are ordered as
@@ -94,87 +89,99 @@ class intermediate_states:
         if braket == "bra":
             operators = Dagger(operators)
 
+        # leading term:
         # no need to differentiate bra/ket here, because
         # operators * mp = mp * operators (there is always an equal number of
         # p/h operators in mp that needs to be moved to the other side.
         # Will always give +.)
-        res = NO(operators) * mp[order][braket]
+        res = NO(operators) * self.gs.psi(order, braket)
 
         # orthogonalise with respect to the ground state for pp ADC.
         if self.variant == "pp":
-            for term in orders:
-                # |Y>  <--  -|X><X|Y>
-                if braket == "ket":
-                    i1 = mp[term[1]]["bra"] * NO(operators) * \
-                        mp[term[2]]["ket"]
-                    state = mp[term[0]]["ket"]
-                # <Y|  <--  -<Y|X><X|
-                elif braket == "bra":
-                    i1 = mp[term[0]]["bra"] * NO(operators) * \
-                        mp[term[1]]["ket"]
-                    state = mp[term[2]]["bra"]
-                # wicks automatically expands the passed expression
-                i1 = wicks(
-                    i1, keep_only_fully_contracted=True,
-                    simplify_kronecker_deltas=True,
-                )
-                res -= state * i1
+            # 1) iterate through all combinations of norm_factor*projector
+            for norm_term in orders:
+                norm = self.gs.norm_factor(norm_term[0])
+                if norm is S.Zero:
+                    continue
+                # 2) construct the projector for a given norm_factor
+                # the overall order is split between the norm_factor and the
+                # projector
+                orders_pre = get_orders_three(norm_term[1])
+                projection = 0
+                for term in orders_pre:
+                    # |Y>  <--  -|X><X|Y>
+                    if braket == "ket":
+                        i1 = self.gs.psi(term[1], "bra") * NO(operators) * \
+                            self.gs.psi(term[2], "ket")
+                        state = self.gs.psi(term[0], "ket")
+                    # <Y|  <--  -<Y|X><X|
+                    elif braket == "bra":
+                        i1 = self.gs.psi(term[0], "bra") * NO(operators) * \
+                            self.gs.psi(term[1], "ket")
+                        state = self.gs.psi(term[2], "bra")
+                    # wicks automatically expands the passed expression
+                    i1 = wicks(
+                        i1, keep_only_fully_contracted=True,
+                        simplify_kronecker_deltas=True,
+                    )
+                    projection += (state * i1).expand()
+                projection = evaluate_deltas(projection)
+                res -= (norm * projection).expand()
 
         # iterate over lower excitated spaces
         lower_spaces = self.__generate_lower_spaces(space)
         for lower_space in lower_spaces:
             # get generic unique indices to generate the lower_isr_states.
             n_ov = get_n_ov_from_space(lower_space)
-            isr_generic = self.indices.get_isr_indices(
-                indices, n_occ=3*n_ov["n_occ"], n_virt=3*n_ov["n_virt"]
-            )
-            # sort indices into three strings of length n_o + n_v
-            isr_idx = {}
-            for i in range(3):
-                isr_idx[i] = []
-                if n_ov["n_occ"]:
-                    n_o = n_ov["n_occ"]
-                    occ = isr_generic['occ'][i*n_o:(i+1)*n_o]
-                    isr_idx[i].extend([s.name for s in occ])
-                if n_ov["n_virt"]:
-                    n_v = n_ov["n_virt"]
-                    virt = isr_generic['virt'][i*n_v:(i+1)*n_v]
-                    isr_idx[i].extend([s.name for s in virt])
-                isr_idx[i] = "".join(isr_idx[i])
-
-            # generate the isr states for the lower_space
-            lower_isr = {}
-            for o in range(order + 1):
-                lower_isr[o] = {}
-                lower_isr[o]['bra'] = self.intermediate_state(
-                    o, lower_space, 'bra', idx_is=isr_idx[0],
-                    idx_pre=isr_idx[2]
-                )
-                lower_isr[o]['ket'] = self.intermediate_state(
-                    o, lower_space, 'ket', idx_is=isr_idx[0],
-                    idx_pre=isr_idx[1]
-                )
+            indices_isr = self.indices.get_new_gen_indices(**n_ov)
+            idx_isr = []
+            for syms in indices_isr.values():
+                idx_isr.extend([idx.name for idx in syms])
+            idx_isr = "".join(idx_isr)
 
             # orthogonalise with respsect to the lower excited ISR state
-            for term in orders:
-                # |Y>  <--  -|X><X|Y>
-                prefactor = Rational(
-                    1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
-                )
-                if braket == "ket":
-                    i1 = prefactor * lower_isr[term[1]]["bra"] * \
-                        NO(operators) * mp[term[2]]["ket"]
-                    state = lower_isr[term[0]]["ket"]
-                # <Y|  <--  -<Y|X><X|
-                elif braket == "bra":
-                    i1 = prefactor * mp[term[0]]["bra"] * NO(operators) \
-                        * lower_isr[term[1]]["ket"]
-                    state = lower_isr[term[2]]["bra"]
-                i1 = wicks(
-                    i1, keep_only_fully_contracted=True,
-                    simplify_kronecker_deltas=True,
-                )
-                res -= state * i1
+            # 1) iterate through all combinations of norm_factor*projector
+            for norm_term in orders:
+                norm = self.gs.norm_factor(norm_term[0])
+                if norm is S.Zero:
+                    continue
+                # 2) construct the projector for a given norm factor
+                # the overall order is split between he norm_factor and the
+                # projector
+                orders_isr = get_orders_three(norm_term[1])
+                projection = 0
+                for term in orders_isr:
+                    # prefactor due to the sum - sum_J |J><J|I>
+                    prefactor = Rational(
+                        1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+                    )
+                    # |Y>  <--  -|X><X|Y>
+                    if braket == "ket":
+                        i1 = (self.intermediate_state(
+                                  term[1], lower_space, "bra", indices=idx_isr
+                                  )
+                              * NO(operators) * self.gs.psi(term[2], "ket")
+                              )
+                        state = self.intermediate_state(
+                            term[0], lower_space, "ket", indices=idx_isr
+                        )
+                    # <Y|  <--  -<Y|X><X|
+                    elif braket == "bra":
+                        i1 = (self.gs.psi(term[0], "bra") * NO(operators) *
+                              self.intermediate_state(
+                                  term[1], lower_space, "ket", indices=idx_isr
+                                  )
+                              )
+                        state = self.intermediate_state(
+                            term[2], lower_space, "bra", indices=idx_isr
+                        )
+                    i1 = wicks(
+                        i1, keep_only_fully_contracted=True,
+                        simplify_kronecker_deltas=True,
+                    )
+                    projection += (prefactor * state * i1).expand()
+                projection = evaluate_deltas(projection)
+                res -= (norm * projection).expand()
 
         print(f"Build precursor {space}_({indices})^({order}) {braket}:"
               f" {latex(res)}")
@@ -199,28 +206,28 @@ class intermediate_states:
             raise Inputerror("Repeated index found in indices of precursor "
                              f"overlap matrix: {indices}.")
 
-        # calculate the required precursor states.
-        idx_sp = {
-            'bra': (indices[0], space[0]),
-            'ket': (indices[1], space[1])
-        }
-        precursor = {}
-        for braket in ["bra", "ket"]:
-            precursor[braket] = {}
-            sp = idx_sp[braket][1]
-            idx = idx_sp[braket][0]
-            for o in range(order + 1):
-                precursor[braket][o] = self.precursor(
-                    o, sp, braket, indices=idx
-                )
-
         orders = get_order_two(order)
 
         res = 0
-        for term in orders:
-            res += precursor["bra"][term[0]] * precursor["ket"][term[1]]
-        res = wicks(res, keep_only_fully_contracted=True,
-                    simplify_kronecker_deltas=True)
+        # 1) iterate through all combinations of norm_factor*S
+        for norm_term in orders:
+            norm = self.gs.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # 2) construct S for a given norm factor
+            # the overall order is split between he norm_factor and S
+            orders_overlap = get_order_two(norm_term[1])
+            overlap = 0
+            for term in orders_overlap:
+                i1 = (self.precursor(
+                      term[0], space[0], "bra", indices=indices[0]
+                      ) * self.precursor(
+                      term[1], space[1], "ket", indices=indices[1]
+                      ))
+                i1 = wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+                overlap += i1
+            res += (norm * overlap).expand()
         print(f"Build overlap {space} S_{indices}^({order}) = {latex(res)}")
         return res
 
@@ -238,6 +245,8 @@ class intermediate_states:
                              "for contructing a precursor overlap matrix."
                              f"Provided: {indices}")
 
+        # TODO: check if min_order is still correct with first order singles
+        # (I think it should be)
         prefactors, orders = self.expand_S_taylor(order, min_order=2)
         res = 0
         for exponent, termlist in orders.items():
@@ -250,7 +259,7 @@ class intermediate_states:
         return res
 
     @cached_member
-    def intermediate_state(self, order, space, braket, idx_is, idx_pre):
+    def intermediate_state(self, order, space, braket, indices):
         """Returns an intermediate state. The index string idx_is represents
            the indices of the returned Intermediate State. The index string
            idx_pre is used to generate S^(-0.5), i.e. the sum
@@ -258,84 +267,77 @@ class intermediate_states:
            runs over idx_pre.
            """
 
-        idx_is = transform_to_tuple(idx_is)
-        idx_pre = transform_to_tuple(idx_pre)
+        indices = transform_to_tuple(indices)
         space = transform_to_tuple(space)
-        if len(idx_is) != 1 or len(idx_pre) != 1 or len(space) != 1:
-            raise Inputerror("Necessary to provide 2x 1 index string and 1 "
-                             "string for contructing an intermediate state."
-                             f"Provided: space {space}, idx_is {idx_is}, "
-                             f"idx_pre {idx_pre}")
-        idx_is = idx_is[0]
-        idx_pre = idx_pre[0]
+        if len(indices) != 1 or len(space) != 1:
+            raise Inputerror(f"{space} or {indices} are not valid to "
+                             "construct an intermediate state.")
+        indices = indices[0]
         space = space[0]
 
-        get_s_indices = {
-            'bra': ",".join([idx_is, idx_pre]),
-            'ket': ",".join([idx_pre, idx_is])
-        }
-        precursor = {}
-        s_root = {}
-        for o in range(order + 1):
-            precursor[o] = self.precursor(
-                o, space, braket, indices=idx_pre
-            )
-            s_root[o] = self.s_root(
-                o, (space, space), indices=get_s_indices[braket]
-            )
-
+        # generate additional indices for the precursor state
         n_ov = get_n_ov_from_space(space)
+        indices_pre = self.indices.get_new_gen_indices(**n_ov)
+        idx_pre = []
+        for syms in indices_pre.values():
+            idx_pre.extend([idx.name for idx in syms])
+        idx_pre = "".join(idx_pre)
+
         prefactor = Rational(
             1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
+        # sandwich the IS and precursor indices together
+        s_indices = {
+            'bra': ",".join([indices, idx_pre]),
+            'ket': ",".join([idx_pre, indices])
+        }
+
         orders = get_order_two(order)
         res = 0
         for term in orders:
-            res += (prefactor * s_root[term[0]] * precursor[term[1]]).expand()
-        res = evaluate_deltas(res)
-        print(f"Build {space} ISR_({idx_is} <- {idx_pre})^({order}) "
+            i1 = (prefactor * self.s_root(
+                term[0], (space, space), indices=s_indices[braket]
+                ) * self.precursor(term[1], space, braket, indices=idx_pre)
+            ).expand()
+            res += evaluate_deltas(i1)
+        print(f"Build {space} ISR_({indices}^({order}) "
               f"{braket} = {latex(res)}")
         return res
 
-    def overlap_isr(self, order, spaces, indices):
+    def overlap_isr(self, order, space, indices):
         """Computes the overlap matrix <I|J> in the ISR basis."""
 
-        spaces = transform_to_tuple(spaces)
+        space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
-        if len(spaces) != 2 or len(indices) != 2:
+        if len(space) != 2 or len(indices) != 2:
             raise Inputerror("Constructing a ISR overlap matrix requires two "
-                             f"index and block strings. Provided: {spaces} / "
+                             f"index and block strings. Provided: {space} / "
                              f"{indices}.")
-
-        sp_idx = {"bra": (spaces[0], indices[0]),
-                  "ket": (spaces[1], indices[1])}
-        isr = {}
-        for bk in ["bra", "ket"]:
-            isr[bk] = {}
-            sp = sp_idx[bk][0]
-            idx = sp_idx[bk][1]
-
-            # generate additional indices for the precursor state
-            n_ov = get_n_ov_from_space(sp)
-            sym_pre = self.indices.get_isr_indices(idx, **n_ov)
-            idx_pre = []
-            for s_list in sym_pre.values():
-                idx_pre.extend([s.name for s in s_list])
-            idx_pre = "".join(idx_pre)
-
-            for o in range(order + 1):
-                isr[bk][o] = self.intermediate_state(
-                    o, sp, bk, idx_is=idx, idx_pre=idx_pre
-                )
 
         orders = get_order_two(order)
         res = 0
-        for term in orders:
-            i1 = isr["bra"][term[0]] * isr["ket"][term[1]]
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
-        print(f"Build ISR overlap {spaces} S_{indices}^({order}) = ",
+        # 1) iterate through all combinations of norm_factor*S
+        for norm_term in orders:
+            norm = self.gs.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # 2) construct S for a given norm factor
+            # the overall order is split between he norm_factor and S
+            orders_overlap = get_order_two(norm_term[1])
+            overlap = 0
+            for term in orders_overlap:
+                i1 = (self.intermediate_state(
+                      term[0], space[0], "bra", indices=indices[0]
+                      ) * self.intermediate_state(
+                      term[1], space[1], "ket", indices=indices[1]
+                      ))
+                # i1 = isr["bra"][term[0]] * isr["ket"][term[1]]
+                i1 = wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+                overlap += i1
+            res += (norm * overlap).expand()
+        print(f"Build ISR overlap {space} S_{indices}^({order}) = ",
               latex(res))
         return res
 
