@@ -1,7 +1,5 @@
 from sympy import KroneckerDelta, Add, S, Mul, Pow, latex, Dummy
-from sympy.physics.secondquant import (
-    AntiSymmetricTensor, F, Fd, evaluate_deltas
-)
+from sympy.physics.secondquant import AntiSymmetricTensor, F, Fd
 from indices import assign_index
 from misc import Inputerror, transform_to_tuple
 
@@ -322,9 +320,9 @@ def sort_tensor_contracted_indices(expr, t_string):
     # get all terms that do not contain the tensor
     if expr - tensor != S.Zero:
         ret[f'no_{t_string}'] = expr - tensor
-    # we only have terms that do not contain the tensor-
-    if ret[f'no_{t_string}'] == expr:
-        return ret
+        # we only have terms that do not contain the tensor-
+        if ret[f'no_{t_string}'] == expr:
+            return ret
 
     ret = {}
     if isinstance(expr, Add):
@@ -1212,10 +1210,11 @@ def simplify(expr, real=False, *sym_tensors):
 def make_canonical(expr):
     """Diagonalize the Fock matrix by replacing elements
        f_pq with delta_pq * f_pq. The deltas are evaluated manually to
-       avoid loss of information inf the expression (loosing a target index).
+       avoid loss of information in the expression (loosing a target index).
        However, this implies that if evaluate deltas is called afterwards,
        the target index is lost anyway. (only important for f_pq with p and q
-       target indices)
+       target indices). Probably do all other manipulations before using this
+       function.
        """
 
     def replace_f(term):
@@ -1264,7 +1263,7 @@ def make_canonical(expr):
                     return replace_f(ret)
             # None is contracted -> kill None and keep delta
             else:
-                pass
+                continue
         return ret
 
     expr = expr.expand()
@@ -1279,4 +1278,4 @@ def make_canonical(expr):
             ret += replace_f(term)
     else:
         ret += replace_f(fock_terms)
-    return evaluate_deltas(ret)
+    return ret

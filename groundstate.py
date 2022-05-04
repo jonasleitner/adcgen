@@ -149,7 +149,15 @@ class ground_state:
                 operators *= F(symbol)
             # prefactor for lifting index restrictions
             prefactor = Rational(1, factorial(excitation) ** 2)
-            psi += - prefactor * t * NO(operators)
+            # For signs: Decided to subtract all Doubles to stay consistent
+            #            with existing implementations of the amplitudes.
+            #            The remaining amplitudes (S/T/Q...) are added!
+            #            (denominator for Triples: i+j+k-a-b-c
+            #                             Doubles: a+b-i-j)
+            if excitation == 2:
+                psi -= prefactor * t * NO(operators)
+            else:
+                psi += prefactor * t * NO(operators)
         print(f"Build gs^({order}) {braket} = ", latex(psi))
         return psi
 
@@ -158,6 +166,8 @@ class ground_state:
         # not working really. The denominator is only represented as symbolic
         # delta without any indices and therefore it is not possible to
         # subtract: - E*t properly
+        # atm the subtraction is ommited completely and needs to be done
+        # manually afterwards.
         space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
         if len(space) != 1 or len(indices) != 1:
@@ -192,15 +202,14 @@ class ground_state:
         ret = bra * self.h.h1 * self.psi(order-1, "ket")
         ret = wicks(ret, keep_only_fully_contracted=True,
                     simplify_kronecker_deltas=True)
-
         # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
         terms = get_order_two(order)
         for term in terms:
             if any(o == 0 for o in term):
                 continue
             # possibly also only represent E symbolic?
-            ret -= self.energy(term[0]) * \
-                AntiSymmetricTensor(f"t{term[1]}", idx["occ"], idx["virt"])
+            # ret -= self.energy(term[0]) * \
+            #     AntiSymmetricTensor(f"t{term[1]}", idx["occ"], idx["virt"])
         return (ret * denom).expand()
 
     @cached_member
