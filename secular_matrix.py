@@ -169,6 +169,15 @@ class secular_matrix:
                              f"identical to the first secular matrix space: "
                              f"{block}.")
 
+        # I think it should not be possible to add the resulting mvp vector r
+        # in the result by multiplying with the approrpiate tensor
+        # AntiSymmetricTensor("r", sorted(idx[virt], sorted(idx[occ]))),
+        # because this automatically would automatically also introduce the
+        # antisymmetry of the occ and virt indices. However, in this function
+        # we are just defining that r is antisym wrt index permutations. It
+        # should be possible, but it requires the correct setup of the
+        # resulting mvp tensor - which is not done atm.
+
         # generate additional indices for the secular matrix block
         n_ov = get_n_ov_from_space(block[1])
         idx = self.indices.get_new_gen_indices(**n_ov)

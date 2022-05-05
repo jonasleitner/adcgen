@@ -92,7 +92,7 @@ class indices:
         for idx in index_base[ov]:
             new_indices.append(idx + str(counter[ov]))
         # this index is used in H1
-        if counter[ov] == 42:
+        if counter[ov] == 42 and ov == "occ":
             new_indices.remove("o42")
 
         self.generic_indices[ov].extend(new_indices)

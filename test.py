@@ -12,9 +12,9 @@ from secular_matrix import secular_matrix
 from transformexpr import make_canonical, make_real, change_tensor_name, filter_tensor, remove_tensor, simplify, sort_by_n_deltas, sort_by_type_deltas, sort_by_type_tensor, sort_tensor_contracted_indices
 from misc import cached_member, transform_to_tuple
 
-i, j, k, l, m, n, o = symbols('i,j,k,l,m,n,o', below_fermi=True, cls=Dummy)
-a, b, c, d, e, f, g = symbols('a,b,c,d,e,f,g', above_fermi=True, cls=Dummy)
-p, q, r, s = symbols('p,q,r,s', cls=Dummy)
+# i, j, k, l, m, n, o = symbols('i,j,k,l,m,n,o', below_fermi=True, cls=Dummy)
+# a, b, c, d, e, f, g = symbols('a,b,c,d,e,f,g', above_fermi=True, cls=Dummy)
+# p, q, r, s = symbols('p,q,r,s', cls=Dummy)
 
 h = Hamiltonian()
 mp = ground_state(h, first_order_singles=False)
@@ -22,14 +22,20 @@ isr = intermediate_states(mp, variant="pp")
 m = secular_matrix(isr)
 op = properties(isr)
 
-bla = m.precursor_matrix_block(2, "ph,ph", "ia,jb")
+bla = m.mvp_block_order(2, "ph", "ph,ph", indices="ia")
 print(latex(bla))
 bla = mp.indices.substitute_indices(bla)
 # bla = change_tensor_name(bla, "X", "Ycc")
 print()
 bla = simplify(bla, True)
 print(latex(bla))
-bla = sort_by_type_deltas(bla)
-for t, expr in bla.items():
+sort = sort_tensor_contracted_indices(bla, "Y")
+print("Non Canonical result:\n\n")
+for t, expr in sort.items():
     print(f"{len(expr.args)} terms with sum {t}:\n{latex(expr)}\n\n")
-    print(latex(make_canonical(expr)))
+
+bla = make_canonical(bla, True)
+sort = sort_tensor_contracted_indices(bla, "Y")
+print("Canonical result:\n\n")
+for t, expr in sort.items():
+    print(f"{len(expr.args)} terms with sum {t}:\n{latex(expr)}\n\n")

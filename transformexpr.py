@@ -1207,7 +1207,7 @@ def simplify(expr, real=False, *sym_tensors):
     return ret
 
 
-def make_canonical(expr):
+def make_canonical(expr, only_block_diagonal=False):
     """Diagonalize the Fock matrix by replacing elements
        f_pq with delta_pq * f_pq. The deltas are evaluated manually to
        avoid loss of information in the expression (loosing a target index).
@@ -1217,7 +1217,7 @@ def make_canonical(expr):
        function.
        """
 
-    def replace_f(term):
+    def replace_f(term, only_block_diagonal):
         # 1) determine which indices are contracted in the term
         idx = __term_contracted_indices(term)
         # 2) replace f_ij -> delta_ij * f_ii
@@ -1231,9 +1231,12 @@ def make_canonical(expr):
                     # delta_ov = 0 -> term is zero (off diagonal fock block)
                     if delta is S.Zero:
                         return S.Zero
-                    ret *= delta * t
-                    if delta is not S.One:
-                        deltas.append(delta)
+                    if only_block_diagonal:
+                        ret *= t
+                    else:
+                        ret *= delta * t
+                        if delta is not S.One:
+                            deltas.append(delta)
                 else:
                     ret *= t
         else:
@@ -1242,11 +1245,14 @@ def make_canonical(expr):
                 delta = KroneckerDelta(data["upper"][0], data["lower"][0])
                 if delta is S.Zero:
                     return S.Zero
-                ret *= delta * t
-                if delta is not S.One:
-                    deltas.append(delta)
+                if only_block_diagonal:
+                    ret *= term
+                else:
+                    ret *= delta * term
+                    if delta is not S.One:
+                        deltas.append(delta)
             else:
-                ret *= t
+                ret *= term
 
         # manually evalute the deltas. In case of more than one delta
         # (fock element) per term: do it recursively
@@ -1275,7 +1281,7 @@ def make_canonical(expr):
     ret = remaining
     if isinstance(fock_terms, Add):
         for term in fock_terms.args:
-            ret += replace_f(term)
+            ret += replace_f(term, only_block_diagonal)
     else:
-        ret += replace_f(fock_terms)
+        ret += replace_f(fock_terms, only_block_diagonal)
     return ret
