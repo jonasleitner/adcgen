@@ -2,12 +2,16 @@ from sympy import KroneckerDelta, Add, S, Mul, Pow, latex, Dummy
 from sympy.physics.secondquant import AntiSymmetricTensor, F, Fd
 from indices import assign_index
 from misc import Inputerror, transform_to_tuple
+import time
 
 
 # TODO: support non integer denominator, i.e. Add may occur as part of a
 #       Mul object. Currently all functions only support Mul as
 #       part of Add. (needed for canonical amplitude equation)
 # TODO: support NO objects
+
+# factor can factor out a common factor in a expression but only if all
+# components of the expression contain the same common factor
 
 def sort_by_n_deltas(expr):
     """Sort terms in the expression according to the number of deltas"""
@@ -488,7 +492,7 @@ def make_real(expr, *sym_tensors):
         # the power to which a tensor is raised is taken into account
         # -> f'*f^2: f' is first, f second and third
 
-        def swap(tensor, data):
+        def swap(data):
             # swap upper and lower indices and lower the exponent of the
             # original tensor by 1 (exponent=0 -> 1, exponent=1 -> Tensor)
             ret = AntiSymmetricTensor(t_string, data["lower"], data["upper"])
@@ -509,7 +513,7 @@ def make_real(expr, *sym_tensors):
                     continue
                 if data["name"] == t_string:
                     if counter <= n < counter+data["exponent"]:
-                        ret *= swap(t, data)
+                        ret *= swap(data)
                         swapped.update(data)
                     else:  # wrong counter
                         ret *= t
@@ -522,7 +526,7 @@ def make_real(expr, *sym_tensors):
                 ret *= term
             if data and data["name"] == t_string:
                 if 0 < n <= data["exponent"]:
-                    ret *= swap(term, data)
+                    ret *= swap(data)
                     swapped.update(data)
                 else:  # wrong counter
                     ret *= term
@@ -692,6 +696,7 @@ def make_real(expr, *sym_tensors):
                 matching_terms.append(temp)
         return matching_terms
 
+    start = time.time()
     for t in sym_tensors:
         if not isinstance(t, str):
             raise Inputerror("Tensor string must be of type str, not "
@@ -808,6 +813,7 @@ def make_real(expr, *sym_tensors):
         # Also a single term may be simplified by introducing Pow objects!
         else:
             res += swap_tensors(terms, *t_strings)
+    print(f"old make_real took {time.time() - start} seconds.")
     return res
 
 
@@ -864,33 +870,6 @@ def simplify(expr, real=False, *sym_tensors):
        symmetric tensors (by default only 'V' and 'f').
        """
     from collections import Counter
-
-    def obj_name(obj):
-        # returns a string that describes the object (part of Mul)
-        # (whether its a delta/tensor/create/annihilate)
-        # switch to dict or sth like that?
-        naming = {
-            KroneckerDelta: "delta",
-            F: "annihilate",
-            Fd: "create",
-        }
-        name = None
-        if isinstance(obj, AntiSymmetricTensor):
-            name = f"tensor_{obj.symbol.name}_{len(obj.upper)}{len(obj.lower)}"
-            name += "_1"  # exponent
-        elif isinstance(obj, Pow):
-            # How to define a name for Pow? n-times Tensor?
-            name = "_".join(obj_name(obj.args[0]).split("_")[:-1]) \
-                + f"_{obj.args[1]}"
-        else:  # delta / create / annihilate
-            try:
-                name = naming[type(obj)] + "_1"
-            except KeyError:  # prefactor and unknown objects
-                if len(obj.free_symbols) != 0:
-                    raise KeyError(f"Do not have a name for an {type(obj)} "
-                                   "object. Known names: "
-                                   f"{list(naming.values())}.")
-        return name
 
     def descriptive_string(data):
         name = data["type"]
@@ -952,7 +931,7 @@ def simplify(expr, real=False, *sym_tensors):
                     continue
                 # if indices for the two objects are equal
                 coupling.extend(pos2)
-        return coupling  # , not_coupled_idx
+        return coupling
 
     def term_coupling(term, *sym_tensors):
         # returns {n: [coupling]}
@@ -980,7 +959,6 @@ def simplify(expr, real=False, *sym_tensors):
                 c = obj_coupling(t, other_t, *sym_tensors)
                 if not c:  # the obj are not coupled
                     continue
-                # name = obj_name(t)
                 data = __obj_data(t)
                 name = descriptive_string(data)
                 if name not in coupling:
@@ -1017,11 +995,11 @@ def simplify(expr, real=False, *sym_tensors):
                         temp.append(other_i)
                         matched.append(other_i)
                 equal_couplings.append(temp)
-            # iterate over the equal couplings (e.g. of in total 4 'X' tensors
+            # iterate over the equal couplings (e.g. of in total 4 'X' tensors,
             # pairs of two share the same coupling: c1 and c2) Attach a counter
             # to each coupling to differentiate identical tensors with
             # identical coupling from each other, i.e. objects with identical
-            # coupling are numbered (f*f' -> f1*f2)
+            # coupling are numbered (f*f -> f1*f2)
             for equal_coupl in equal_couplings:
                 temp = {}
                 for n, i in enumerate(equal_coupl):
@@ -1072,6 +1050,7 @@ def simplify(expr, real=False, *sym_tensors):
                 ret[assign_index(s.name)].append((s, *occurence))
         return ret
 
+    start = time.time()
     for t in sym_tensors:
         if not isinstance(t, str):
             raise Inputerror(f"Tensor string {t} must be of type str, "
@@ -1081,7 +1060,7 @@ def simplify(expr, real=False, *sym_tensors):
     # cant collect any terms... can only make real if requested
     if not isinstance(expr, Add):
         if real:
-            expr = make_real(expr)
+            expr = make_real(expr, *sym_tensors)
         return expr
 
     # if real is given all tensors need to be real, i.e.
@@ -1153,7 +1132,7 @@ def simplify(expr, real=False, *sym_tensors):
                         if idx2[0] in matched_idx:
                             continue
                         # if pattern are identical -> found a match for idx1 in
-                        # the other_term -> break and continue with next idx
+                        # other_term -> break and continue with next idx1
                         if count1 == Counter(idx2[1:]):
                             matched_idx.append(idx2[0])
                             equal_idx.append((idx2[0], idx1[0]))
@@ -1175,7 +1154,7 @@ def simplify(expr, real=False, *sym_tensors):
             # but indices are already equal and only need to be swapt
             # -> make real will fix this //
             # alternatively the indices may match however the substitution
-            # only includes target indices that are not contracted)
+            # only includes target indices that are not contracted
             if matched_ov and all(matched_ov):
                 # if sub is empty there is nothing to do in this function
                 # but they are matched. Make real should catch
@@ -1201,6 +1180,7 @@ def simplify(expr, real=False, *sym_tensors):
     # Add the remaining terms that were not matched
     ret += Add(*[expr.args[i] for i in range(len(expr.args))
                  if i not in matched_terms])
+    print(f"old simplify took {time.time() - start} seconds.")
     # try swapping indices of symmetric tensors to fully simplify the expr
     if real:
         ret = make_real(ret, *sym_tensors)
