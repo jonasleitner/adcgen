@@ -74,6 +74,7 @@ class expr:
            """
 
         self.__real = True
+        self.__sym_tensors.update(['f', 'V'])
         real_expr = 0
         for t in self.terms:
             temp = 1

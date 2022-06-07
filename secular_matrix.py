@@ -5,9 +5,9 @@ from math import factorial
 from itertools import product
 
 from isr import get_order_two, get_orders_three
-from indices import (check_repeated_indices, split_idxstring,
-                     get_n_ov_from_space)
+from indices import repeated_indices, split_idx_string, n_ov_from_space
 from misc import Inputerror, cached_member, transform_to_tuple
+from simplify import simplify
 
 
 class secular_matrix:
@@ -46,13 +46,8 @@ class secular_matrix:
         if len(block) != 2 or len(indices) != 2:
             raise Inputerror("Precursor matrix requires two block and indice "
                   f"strings. Block {block} and indice {indices} are not valid")
-        for space in block:
-            if not self.isr.check_valid_space(space):
-                raise Inputerror("Requested the matrix block {block} with the "
-                                 f"invalid excitation space {space} for "
-                                 f"{self.isr.variant} ADC.")
 
-        if check_repeated_indices(indices[0], indices[1]):
+        if repeated_indices(indices[0], indices[1]):
             raise Inputerror("Indices for precursor secular matrix should not "
                              f"be equal. Provided indice string: {indices}")
 
@@ -68,19 +63,18 @@ class secular_matrix:
             orders_M = get_orders_three(norm_term[1])
             matrix = 0
             for term in orders_M:
-                i1 = (self.isr.precursor(
-                        term[0], block[0], "bra", indices=indices[0]
-                    ) * self.__get_shifted_h(term[1]) *
-                    self.isr.precursor(
-                        term[2], block[1], "ket", indices=indices[1]
-                    )
-                )
+                i1 = (self.isr.precursor(term[0], space=block[0], braket="bra",
+                                         indices=indices[0]) *
+                      self.__get_shifted_h(term[1]) *
+                      self.isr.precursor(term[2], space=block[1], braket="ket",
+                                         indices=indices[1]))
                 i1 = wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
                 matrix += i1
-            # evaluate_deltas should not be necessary here
+            # evaluate_deltas should not be necessary here, because norm only
+            # contains contracted indices
             res += (norm * matrix).expand()
-        return res
+        return simplify(res).sympy
 
     @cached_member
     def isr_matrix_block(self, order, block, indices):
@@ -97,16 +91,11 @@ class secular_matrix:
         block = transform_to_tuple(block)
         indices = transform_to_tuple(indices)
         if len(block) != 2 or len(indices) != 2:
-            raise Inputerror("Precursor matrix requires two block and indice "
+            raise Inputerror("Precursor matrix requires two block and index "
                              f"strings. Block {block} and indice {indices}"
                              "are not valid.")
-        for space in block:
-            if not self.isr.check_valid_space(space):
-                raise Inputerror(f"Requested the matrix block {block} with an "
-                                 f"invalid excitation space {space} for "
-                                 f"{self.isr.variant} ADC.")
 
-        if check_repeated_indices(indices[0], indices[1]):
+        if repeated_indices(indices[0], indices[1]):
             raise Inputerror("Indices for isr secular matrix should not be ",
                              f"equal. Provided indice string: {indices}")
 
@@ -122,21 +111,19 @@ class secular_matrix:
             orders_M = get_orders_three(norm_term[1])
             matrix = 0
             for term in orders_M:
-                i1 = (
-                    self.isr.intermediate_state(
-                        term[0], block[0], "bra", indices=indices[0]
-                    ) *
-                    self.__get_shifted_h(term[1]) *
-                    self.isr.intermediate_state(
-                        term[2], block[1], "ket", indices=indices[1]
-                    )
-                )
+                i1 = (self.isr.intermediate_state(term[0], space=block[0],
+                                                  braket="bra",
+                                                  indices=indices[0]) *
+                      self.__get_shifted_h(term[1]) *
+                      self.isr.intermediate_state(term[2], space=block[1],
+                                                  braket="ket",
+                                                  indices=indices[1]))
                 i1 = wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
                 matrix += i1
             # evaluate deltas should not be necessary here
             res += (norm * matrix).expand()
-        return res
+        return simplify(res).sympy
 
     @cached_member
     def mvp_block_order(self, order, mvp_space, block, indices):
@@ -161,7 +148,7 @@ class secular_matrix:
                              f"matrix block {block} / mvp indices {indices}.")
         mvp_space = mvp_space[0]
         indices = indices[0]
-        if len(mvp_space) != len(split_idxstring(indices)):
+        if len(mvp_space) != len(split_idx_string(indices)):
             raise Inputerror(f"The indices {indices} are insufficient for the"
                              f" {mvp_space} mvp.")
         if mvp_space != block[0]:
@@ -179,11 +166,9 @@ class secular_matrix:
         # resulting mvp tensor - which is not done atm.
 
         # generate additional indices for the secular matrix block
-        n_ov = get_n_ov_from_space(block[1])
-        idx = self.indices.get_new_gen_indices(**n_ov)
-        idx_str = []
-        for symbols in idx.values():
-            idx_str.extend([s.name for s in symbols])
+        n_ov = n_ov_from_space(block[1])
+        idx = self.indices.get_generic_indices(**n_ov)
+        idx_str = [s.name for sym in idx.values() for s in sym]
         idx_str = "".join(idx_str)
 
         # contruct the secular matrix
@@ -203,19 +188,20 @@ class secular_matrix:
         # (see below) has to be introduced.
         # For PP ADC this leads to 1/(n!)^2 * <R|R>, which keeps the
         # normalization of the MVP.
-        n_ov = get_n_ov_from_space(mvp_space)
+        n_ov = n_ov_from_space(mvp_space)
         prefactor_mvp = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
         # The same argument leads to a similar prefactor for the contraction
-        # with amplitude vector. Instead of introducing a prefactor that
+        # with the amplitude vector (the norm of the amplitude vector also
+        # needs to be correct). Instead of introducing a prefactor that
         # seamingly just appears out of nowhere the prefactor that is present
         # due to the contraction over the amplitude vector indices needs to be
         # adjusted. Essentially the same formula and argumentation may be used
         # only applied to a different space, namely block[1] - which is the
         # space the sum contracts.
-        n_ov = get_n_ov_from_space(block[1])
+        n_ov = n_ov_from_space(block[1])
         prefactor_ampl = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
