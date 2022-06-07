@@ -11,12 +11,32 @@ def cached_member(function):
        member variable '_function_cache' of the class instance.
        """
 
-    from indices import split_idxstring
+    from indices import split_idx_string
     from inspect import signature
     fname = function.__name__
 
     @wraps(function)
     def wrapper(self, *args, **kwargs):
+        def sort_spaces(sp):
+            return ",".join(["".join(sorted(s, reverse=True)) for s in sp])
+
+        def sort_indices(idx_strings):
+            return ",".join(["".join(sorted(split_idx_string(idx),
+                            key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])))
+                            for idx in idx_strings])
+
+        def validate_bk(braket):
+            if len(braket) == 1 and braket[0] in ['bra', 'ket']:
+                return braket[0]
+            else:
+                raise Inputerror(f"Invalid argument for braket: {braket}.")
+
+        def validate_lr(lr):
+            if len(lr) == 1 and lr[0] in ['left', 'right']:
+                return lr[0]
+            else:
+                raise Inputerror(f"Invalid argument for lr: {lr}.")
+
         try:
             fun_cache = self._function_cache[fname]
         except AttributeError:
@@ -28,8 +48,15 @@ def cached_member(function):
         # all spaces and indices that are in kwargs are sorted
         # to bring them in a common form to avoid unneccesary
         # additional calculations
-        # NOTE: This currently requires the name of all function arguments
-        # that describe indices to start with an i
+        process = {
+            # order, adc_order, min_order: type(int) -> already covered
+            'braket': validate_bk,
+            'lr': validate_lr,
+            'space': sort_spaces,
+            'block': sort_spaces,
+            'mvp_space': sort_spaces,
+            'indices': sort_indices,
+        }
         kwargs_key = {}
         for var, value in kwargs.items():
             # catch orders -> hand over as int
@@ -37,40 +64,7 @@ def cached_member(function):
                 kwargs_key[var] = value
                 continue
             val = transform_to_tuple(value)
-            # catch brakek and lr (amplitude) -> hand them over as str
-            if len(val) == 1 and val[0] in ["bra", "ket", "left", "right"]:
-                kwargs_key[var] = value
-                continue
-            if var == "braket":
-                raise Inputerror("Probably a typo in 'bra'/'ket'. Provided "
-                                 f"braket string '{value}'.")
-            elif var == "lr":
-                raise Inputerror("Probably a typo in 'left'/'right'. "
-                                 f"Provided string: {value}.")
-            # check whether the str is a space or index
-            is_index = False
-            for sp in val:
-                for letter in sp:
-                    # the second condition allows to request the single
-                    # index "h".. for whatever reason one should do that
-                    # but restricts the name of all arguments that describe
-                    # indices to start with an "i"
-                    if letter not in ["p,h"] and var[0] == "i":
-                        is_index = True
-            # sort: indices, idx_pre, idx_is -> hand over as str
-            if is_index:
-                sorted_idx = []
-                for idxstring in val:
-                    sorted_idx.append("".join(
-                        sorted(split_idxstring(idxstring))
-                    ))
-                kwargs_key[var] = ",".join(sorted_idx)
-            # sort: space, block, mvp_space -> hand over as str
-            else:
-                sorted_sp = []
-                for sp in val:
-                    sorted_sp.append("".join(sorted(sp)))
-                kwargs_key[var] = ",".join(sorted_sp)
+            kwargs_key[var] = process[var](val)
 
         # add the kwargs arguments in the appropriate order to args
         for argument in signature(function).parameters.keys():
@@ -110,6 +104,43 @@ def cached_property(function):
     get.__doc__ = function.__doc__
 
     return property(get)
+
+
+def validate_input(**kwargs):
+    # order, min_order, adc_order, braket, space, lr, mvp_space: single input
+    # indices, block: 2 strings possible
+    validate = {
+        'order': lambda o: isinstance(o, int),  # int
+        'braket': lambda bk: bk in ['bra', 'ket'],  # bra/ket
+        'space': lambda sp: all(s in ['p', 'h'] for s in sp),
+        'indices': lambda idx: all(isinstance(i, str) for i in idx),
+        'min_order': lambda o: isinstance(o, int),  # int
+        'lr': lambda lr: lr in ['left', 'right'],  # left/right
+        'block': lambda b: all(validate['space'](sp) for sp in b),
+        'mvp_space': lambda sp: all(s in ['p', 'h'] for s in sp),
+        'adc_order': lambda o: isinstance(o, int),  # int
+    }
+    # braket, lr are exprected as str!
+    # order, min_order, adc_order are expected as int!
+    # space, mvp_space, block and indices as list/tuple or ',' separated string
+    for var, val in kwargs.items():
+        if var in {'space', 'mvp_space'}:
+            tpl = transform_to_tuple(val)
+            if len(tpl) != 1:
+                raise Inputerror(f'Invalid input for space/mvp_space: {val}.')
+            val = tpl[0]
+        elif var == 'block':
+            tpl = transform_to_tuple(val)
+            if len(tpl) != 2:
+                raise Inputerror(f'Invalid input for block: {val}')
+            val = tpl
+        elif var == 'indices':
+            tpl = transform_to_tuple(val)
+            if len(tpl) not in [1, 2]:
+                raise Inputerror(f'Invalid indices input: {val}.')
+            val = tpl
+        if not validate[var](val):
+            raise Inputerror(f'Invalid input for {var}: {val}.')
 
 
 def transform_to_tuple(input):

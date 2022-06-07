@@ -1,6 +1,6 @@
 from sympy import KroneckerDelta, Add, S, Mul, Pow, latex, Dummy
 from sympy.physics.secondquant import AntiSymmetricTensor, F, Fd
-from indices import assign_index
+from indices import index_space
 from misc import Inputerror, transform_to_tuple
 import time
 
@@ -53,14 +53,14 @@ def sort_by_type_deltas(expr):
             for t in term.args:
                 data = __obj_data(t)
                 if data["type"] == "delta":
-                    ov1 = assign_index(data["preferred"].name)[0]
-                    ov2 = assign_index(data["killable"].name)[0]
+                    ov1 = index_space(data["preferred"].name)[0]
+                    ov2 = index_space(data["killable"].name)[0]
                     ret.append("".join(sorted(ov1 + ov2)))
         else:
             data = __obj_data(term)
             if data["type"] == "delta":
-                ov1 = assign_index(data["preferred"].name)[0]
-                ov2 = assign_index(data["killable"].name)[0]
+                ov1 = index_space(data["preferred"].name)[0]
+                ov2 = index_space(data["killable"].name)[0]
                 ret.append("".join(sorted(ov1 + ov2)))
         if not ret:
             ret = ["no_deltas"]
@@ -132,10 +132,10 @@ def sort_by_type_tensor(expr, t_string, symmetric=False):
                 data = __obj_data(t)
                 if data["type"] == "tensor" and data["name"] == t_string:
                     ov_up = sorted(
-                        [assign_index(s.name)[0] for s in data["upper"]]
+                        [index_space(s.name)[0] for s in data["upper"]]
                     )
                     ov_lo = sorted(
-                        [assign_index(s.name)[0] for s in data["lower"]]
+                        [index_space(s.name)[0] for s in data["lower"]]
                     )
                     if symmetric:
                         ov = "".join(sorted(ov_up + ov_lo))
@@ -146,10 +146,10 @@ def sort_by_type_tensor(expr, t_string, symmetric=False):
             data = __obj_data(term)
             if data["type"] == "tensor" and data["name"] == t_string:
                 ov_up = sorted(
-                    [assign_index(s.name)[0] for s in data["upper"]]
+                    [index_space(s.name)[0] for s in data["upper"]]
                 )
                 ov_lo = sorted(
-                    [assign_index(s.name)[0] for s in data["lower"]]
+                    [index_space(s.name)[0] for s in data["lower"]]
                 )
                 if symmetric:
                     ov = "".join(sorted(ov_up + ov_lo))
@@ -169,7 +169,7 @@ def sort_by_type_tensor(expr, t_string, symmetric=False):
                 ret[key] = 0
             ret[key] += term
     else:
-        ret[assign_term(term, t_string, symmetric)] = expr
+        ret[assign_term(expr, t_string, symmetric)] = expr
     return ret
 
 
@@ -284,11 +284,11 @@ def sort_tensor_contracted_indices(expr, t_string):
                 data = __obj_data(t)
                 if data["type"] == "tensor" and data["name"] == t_string:
                     contr_up = [
-                        assign_index(s.name)[0] for s in data["upper"]
+                        index_space(s.name)[0] for s in data["upper"]
                         if idx[s]
                     ]
                     contr_lo = [
-                        assign_index(s.name)[0] for s in data["lower"]
+                        index_space(s.name)[0] for s in data["lower"]
                         if idx[s]
                     ]
                     c = "".join(sorted(contr_up + contr_lo))
@@ -301,10 +301,10 @@ def sort_tensor_contracted_indices(expr, t_string):
             data = __obj_data(term)
             if data["type"] == "tensor" and data["name"] == t_string:
                 contr_up = [
-                    assign_index(s.name) for s in data["upper"] if idx[s]
+                    index_space(s.name) for s in data["upper"] if idx[s]
                 ]
                 contr_lo = [
-                    assign_index(s.name) for s in data["lower"] if idx[s]
+                    index_space(s.name) for s in data["lower"] if idx[s]
                 ]
                 c = "".join(sorted(contr_up + contr_lo))
                 if contracted and contracted != c:
@@ -1047,7 +1047,7 @@ def simplify(expr, real=False, *sym_tensors):
         for s, occurence in indices.items():
             # filter target indices here already and only return contracted idx
             if len(occurence) > 1:
-                ret[assign_index(s.name)].append((s, *occurence))
+                ret[index_space(s.name)].append((s, *occurence))
         return ret
 
     start = time.time()

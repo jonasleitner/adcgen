@@ -3,9 +3,10 @@ from sympy.physics.secondquant import wicks
 from math import factorial
 
 from isr import get_orders_three, get_order_two
-from indices import get_n_ov_from_space
+from indices import n_ov_from_space
 from misc import Inputerror, cached_member, transform_to_tuple
 from secular_matrix import secular_matrix
+from simplify import simplify
 
 
 class properties:
@@ -44,6 +45,7 @@ class properties:
     @cached_member
     def one_particle_block(self, order, block, indices):
         """Computes sum_pq d_{pq} X_I <I|pq|J>^(n) Y_J.
+           (also includes the summation over the amplitude corefficients)
            Results checked for pp-ADC(2)!
            """
 
@@ -58,11 +60,11 @@ class properties:
         # again not use the full prefactors from lifting the sum restrictions,
         # but sqrt(1/(no! * nv!)) to keep the left and right amplitude vectors
         # normalized.
-        n_ov = get_n_ov_from_space(block[0])
+        n_ov = n_ov_from_space(block[0])
         prefactor_l = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
-        n_ov = get_n_ov_from_space(block[1])
+        n_ov = n_ov_from_space(block[1])
         prefactor_r = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
@@ -79,22 +81,20 @@ class properties:
             orders_d = get_orders_three(norm_term[1])
             density = 0
             for term in orders_d:
-                i1 = (
-                    prefactor_l * prefactor_r * left *
-                    self.isr.intermediate_state(
-                        term[0], block[0], "bra", indices=indices[0]
-                    )
-                    * self.__shifted_one_particle_op(term[1]) *
-                    self.isr.intermediate_state(
-                        term[2], block[1], "ket", indices=indices[1]
-                    )
-                    * right
-                )
+                i1 = (prefactor_l * prefactor_r * left *
+                      self.isr.intermediate_state(term[0], space=block[0],
+                                                  braket="bra",
+                                                  indices=indices[0]) *
+                      self.__shifted_one_particle_op(term[1]) *
+                      self.isr.intermediate_state(term[2], space=block[1],
+                                                  braket="ket",
+                                                  indices=indices[1]) *
+                      right)
                 i1 = wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
                 density += i1
             res += (norm * density).expand()
-        return res
+        return simplify(res).sympy
 
     @cached_member
     def one_particle_operator(self, adc_order, order=None):
@@ -120,16 +120,12 @@ class properties:
 
             # get indices for the two blocks
             # TODO: create a function for this
-            n_ov = get_n_ov_from_space(b[0])
-            sym = self.indices.get_new_gen_indices(**n_ov)
-            idx0 = []
-            for s_list in sym.values():
-                idx0.extend([s.name for s in s_list])
-            n_ov = get_n_ov_from_space(b[1])
-            sym = self.indices.get_new_gen_indices(**n_ov)
-            idx1 = []
-            for s_list in sym.values():
-                idx1.extend([s.name for s in s_list])
+            n_ov = n_ov_from_space(b[0])
+            sym = self.indices.get_generic_indices(**n_ov)
+            idx0 = [s.name for s_list in sym.values() for s in s_list]
+            n_ov = n_ov_from_space(b[1])
+            sym = self.indices.get_generic_indices(**n_ov)
+            idx1 = [s.name for s_list in sym.values() for s in s_list]
             idx0 = "".join(idx0)
             idx1 = "".join(idx1)
 
@@ -155,14 +151,14 @@ class properties:
 
         left = self.isr.amplitude_vector(indices=indices[0], lr="left")
         right = self.isr.amplitude_vector(indices=indices[1], lr="right")
-        # again not use the full prefactors from lifting the sum restrictions
+        # again not use the full prefactors from lifting the sum restrictions,
         # but sqrt(1/(no! * nv!)) to keep the left and right amplitude vectors
         # normalized.
-        n_ov = get_n_ov_from_space(block[0])
+        n_ov = n_ov_from_space(block[0])
         prefactor_l = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
-        n_ov = get_n_ov_from_space(block[1])
+        n_ov = n_ov_from_space(block[1])
         prefactor_r = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
@@ -179,22 +175,20 @@ class properties:
             orders_d = get_orders_three(norm_term[1])
             density = 0
             for term in orders_d:
-                i1 = (
-                    prefactor_l * prefactor_r * left *
-                    self.isr.intermediate_state(
-                        term[0], block[0], "bra", indices=indices[0]
-                    )
-                    * self.__shifted_two_particle_op(term[1]) *
-                    self.isr.intermediate_state(
-                        term[2], block[1], "ket", indices=indices[1]
-                    )
-                    * right
-                )
+                i1 = (prefactor_l * prefactor_r * left *
+                      self.isr.intermediate_state(term[0], space=block[0],
+                                                  braket="bra",
+                                                  indices=indices[0]) *
+                      self.__shifted_two_particle_op(term[1]) *
+                      self.isr.intermediate_state(term[2], space=block[1],
+                                                  braket="ket",
+                                                  indices=indices[1]) *
+                      right)
                 i1 = wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
                 density += i1
             res += (norm * density).expand()
-        return res
+        return simplify(res).sympy
 
     @cached_member
     def two_particle_operator(self, adc_order, order=None):
@@ -219,16 +213,12 @@ class properties:
                 continue
 
             # get indices for the two blocks
-            n_ov = get_n_ov_from_space(b[0])
-            sym = self.indices.get_new_gen_indices(**n_ov)
-            idx0 = []
-            for s_list in sym.values():
-                idx0.extend([s.name for s in s_list])
-            n_ov = get_n_ov_from_space(b[1])
-            sym = self.indices.get_new_gen_indices(**n_ov)
-            idx1 = []
-            for s_list in sym.values():
-                idx1.extend([s.name for s in s_list])
+            n_ov = n_ov_from_space(b[0])
+            sym = self.indices.get_generic_indices(**n_ov)
+            idx0 = [s.name for s_list in sym.values() for s in s_list]
+            n_ov = n_ov_from_space(b[1])
+            sym = self.indices.get_generic_indices(**n_ov)
+            idx1 = [s.name for s_list in sym.values() for s in s_list]
             idx0 = "".join(idx0)
             idx1 = "".join(idx1)
 
@@ -257,10 +247,14 @@ class properties:
 
         # import left amplitude vector
         amplitude = self.isr.amplitude_vector(indices=indices, lr="left")
-        n_ov = get_n_ov_from_space(space)
+        n_ov = n_ov_from_space(space)
         prefactor = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
+        # import the ground state wavefunction to save some indices
+        mp = {}
+        for o in range(order + 1):
+            mp[o] = self.gs.psi(o, 'ket')
 
         orders = get_order_two(order)
         res = 0
@@ -274,19 +268,17 @@ class properties:
             orders_d = get_orders_three(norm_term[1])
             transition_d = 0
             for term in orders_d:
-                i1 = (
-                    prefactor * amplitude *
-                    self.isr.intermediate_state(
-                        term[0], space, "bra", indices=indices
-                    )
-                    * self.__transition_operator(term[1]) *
-                    self.gs.psi(term[2], "ket")
-                )
+                i1 = (prefactor * amplitude *
+                      self.isr.intermediate_state(term[0], space=space,
+                                                  braket="bra",
+                                                  indices=indices) *
+                      self.__transition_operator(term[1]) *
+                      mp[term[2]])
                 i1 = wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
                 transition_d += i1
             res += (norm * transition_d).expand()
-        return res
+        return simplify(res).sympy
 
     def transition_moment(self, adc_order, order=None):
         """Computes sum_I sum_x <I|x|Psi>
@@ -306,12 +298,10 @@ class properties:
             if order is not None and max_order < order:
                 continue
 
-            # get indices for the spaces
-            n_ov = get_n_ov_from_space(space)
-            sym = self.indices.get_new_gen_indices(**n_ov)
-            idx = []
-            for s_list in sym.values():
-                idx.extend([s.name for s in s_list])
+            # get indices for the space
+            n_ov = n_ov_from_space(space)
+            sym = self.indices.get_generic_indices(**n_ov)
+            idx = [s.name for s_list in sym.values() for s in s_list]
             idx = "".join(idx)
 
             if order is not None:

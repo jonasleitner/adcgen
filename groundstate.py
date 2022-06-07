@@ -1,12 +1,11 @@
 from sympy import nsimplify, symbols, Rational, latex, Dummy, diff, sympify
-from sympy.physics.secondquant import (
-    AntiSymmetricTensor, NO, F, Fd, wicks, substitute_dummies
-)
+from sympy.physics.secondquant import AntiSymmetricTensor, NO, F, Fd, wicks
 from math import factorial
-from indices import get_n_ov_from_space, pretty_indices, indices
-from misc import cached_member, cached_property, Inputerror, transform_to_tuple
 
+from indices import indices, n_ov_from_space
+from misc import cached_member, cached_property, Inputerror, transform_to_tuple
 from isr import gen_order_S, get_order_two
+from simplify import simplify
 
 
 class Hamiltonian:
@@ -77,8 +76,8 @@ class ground_state:
         """Returns the ground state energy of specified order."""
 
         if not isinstance(order, int):
-            raise Inputerror("Order for obtaining ground state energy needs to"
-                             f" be a int. {type(order)} is not valid.")
+            raise Inputerror("Order for needs to be a int. "
+                             f"{type(order)} is not valid.")
 
         def H(o): return self.h.h0 if o == 0 else self.h.h1
         h = H(order)
@@ -89,35 +88,40 @@ class ground_state:
         e = bra * h * ket
         e = wicks(e, keep_only_fully_contracted=True,
                   simplify_kronecker_deltas=True)
-        # new_indices required here
-        e = substitute_dummies(e, new_indices=True,
-                               pretty_indices=pretty_indices)
-        e = self.indices.substitute_with_generic_indices(e)
-        print(f"E^({order}) = {latex(e)}")
-        return e
+        # option 1: return the not simplified energy -> will give a lot more
+        #           terms later on
+        # option 2: simplify the energy expression and replace the indices with
+        #           new, generic indices
+        # guess option 2 is nicer, because energy more readable and better
+        # performance
+        e = simplify(e)
+        e = self.indices.substitute_with_generic(e)
+        print(f"E^({order}) = {e}")
+        return e.sympy
 
-    def pretty_energy(self, order):
-        return substitute_dummies(self.energy(order), new_indices=True,
-                                  pretty_indices=pretty_indices)
-
-    @cached_member
     def psi(self, order, braket):
-        """Retuns the ground state wavefunction of the requested order.
-           The type (bra or ket) of the requested wavefunction needs to
-           be provided as str.
-           """
+        """Retuns the ground state wave function. The type of the wave function
+           needs to be specified via the braket string: 'bra' or 'ket'."""
+        # Can't cache ground state wave function!
+        # Leads to an error for terms of the form:
+        #  |1><2|1>... the two |1> need to have different indices!!
+        #  |1><1|2>... |1> and |2> can't share indices
+        #   -> Therefore, each time a gs wavefunction is requested new indices
+        #      need to be used.
+        #      But one can still use overlapping indices within a wavefunction
+        #      e.g. singles: ia, doubles ijab, triples ijkabc
 
         if not isinstance(order, int):
-            raise Inputerror("Order for obtaining ground state wavefunction"
+            raise Inputerror("Order for obtaining ground state wave function"
                              f"needs to of type int. {type(order)} is not "
                              "valid.")
         if braket not in ["ket", "bra"]:
             raise Inputerror("Only possible to build 'bra' or 'ket' gs "
-                             f"wavefunction {braket} is not valid")
+                             f"wave function {braket} is not valid")
 
         # catch 0th order wavefunction
         if order == 0:
-            print(f"Build gs^({order} {braket} = 1")
+            print(f"Build gs({order}) {braket} = 1")
             return sympify(1)
 
         # generalized gs wavefunction generation
@@ -127,25 +131,30 @@ class ground_state:
         }
         get_ov = {
             "bra": lambda ov: [other for other in ["occ", "virt"]
-                               if other != ov],
+                               if other != ov][0],
             "ket": lambda ov: ov
         }
+        get_ov = get_ov[braket]
+        idx = {'occ': [], 'virt': []}
         psi = 0
         for excitation in range(1, order * 2 + 1):
+            # generate 1 additional o/v symbol pair, e.g. singles: ia,
+            # doubles: ijab, etc. -> reuse the indices from the lower spaces.
+            additional_idx = self.indices.get_generic_indices(n_occ=1,
+                                                              n_virt=1)
+            idx['occ'].extend(additional_idx['occ'])
+            idx['virt'].extend(additional_idx['virt'])
             # skip singles for the first order wavefunction if
-            # they are not desired.
+            # they are not requested
             if order == 1 and not self.singles and excitation == 1:
                 continue
-            idx = self.indices.get_gs_indices(
-                braket, n_occ=excitation, n_virt=excitation
-            )
             t = AntiSymmetricTensor(
-                tensor_string[braket], tuple(idx["virt"]), tuple(idx["occ"])
+                tensor_string[braket], idx["virt"], idx["occ"]
             )
             operators = 1
-            for symbol in idx["".join(get_ov[braket]('virt'))]:
+            for symbol in idx[get_ov('virt')]:
                 operators *= Fd(symbol)
-            for symbol in reversed(idx["".join(get_ov[braket]('occ'))]):
+            for symbol in reversed(idx[get_ov('occ')]):
                 operators *= F(symbol)
             # prefactor for lifting index restrictions
             prefactor = Rational(1, factorial(excitation) ** 2)
@@ -158,7 +167,7 @@ class ground_state:
                 psi -= prefactor * t * NO(operators)
             else:
                 psi += prefactor * t * NO(operators)
-        print(f"Build gs^({order}) {braket} = ", latex(psi))
+        print(f"Build gs({order}) {braket} = ", latex(psi))
         return psi
 
     @cached_member
@@ -176,7 +185,7 @@ class ground_state:
         space = space[0]
         indices = indices[0]
 
-        n_ov = get_n_ov_from_space(space)
+        n_ov = n_ov_from_space(space)
         if n_ov["n_occ"] != n_ov["n_virt"]:
             raise Inputerror("Invalid space string for a MP-t amplitude: "
                              f"{space}.")
@@ -212,14 +221,14 @@ class ground_state:
             #     AntiSymmetricTensor(f"t{term[1]}", idx["occ"], idx["virt"])
         return (ret * denom).expand()
 
-    @cached_member
     def overlap(self, order):
         """Computes the ground state overlap matrix."""
 
         # catch zeroth order
         if order == 0:
             return sympify(1)
-        # import gs wavefunctions
+        # import and save gs wave functions to lower workload. At this point
+        # a single variant for a bra/ket wave function of order n is fine
         wfn = {}
         for o in range(order + 1):
             if o not in wfn:
@@ -233,8 +242,11 @@ class ground_state:
             i1 = wfn[term[0]]["bra"] * wfn[term[1]]["ket"]
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
-        print(f"Build GS S^({order}) = {latex(res)}")
-        return res
+        # simplify the result by permuting contracted indices
+        # TODO: This should not introduce an error
+        res = simplify(res)
+        print(f"Build GS S^({order}) = {res}")
+        return res.sympy
 
     @cached_member
     def one_particle_operator(self, order):
@@ -310,7 +322,6 @@ class ground_state:
                          simplify_kronecker_deltas=True)
         return res
 
-    @cached_member
     def norm_factor(self, order):
         """Computes all nth order terms of:
            1 - sum_i S^(i) + (sum_i S^(i))^2 - ...
@@ -318,6 +329,15 @@ class ground_state:
            normalization of higher order terms.
            S = a^2 sum_i=0 S^(i) = 1 -> a^2 = [sum_i=0 S^(i)]^(-1)
            """
+        # This can not be cached!
+        # in case there is something like a(2)*a(2)*x
+        # do the two a(2) need to be different?
+        #   all a(n) only consist of t-amplitudes and all indices are
+        #   contracted
+        # a(2) = 0.25*t_d^(2)
+        # a(2)*a(2) = 1/16 * t_d^(4) or 1/16 * t_d^(2) * t_d'^(2)
+        # I guess the second should be correct -> no caching allowed
+        # Then it is also not possible to cache the overlap matrix
 
         prefactors, orders = self.expand_norm_factor(order, min_order=2)
         norm_factor = 0

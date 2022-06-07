@@ -94,11 +94,16 @@ def simplify(expr, real=False, *sym_tensors):
     if real and not expr.real:
         expr = expr.make_real
 
+    start1 = time.time()
     terms = expr.terms
+    print(f"initializing terms took {time.time() - start1} seconds")
     # extract the pattern of all terms
+    start1 = time.time()
     pattern = [term.pattern(coupling=True) for term in terms]
+    print(f"Pattern creation took {time.time() - start1} seconds")
 
     # collect terms that are equal according to their pattern
+    start1 = time.time()
     equal_terms = {}
     matched = set()
     for n, p in enumerate(pattern):
@@ -113,11 +118,15 @@ def simplify(expr, real=False, *sym_tensors):
                     len(p['o'].keys()) != len(other_p['o'].keys()) or \
                     len(p['v'].keys()) != len(other_p['v'].keys()):
                 continue
-            # try to map each index in other_n to an index in n
+
+            # compare the target indices, though the function should also work
+            # if they differ.
             other_target = terms[other_n].target
-            if Counter(target) != Counter(other_target):
+            if target != other_target:
                 raise RuntimeError(f"Target indices of the terms {terms[n]} "
-                                   f"and {terms[other_n]} are not identical.")
+                                   f"and {terms[other_n]} are not identical:"
+                                   f" {target}, {other_target}.")
+            # try to map each index in other_n to an index in n
             match = True
             sub = {}  # {old: new}
             for ov in p.keys():
@@ -163,7 +172,9 @@ def simplify(expr, real=False, *sym_tensors):
                     if n not in equal_terms:
                         equal_terms[n] = {}
                     equal_terms[n][other_n] = sub
+    print(f"Comparing pattern took {time.time() - start1} seconds")
 
+    start1 = time.time()
     # substitue the indices in other_n and keep n as is
     res = e.compatible_int(0)
     matched = set()
@@ -173,9 +184,12 @@ def simplify(expr, real=False, *sym_tensors):
         for other_n, sub in sub_dict.items():
             matched.add(other_n)
             res += terms[other_n].subs(sub, simultaneous=True)
+    print(f"Substituting expression took {time.time() - start1} seconds")
     # Add the unmatched remainder
-    res += Add(*[terms[n].sympy for n in range(len(terms))
-               if n not in matched])
+    start1 = time.time()
+    res += e.expr(Add(*[terms[n].sympy for n in range(len(terms))
+                  if n not in matched]), expr.real, expr.sym_tensors)
+    print(f"Adding the unmatched remainder took {time.time() - start1} sec")
     terms.clear()
     print(f"new simplify took {time.time()- start} seconds")
     if real:

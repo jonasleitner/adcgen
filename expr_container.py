@@ -1,4 +1,4 @@
-from indices import assign_index
+from indices import index_space
 from misc import Inputerror
 from sympy import latex, Add, Mul, Pow
 from sympy.physics.secondquant import (
@@ -24,6 +24,7 @@ class expr:
         return latex(self.sympy)
 
     def __len__(self):
+        # 0 has length 1
         if self.type == 'expr':
             return len(self.args)
         else:
@@ -218,8 +219,7 @@ class term:
 
     @property
     def objects(self):
-        return [obj(self, i) for i in range(len(self.args))] \
-            if self.type == 'term' else [obj(self, 0)]
+        return [obj(self, i) for i in range(len(self))]
 
     @property
     def tensors(self):
@@ -259,21 +259,28 @@ class term:
 
     @property
     def contracted(self):
-        return tuple(s for s, n in self.__idx_counter.items() if n)
+        return tuple(sorted(
+            [s for s, n in self.__idx_counter.items() if n],
+            key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
+        ))
 
     @property
     def target(self):
-        return tuple(s for s, n in self.__idx_counter.items() if not n)
+        return tuple(sorted(
+            [s for s, n in self.__idx_counter.items() if not n],
+            key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
+        ))
 
     @property
     def __idx_counter(self):
         idx = {}
         for o in self.objects:
+            n = o.exponent
             for s in o.idx:
                 if s in idx:
-                    idx[s] += 1
-                else:
-                    idx[s] = 0
+                    idx[s] += n
+                else:  # start counting at 0
+                    idx[s] = n - 1
         return idx
 
     @property
@@ -319,7 +326,7 @@ class term:
             c = "_" + "_".join(sorted(coupl[i])) if coupl and i in coupl \
                 else ''
             for s, pos in o.crude_pos.items():
-                ov = assign_index(s.name)[0]
+                ov = index_space(s.name)[0]
                 if s not in ret[ov]:
                     ret[ov][s] = []
                 ret[ov][s].extend([p + c for p in pos])
@@ -433,17 +440,15 @@ class obj:
             NO: lambda o: 'no',
             Pow: lambda o: 'polynom' if isinstance(o.args[0], Add) else 'obj'
         }
-        if isinstance(t, term):
+        if isinstance(t, (term, normal_ordered)):
             if pos is None:
                 raise Inputerror('No position provided.')
-            o = t.sympy
-            if t.type == 'term':
-                o = t.args[pos]
+            o = t.sympy if len(t) == 1 else t.args[pos]
             obj_type = types.get(type(o), lambda x: 'obj')(o)
             if obj_type == 'obj':
                 return super().__new__(cls)
             elif obj_type == 'no':
-                raise NotImplementedError()
+                return normal_ordered(t, pos)
             else:
                 raise NotImplementedError()
         else:
@@ -470,10 +475,8 @@ class obj:
 
     @property
     def obj(self):
-        if self.term.type == 'term':
-            return self.term.args[self.__pos]
-        else:
-            return self.term.sympy
+        return self.term.sympy if len(self.term) == 1 \
+            else self.term.args[self.__pos]
 
     @property
     def real(self):
@@ -570,7 +573,7 @@ class obj:
     @property
     def space(self):
         """Returns the canonical space of tensors."""
-        return "".join([assign_index(s.name)[0] for s in self.idx])
+        return "".join([index_space(s.name)[0] for s in self.idx])
 
     @property
     def crude_pos(self):
@@ -604,7 +607,7 @@ class obj:
         can_bk = {}
         for bk in ['upper', 'lower']:
             can_bk[bk] = sorted(
-                getattr(o, bk), key=lambda s: (assign_index(s.name)[0], s.name)
+                getattr(o, bk), key=lambda s: (index_space(s.name)[0], s.name)
             )
         return can_bk
 
@@ -621,7 +624,7 @@ class obj:
             ov = {}
             for bk in can_bk:
                 ov[bk] = (
-                    "".join([assign_index(s.name)[0] for s in can_bk[bk]]),
+                    "".join([index_space(s.name)[0] for s in can_bk[bk]]),
                     "".join(s.name for s in can_bk[bk])
                 )
             can_order = sorted(
@@ -701,8 +704,82 @@ class obj:
         return False
 
 
-class normal_ordered(term):
-    pass
+class normal_ordered(obj):
+    """Container for a normal ordered operator string."""
+    def __new__(cls, t, pos=None, real=False, sym_tensors=[]):
+        if isinstance(t, term):
+            if pos is None:
+                raise Inputerror('No position provided.')
+            o = t.sympy if len(t) == 1 else t.args[pos]
+            if isinstance(o, NO):
+                return object.__new__(cls)
+            else:
+                raise RuntimeError('Trying to use normal_ordered container'
+                                   f'for a non NO object: {o}.')
+        else:
+            return expr(t, real=real, sym_tensors=sym_tensors)
+
+    def __init__(self, t, pos=None, real=False, sym_tensors=[]):
+        super().__init__(t, pos)
+
+    def __len__(self):
+        # a NO obj can only contain a Mul object.
+        return len(self.extract_no.args)
+
+    @property
+    def args(self):
+        return self.extract_no.args
+
+    @property
+    def objects(self):
+        return [obj(self, i) for i in range(len(self.extract_no.args))]
+
+    @property
+    def extract_no(self):
+        return self.obj.args[0]
+
+    @property
+    def exponent(self):
+        # actually sympy should throw an error if a NO object contains a Pow
+        # obj or anything else than a*b*c
+        exp = set(o.exponent for o in self.objects)
+        if len(exp) == 1:
+            return next(iter(exp))
+        else:
+            raise NotImplementedError(
+                'Exponent only implemented for NO objects, where all '
+                f'operators share the same exponent. {self}'
+            )
+
+    @property
+    def type(self):
+        return 'normal_ordered'
+
+    @property
+    def idx(self):
+        objects = self.objects
+        ret = tuple(s for o in self.objects for s in o.idx)
+        if len(objects) != len(ret):
+            raise NotImplementedError('Expected a NO object only to contain'
+                                      f"second quantized operators. {self}")
+        return ret
+
+    @property
+    def crude_pos(self):
+        ret = {}
+        for o in self.objects:
+            for s, pos in o.crude_pos.items():
+                if s not in ret:
+                    ret[s] = []
+                ret[s].extend(pos)
+        return ret
+
+    @property
+    def description(self):
+        # just return NO_ncreate_nannihilate?
+        # no -> One needs the information whether an index occurs at create or
+        #       annihilate
+        raise NotImplementedError("Description not implemented for NO objects")
 
 
 class polynom(expr):
