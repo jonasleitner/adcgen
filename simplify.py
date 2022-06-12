@@ -1,3 +1,4 @@
+from indices import index_space
 from misc import Inputerror
 import expr_container as e
 from sympy import Add, S
@@ -94,38 +95,71 @@ def simplify(expr, real=False, *sym_tensors):
     if real and not expr.real:
         expr = expr.make_real
 
-    start1 = time.time()
+    # start1 = time.time()
     terms = expr.terms
-    print(f"initializing terms took {time.time() - start1} seconds")
+    # print(f"initializing terms took {time.time() - start1} seconds")
     # extract the pattern of all terms
-    start1 = time.time()
+    # start1 = time.time()
     pattern = [term.pattern(coupling=True) for term in terms]
-    print(f"Pattern creation took {time.time() - start1} seconds")
+    # print(f"Pattern creation took {time.time() - start1} seconds")
+    # extract the target indices
+    # start1 = time.time()
+    target = [term.target for term in terms]
+    # print(f"Extracting target idx took {time.time() - start1} seconds")
+    # start1 = time.time()
+    tensors = []
+    deltas = []
+    target_obj = []
+    for i, term in enumerate(terms):
+        # extract tensors
+        tensors.append([o.name for o in term.tensors
+                        for i in range(o.exponent)])
+        # extract deltas
+        deltas.append([o.space for o in term.deltas
+                       for i in range(o.exponent)])
+        # extract objects that hold the target indices and also how many occ
+        # virt target indices the object holds, e.g. f_cc Y_ij^ac
+        # Y holds 2o, 1v
+        temp = []
+        for o in term.target_idx_objects:
+            idx = o.idx
+            found = {'o': 0, 'v': 0}
+            for s in target[i]:
+                if s in idx:
+                    found[index_space(s.name)[0]] += 1
+            temp.extend([(o.description, found['o'], found['v'])
+                        for i in range(o.exponent)])
+        target_obj.append(sorted(temp))
+    del temp
+    # print("Extracting tensors, deltas and target idx objects took "
+    #       f"{time.time() - start1} seconds.")
 
     # collect terms that are equal according to their pattern
-    start1 = time.time()
+    # start1 = time.time()
     equal_terms = {}
     matched = set()
     for n, p in enumerate(pattern):
         matched.add(n)
-        target = terms[n].target
         for other_n, other_p in enumerate(pattern):
             if other_n in matched:
                 continue
-            # check if terms are compatible: same length (up to a prefactor)
-            # and same amount of o/v indices
+            # check if terms are compatible: same length (up to a prefactor),
+            # same amount of o/v indices, same tensors, same deltas, and that
+            # the target indices occur at the same tensors (e.g. 1o/1v at Y)
             if abs(len(terms[n]) - len(terms[other_n])) > 1 or \
                     len(p['o'].keys()) != len(other_p['o'].keys()) or \
-                    len(p['v'].keys()) != len(other_p['v'].keys()):
+                    len(p['v'].keys()) != len(other_p['v'].keys()) or \
+                    Counter(tensors[n]) != Counter(tensors[other_n]) or \
+                    Counter(deltas[n]) != Counter(deltas[other_n]) or \
+                    Counter(target_obj[n]) != Counter(target_obj[other_n]):
                 continue
 
             # compare the target indices, though the function should also work
             # if they differ.
-            other_target = terms[other_n].target
-            if target != other_target:
+            if target[n] != target[other_n]:
                 raise RuntimeError(f"Target indices of the terms {terms[n]} "
                                    f"and {terms[other_n]} are not identical:"
-                                   f" {target}, {other_target}.")
+                                   f" {target[n]}, {target[other_n]}.")
             # try to map each index in other_n to an index in n
             match = True
             sub = {}  # {old: new}
@@ -137,13 +171,13 @@ def simplify(expr, real=False, *sym_tensors):
                 matched_idx = []
                 for idx, pat in p[ov].items():
                     # target index -> do nothing (filtered later)
-                    if idx in target:
+                    if idx in target[n]:
                         idx_map[idx] = idx
                         continue
                     count = Counter(pat)
                     for other_idx, other_pat in other_p[ov].items():
                         # skip target and avoid double counting
-                        if other_idx in other_target or \
+                        if other_idx in target[other_n] or \
                                 other_idx in matched_idx:
                             continue
                         if count == Counter(other_pat):
@@ -172,10 +206,15 @@ def simplify(expr, real=False, *sym_tensors):
                     if n not in equal_terms:
                         equal_terms[n] = {}
                     equal_terms[n][other_n] = sub
-    print(f"Comparing pattern took {time.time() - start1} seconds")
+    del pattern
+    del target
+    del tensors
+    del deltas
+    del target_obj
+    # print(f"Comparing pattern took {time.time() - start1} seconds")
 
-    start1 = time.time()
     # substitue the indices in other_n and keep n as is
+    # start1 = time.time()
     res = e.compatible_int(0)
     matched = set()
     for n, sub_dict in equal_terms.items():
@@ -184,14 +223,14 @@ def simplify(expr, real=False, *sym_tensors):
         for other_n, sub in sub_dict.items():
             matched.add(other_n)
             res += terms[other_n].subs(sub, simultaneous=True)
-    print(f"Substituting expression took {time.time() - start1} seconds")
+    # print(f"Substituting expression took {time.time() - start1} seconds")
     # Add the unmatched remainder
-    start1 = time.time()
+    # start1 = time.time()
     res += e.expr(Add(*[terms[n].sympy for n in range(len(terms))
                   if n not in matched]), expr.real, expr.sym_tensors)
-    print(f"Adding the unmatched remainder took {time.time() - start1} sec")
-    terms.clear()
-    print(f"new simplify took {time.time()- start} seconds")
+    # print(f"Adding the unmatched remainder took {time.time() - start1} sec")
+    del terms
+    print(f"simplify took {time.time()- start} seconds")
     if real:
         res = make_real(res, *sym_tensors)
     return res

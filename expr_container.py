@@ -91,6 +91,19 @@ class expr:
         self.__expr = real_expr
         return self
 
+    @property
+    def block_diagonalize_fock(self):
+        """Block diagonalize the Fock matrix, i.e. all terms that contain off
+           diagonal Fock matrix blocks (f_ov/f_vo) are set to 0."""
+        bl_diag = 0
+        for term in self.terms:
+            fock = [t for t in term.tensors if t.name == 'f']
+            if any(f.space in ['ov', 'vo'] for f in fock):
+                continue
+            bl_diag += term.sympy
+        self.__expr = bl_diag
+        return self
+
     def rename_tensor(self, current, new):
         renamed = compatible_int(0)
         for t in self.terms:
@@ -224,11 +237,25 @@ class term:
 
     @property
     def tensors(self):
+        """Returns all tensor objects in the term."""
         return [o for o in self.objects if o.type == 'tensor']
 
     @property
     def deltas(self):
+        """Returns all delta objects of the term."""
         return [o for o in self.objects if o.type == 'delta']
+
+    @property
+    def target_idx_objects(self):
+        """Returns all objects that contain at least 1 of the target indices of
+           the term."""
+        target = self.target
+        ret = []
+        for o in self.objects:
+            idx = o.idx
+            if any(s in idx for s in target):
+                ret.append(o)
+        return ret
 
     @property
     def make_real(self):
@@ -243,6 +270,15 @@ class term:
             else:
                 real_term *= o.sympy
         return expr(real_term, True, self.sym_tensors)
+
+    @property
+    def block_diagonalize_fock(self):
+        fock = [t for t in self.tensors if t.name == 'f']
+        if any(f.space in ['ov', 'vo'] for f in fock):
+            bl_diag = 0
+        else:
+            bl_diag = self.sympy
+        return expr(bl_diag, self.real, self.sym_tensors)
 
     def rename_tensor(self, current, new):
         """Rename tensors in a terms. Returns a new expr instance."""
@@ -503,6 +539,15 @@ class obj:
             real_obj = self.sympy
         return expr(real_obj, True, self.sym_tensors)
 
+    @property
+    def block_diagonalize_fock(self):
+        if self.type == 'tensor' and self.name == 'f' and \
+                self.space in ['ov', 'vo']:
+            bl_diag = 0
+        else:
+            bl_diag = self.sympy
+        return expr(bl_diag, self.real, self.sym_tensors)
+
     def rename_tensor(self, current, new):
         """Renames a tensor object."""
         if self.type == 'tensor' and self.name == current:
@@ -573,8 +618,11 @@ class obj:
 
     @property
     def space(self):
-        """Returns the canonical space of tensors."""
+        """Returns the canonical space of tensors and other objects."""
         return "".join([index_space(s.name)[0] for s in self.idx])
+
+    def contains_idx(self, s):
+        return s in self.idx
 
     @property
     def crude_pos(self):
