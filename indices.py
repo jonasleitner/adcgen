@@ -1,8 +1,8 @@
 from sympy import symbols, Dummy
-from misc import Inputerror
+from misc import Inputerror, Singleton
 
 
-class indices:
+class indices(metaclass=Singleton):
     """Book keeping class that manages the indices in an expression.
        This ensures that for every index only a single instance exists,
        which allows to correctly identify equal indices.
@@ -13,10 +13,10 @@ class indices:
        """
     def __init__(self):
         # dict that holds all symbols that have been created previously.
-        self.symbols = {'occ': [], 'virt': []}
+        self.symbols = {'occ': [], 'virt': [], 'general': []}
         # dict that holds the generic indices. Automatically filled by
         # generated index strings.
-        self.generic_indices = {'occ': [], 'virt': []}
+        self.generic_indices = {'occ': [], 'virt': [], 'general': []}
         # o/v indices that are exclusively available for direct request via
         # get_indices, i.e. they can't be generic indices.
         self.occ = ['i', 'j', 'k', 'l', 'm', 'n', 'o',
@@ -25,13 +25,13 @@ class indices:
         self.virt = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
                      'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1',
                      'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2']
-        # a special index that is used in the Hamiltonian, because 42
-        self.get_indices('o42')
+        self.general = ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']
 
     @property
     def used_names(self):
         return {'occ': set(s.name for s in self.symbols['occ']),
-                'virt': set(s.name for s in self.symbols['virt'])}
+                'virt': set(s.name for s in self.symbols['virt']),
+                'general': set(s.name for s in self.symbols['general'])}
 
     def __gen_generic_idx(self, ov):
         """Generated the next 'generation' of generic indices, i.e. extends
@@ -45,14 +45,15 @@ class indices:
                 getattr(self, ov), key=lambda idx:
                 (int(idx[1:]) if idx[1:].isdigit() else 0, idx[0])
             )
-            specific = int(idx_list[-1][1:]) if idx_list[-1][1:].isdigit() \
-                else 0
+            specific = int(idx_list[-1][1:]) \
+                if idx_list[-1][1:].isdigit() else 0
             setattr(self, 'counter_' + ov, specific + 1)
 
         # generate the new index strings
         counter = getattr(self, 'counter_' + ov)
         idx_base = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
-                    'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']}
+                    'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+                    'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}
         used = self.used_names[ov]
         new_idx = [idx + str(counter) for idx in idx_base[ov]
                    if idx + str(counter) not in used]
@@ -69,18 +70,18 @@ class indices:
         # split the string in the individual indices
         splitted = split_idx_string(indices)
 
-        ret = {'occ': [], 'virt': []}
+        ret = {}
         for idx in splitted:
             ov = index_space(idx)
-            if ov == 'general':
-                raise NotImplementedError("The indice class currently only "
-                                          "handles the spaces occ and virt.")
+            if ov not in ret:
+                ret[ov] = []
             # check whether the symbol is already available
             found = False
             for s in self.symbols[ov]:
                 if idx == s.name:
                     ret[ov].append(s)
                     found = True
+                    break
             # did not find -> create a new symbol + add it to self.symbols
             # and if it is a generic index -> remove it from the current
             # generic index list.
@@ -98,13 +99,16 @@ class indices:
         """Method to request a number of genrated indices that has not been
            used yet. Indices obtained via this function may be reobtained using
            get_indices. Request indices with: n_occ=3, n_virt=2"""
-        valid = {'n_occ': 'occ', 'n_o': 'occ', 'n_virt': 'virt', 'n_v': 'virt'}
+        valid = {'n_occ': 'occ', 'n_o': 'occ', 'n_virt': 'virt', 'n_v': 'virt',
+                 'n_general': 'general', 'n_g': 'general'}
         if not all(var in valid and isinstance(n, int)
                    for var, n in kwargs.items()):
             raise Inputerror(f"{kwargs} is not a valid input. Use e.g. "
                              "n_occ=2")
         ret = {}
         for n_ov, n in kwargs.items():
+            if n == 0:
+                continue
             ov = valid[n_ov]
             # generate new index strings until enough are available
             while n > len(self.generic_indices[ov]):
@@ -119,6 +123,8 @@ class indices:
             return symbols(idx, below_fermi=True, cls=Dummy)
         elif ov == 'virt':
             return symbols(idx, above_fermi=True, cls=Dummy)
+        elif ov == 'general':
+            return symbols(idx, cls=Dummy)
 
     def substitute(self, expr):
         """Substitute all contracted indices in an expression with new,
@@ -135,7 +141,8 @@ class indices:
             """Returns the first index that is missing the provided index list.
                [i,j,l] -> return k // [i,j,k] -> return l"""
             idx_base = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
-                        'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']}
+                        'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+                        'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}
             ordered_idx = idx_base[ov].copy()
             idx_list = sorted(
                 idx_list, key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])
@@ -143,7 +150,7 @@ class indices:
             for i, idx in enumerate(idx_list):
                 if idx != ordered_idx[i]:
                     return ordered_idx[i]
-                if idx[0] in ['o', 'h']:
+                if idx[0] in ['o', 'h', 'w']:
                     n = int(idx[1:]) + 1 if idx[1:] else 1
                     ordered_idx.extend([b[0] + str(n) for b in ordered_idx])
                 new = ordered_idx[i+1]
@@ -155,21 +162,15 @@ class indices:
             # sort all target indices in a dict. Those indices will not be
             # substituted and are therefore, already present in the term
             # (avoid renaming another index to a target index name)
-            used = {'occ': [], 'virt': []}
+            used = {'occ': [], 'virt': [], 'general': []}
             for s in term.target:
                 ov = index_space(s.name)
-                # skip any general indices
-                if ov == 'general':
-                    continue
                 used[ov].append(s.name)
             # now iterate over the contracted indices and find the first
             # missing index that may replace the contracted index
             sub = {}
             for s in term.contracted:
                 ov = index_space(s.name)
-                # skip any general indices
-                if ov == 'general':
-                    continue
                 new_str = get_first_missing_index(used[ov], ov)
                 new = self.get_indices(new_str)[ov][0]
                 sub[s] = new
@@ -195,13 +196,14 @@ class indices:
                 (int(s.name[1:]) if s.name[1:] else 0, s.name[0])
             )
             # count how many indices need to be replaced and get new indices
-            old = {'occ': [], 'virt': []}
+            old = {}
             for s in contracted:
                 ov = index_space(s.name)
-                if ov == 'general':
-                    continue
+                if ov not in old:
+                    old[ov] = []
                 old[ov].append(s)
-            kwargs = {'n_occ': len(old['occ']), 'n_virt': len(old['virt'])}
+            n_ov = {'occ': 'n_o', 'virt': 'n_v', 'general': 'n_g'}
+            kwargs = {n_ov[ov]: len(sym_list) for ov, sym_list in old.items()}
             new = self.get_generic_indices(**kwargs)
 
             # match the old: new pairs and substitute the term
@@ -229,7 +231,7 @@ def index_space(idx):
         return 'occ'
     elif idx[0] in {"a", "b", "c", "d", "e", "f", "g", "h"}:
         return 'virt'
-    elif idx[0] in {"p", "q", "r", "s"}:
+    elif idx[0] in {"p", "q", "r", "s", "t", "u", "v", "w"}:
         return 'general'
     else:
         raise Inputerror(f"Could not assign the index {idx} to a space.")

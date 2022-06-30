@@ -8,7 +8,7 @@ import numpy as np
 from math import factorial
 
 from indices import (
-    n_ov_from_space, repeated_indices, index_space, split_idx_string
+    n_ov_from_space, repeated_indices, index_space, split_idx_string, indices
 )
 from misc import cached_member, Inputerror, transform_to_tuple, validate_input
 from simplify import simplify
@@ -17,7 +17,7 @@ from simplify import simplify
 class intermediate_states:
     def __init__(self, mp, variant="pp"):
         self.gs = mp
-        self.indices = mp.indices
+        self.indices = indices()
 
         variants = {
             "pp": ["ph", "hp"],
@@ -77,10 +77,10 @@ class intermediate_states:
         # abij instead of abji in order to stay consistent with the
         # ADC results.
         operators = 1
-        if idx.get('virt'):
+        if idx.get('virt', False):
             for symbol in idx['virt']:
                 operators *= Fd(symbol)
-        if idx.get('occ'):
+        if idx.get('occ', False):
             for symbol in idx['occ']:
                 operators *= F(symbol)
         if braket == "bra":
@@ -100,7 +100,7 @@ class intermediate_states:
         # orthogonalise with respect to the ground state for pp ADC.
         # checked up to 4th order!
         if self.variant == "pp":
-            # import all ground state wave functions that may appear twice
+            # import all ground state wave functions that may not appear twice
             # in |a><b|c>, i.e. all of order > int(order/2)
             gs_psi = {'bra': {}, 'ket': {}}
             gs_psi[braket][order] = max_gs
@@ -385,10 +385,10 @@ class intermediate_states:
            """
 
         idx = self.indices.get_indices(indices)
-        # # add empty list if e.g. only occ indices have been provided (IP)
-        # for ov in ["occ", "virt"]:
-        #     if ov not in idx:
-        #         idx[ov] = []
+        # add empty list if e.g. only occ indices have been provided (IP)
+        for ov in ["occ", "virt"]:
+            if ov not in idx:
+                idx[ov] = []
 
         t_string = {
             "right": "Y",

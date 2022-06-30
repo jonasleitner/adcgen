@@ -3,7 +3,7 @@ from sympy.physics.secondquant import wicks
 from math import factorial
 
 from isr import get_orders_three, get_order_two
-from indices import n_ov_from_space
+from indices import n_ov_from_space, indices
 from misc import Inputerror, cached_member, transform_to_tuple
 from secular_matrix import secular_matrix
 from simplify import simplify
@@ -13,10 +13,10 @@ class properties:
     def __init__(self, isr):
         self.m = secular_matrix(isr)
         self.isr = isr
+        self.variant = isr.variant
         self.gs = isr.gs
         self.h = isr.gs.h
-        self.indices = isr.gs.indices
-        self.variant = isr.variant
+        self.indices = indices()
 
     def __transition_operator(self, order):
         operator = {

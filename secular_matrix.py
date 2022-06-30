@@ -2,10 +2,11 @@ from sympy.physics.secondquant import wicks, evaluate_deltas
 from sympy import sqrt, S
 
 from math import factorial
-from itertools import product
 
 from isr import get_order_two, get_orders_three
-from indices import repeated_indices, split_idx_string, n_ov_from_space
+from indices import (
+    repeated_indices, split_idx_string, n_ov_from_space, indices
+)
 from misc import Inputerror, cached_member, transform_to_tuple
 from simplify import simplify
 
@@ -15,7 +16,7 @@ class secular_matrix:
         self.isr = isr
         self.gs = isr.gs
         self.h = isr.gs.h
-        self.indices = isr.gs.indices
+        self.indices = indices()
 
     def __get_shifted_h(self, order):
         get_H = {
@@ -221,8 +222,7 @@ class secular_matrix:
         ret = {space: order}
         for s in range(1, int(order/2) + 1):
             space = "p" + space + "h"
-            o = order - s
-            ret[space] = o
+            ret[space] = order - s
         return ret
 
     def block_order(self, order):
@@ -230,10 +230,11 @@ class secular_matrix:
            is expanded.
            Returns a dict with the block tuple (s1, s2) as key.
            """
+        from itertools import product
 
         max_orders = self.max_ptorder_spaces(order)
-        min_space = min(max_orders)
         blocks = list(product(max_orders.keys(), max_orders.keys()))
+        min_space = self.isr.min_space[0]
         ret = {}
         for block in blocks:
             s1 = block[0]

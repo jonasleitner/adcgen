@@ -154,3 +154,14 @@ def transform_to_tuple(input):
         raise Inputerror(f"{input} of type {type(input)} is not convertable "
                          "to tuple.")
     return conversion(input)
+
+
+class Singleton(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = (
+                super(Singleton, cls).__call__(*args, **kwargs)
+            )
+        return cls._instances[cls]

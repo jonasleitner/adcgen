@@ -1,4 +1,4 @@
-from sympy import nsimplify, symbols, Rational, latex, Dummy, diff, sympify
+from sympy import nsimplify, Rational, latex, diff, sympify
 from sympy.physics.secondquant import AntiSymmetricTensor, NO, F, Fd, wicks
 from math import factorial
 
@@ -9,11 +9,12 @@ from simplify import simplify
 
 
 class Hamiltonian:
+    def __init__(self):
+        self.indices = indices()
 
     @cached_property
     def h0(self):
-        p = symbols('p', cls=Dummy)
-        q = symbols('q', cls=Dummy)
+        p, q = self.indices.get_indices('pq')['general']
         f = AntiSymmetricTensor('f', (p,), (q,))
         pq = Fd(p) * F(q)
         h0 = f * pq
@@ -22,9 +23,9 @@ class Hamiltonian:
 
     @cached_property
     def h1(self):
-        p, q, r, s = symbols('p,q,r,s', cls=Dummy)
+        p, q, r, s = self.indices.get_indices('pqrs')['general']
         # this symbol is reserved for h1
-        o42 = symbols('o42', below_fermi=True, cls=Dummy)
+        o42 = self.indices.get_indices('o42')['occ'][0]
         v1 = AntiSymmetricTensor('V', (p, o42), (q, o42))
         pq = Fd(p) * F(q)
         v2 = AntiSymmetricTensor('V', (p, q), (r, s))
@@ -35,32 +36,32 @@ class Hamiltonian:
 
     @cached_property
     def one_particle(self):
-        p, q = symbols('p,q', cls=Dummy)
+        p, q = self.indices.get_indices('pq')['general']
         pq = Fd(p) * F(q)
         d = AntiSymmetricTensor('d', (p,), (q,))
         return d * pq
 
     @cached_property
     def two_particle(self):
-        p, q, r, s = symbols('p,q,r,s', cls=Dummy)
+        p, q, r, s = self.indices.get_indices('pqrs')['general']
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
         d = AntiSymmetricTensor('d', (p, q), (r, s))
         return Rational(1, 4) * d * pqsr
 
     @cached_property
     def ip_transition(self):
-        p = symbols('p', cls=Dummy)
+        p = self.indices.get_indices('p')['general'][0]
         d = AntiSymmetricTensor('d', tuple(), (p,))
         return d * F(p)
 
     @cached_property
     def ea_transition(self):
-        p = symbols('p', cls=Dummy)
+        p = self.indices.get_indices('p')['general'][0]
         d = AntiSymmetricTensor('d', (p,), tuple())
         return d * Fd(p)
 
     def dip_transition(self):
-        p, q = symbols('p,q', cls=Dummy)
+        p, q = self.indices.get_indices('pq')['general']
         d = AntiSymmetricTensor('d', tuple(), (p, q))
         return Rational(1, 2) * d * F(p) * F(q)
 
@@ -140,8 +141,7 @@ class ground_state:
         for excitation in range(1, order * 2 + 1):
             # generate 1 additional o/v symbol pair, e.g. singles: ia,
             # doubles: ijab, etc. -> reuse the indices from the lower spaces.
-            additional_idx = self.indices.get_generic_indices(n_occ=1,
-                                                              n_virt=1)
+            additional_idx = self.indices.get_generic_indices(n_o=1, n_v=1)
             idx['occ'].extend(additional_idx['occ'])
             idx['virt'].extend(additional_idx['virt'])
             # skip singles for the first order wavefunction if
@@ -356,6 +356,7 @@ class ground_state:
            The parameter min_order defines the first non_vanishing contribution
            to S. All lower contributions are assumed to give either 1 or 0.
            """
+        from sympy import symbols
 
         x = symbols('x')
         f = (1 + x) ** -1.0
