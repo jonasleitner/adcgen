@@ -1,4 +1,4 @@
-from sympy import nsimplify, Rational, latex, diff, sympify
+from sympy import nsimplify, Rational, latex, diff, sympify, Mul, S
 from sympy.physics.secondquant import AntiSymmetricTensor, NO, F, Fd, wicks
 from math import factorial
 
@@ -34,36 +34,25 @@ class Hamiltonian:
         print("H1 = ", latex(h1))
         return h1
 
-    @cached_property
-    def one_particle(self):
-        p, q = self.indices.get_indices('pq')['general']
-        pq = Fd(p) * F(q)
-        d = AntiSymmetricTensor('d', (p,), (q,))
-        return d * pq
+    @cached_member
+    def operator(self, opstring):
+        """Constructs an arbitrary operator. The amount of creation (c) and
+           annihilation (a) operators must be given by opstring. For example
+           'ccaa' will return a two particle operator.
+           """
+        if any(letter not in ['a', 'c'] for letter in opstring):
+            raise Inputerror(f"Invalid operator string: {opstring}."
+                             "Must consist of the letters 'a' and 'c'.")
+        n_create = opstring.count('c')
+        idx = self.indices.get_generic_indices(n_g=len(opstring))["general"]
+        create = idx[:n_create]
+        annihilate = idx[n_create:]
 
-    @cached_property
-    def two_particle(self):
-        p, q, r, s = self.indices.get_indices('pqrs')['general']
-        pqsr = Fd(p) * Fd(q) * F(s) * F(r)
-        d = AntiSymmetricTensor('d', (p, q), (r, s))
-        return Rational(1, 4) * d * pqsr
-
-    @cached_property
-    def ip_transition(self):
-        p = self.indices.get_indices('p')['general'][0]
-        d = AntiSymmetricTensor('d', tuple(), (p,))
-        return d * F(p)
-
-    @cached_property
-    def ea_transition(self):
-        p = self.indices.get_indices('p')['general'][0]
-        d = AntiSymmetricTensor('d', (p,), tuple())
-        return d * Fd(p)
-
-    def dip_transition(self):
-        p, q = self.indices.get_indices('pq')['general']
-        d = AntiSymmetricTensor('d', tuple(), (p, q))
-        return Rational(1, 2) * d * F(p) * F(q)
+        pref = Rational(1, factorial(len(create)) * factorial(len(annihilate)))
+        d = AntiSymmetricTensor('d', create, annihilate)
+        op = Mul(*[Fd(s) for s in create]) * \
+            Mul(*[F(s) for s in reversed(annihilate)])
+        return pref * d * op
 
 
 class ground_state:
@@ -243,84 +232,43 @@ class ground_state:
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
         # simplify the result by permuting contracted indices
-        # TODO: This should not introduce an error
         res = simplify(res)
         print(f"Build GS S^({order}) = {res}")
         return res.sympy
 
     @cached_member
-    def one_particle_operator(self, order):
-        """Computes the expectation value of a one particle operator
-           for the ground state. Opted to implement the expectation value
-           instead of the OPDM, beacuse the results are more easily
-           readable (and the OPDM may be easily extracted from the result).
+    def expectation_value(self, order, opstring):
+        """Computes the expectation value for a given operator. The operator
+           is defined by the number of creation and annihilation operators
+           that must be provided as string. For example a two particle
+           operator is defined as 'ccaa'.
            """
-
-        res = 0
-        orders = get_order_two(order)
-        for term in orders:
-            d = self.d_one_particle(term[1])
-            a = self.norm_factor(term[0])
-            res += (a * d).expand()
-        return res
-
-    @cached_member
-    def two_particle_operator(self, order):
-        """Computes the expectation value of a two particle operator
-           for the ground state.
-           Did not check any results obtained with that function!
-           Also it may be necessary to introduce a prefactor.
-           """
-
-        res = 0
-        orders = get_order_two(order)
-        for term in orders:
-            d = self.d_two_particle(term[1])
-            a = self.norm_factor(term[0])
-            res += (a * d).expand()
-        return res
-
-    @cached_member
-    def d_one_particle(self, order):
-        """Computes the matrix element
-           sum_pq d_{pq} <psi|pq|psi>^(n).
-           """
-
+        # - import all mp wavefunctions. It should be possible here, because
+        #   it is not possible to obtain a term |1>*x*|1>.
         wfn = {}
         for o in range(order + 1):
             wfn[o] = {}
             for bk in ["bra", "ket"]:
-                wfn[o][bk] = self.psi(o, bk)
+                wfn[o][bk] = self.psi(order=o, braket=bk)
 
         orders = get_order_two(order)
         res = 0
-        for term in orders:
-            i1 = (wfn[term[0]]["bra"] * self.h.one_particle *
-                  wfn[term[1]]["ket"])
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
-        return res
-
-    @cached_member
-    def d_two_particle(self, order):
-        """Computes the matrix element
-           1/4 sum_{pqrs} d_{pqsr} <psi|pqsr|psi>^(n).
-           """
-
-        wfn = {}
-        for o in range(order + 1):
-            wfn[o] = {}
-            for bk in ["bra", "ket"]:
-                wfn[o][bk] = self.psi(o, bk)
-
-        orders = get_order_two(order)
-        res = 0
-        for term in orders:
-            i1 = (wfn[term[0]]["bra"] * self.h.two_particle *
-                  wfn[term[1]]["ket"])
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
-        return res
+        # iterate over all norm*d combinations of n'th order
+        for norm_term in orders:
+            norm = self.norm_factor(norm_term[0])
+            if norm is S.Zero:
+                continue
+            # compute d for a given norm factor
+            orders_d = get_order_two(norm_term[1])
+            d = 0
+            for term in orders_d:
+                i1 = (wfn[term[0]]['bra'] *
+                      self.h.operator(opstring) *
+                      wfn[term[1]]['ket'])
+                d += wicks(i1, keep_only_fully_contracted=True,
+                           simplify_kronecker_deltas=True)
+            res += (norm * d).expand()
+        return simplify(res).sympy
 
     def norm_factor(self, order):
         """Computes all nth order terms of:

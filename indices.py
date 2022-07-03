@@ -265,3 +265,12 @@ def repeated_indices(idx_a, idx_b):
     if any(i in split_b for i in split_a):
         return True
     return False
+
+
+def extract_names(syms):
+    """Extracts the names of the provided symbols and returns them in a list.
+    """
+    from itertools import chain
+    if isinstance(syms, dict):
+        syms = chain.from_iterable(syms.values())
+    return [s.name for s in syms]

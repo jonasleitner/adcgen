@@ -12,7 +12,7 @@ def cached_member(function):
        """
 
     from indices import split_idx_string
-    from inspect import signature
+    import inspect
     fname = function.__name__
 
     @wraps(function)
@@ -50,34 +50,41 @@ def cached_member(function):
         # additional calculations
         process = {
             # order, adc_order, min_order: type(int) -> already covered
+            # also subtract_gs is already covered: type(bool)
             'braket': validate_bk,
             'lr': validate_lr,
             'space': sort_spaces,
             'block': sort_spaces,
             'mvp_space': sort_spaces,
             'indices': sort_indices,
+            'opstring': sort_spaces,
         }
         kwargs_key = {}
         for var, value in kwargs.items():
-            # catch orders -> hand over as int
-            if isinstance(value, int):
+            # catch orders (int), bools and None
+            if isinstance(value, (int, bool)) or value is None:
                 kwargs_key[var] = value
                 continue
             val = transform_to_tuple(value)
             kwargs_key[var] = process[var](val)
 
         # add the kwargs arguments in the appropriate order to args
-        for argument in signature(function).parameters.keys():
+        for argument, value in inspect.signature(function).parameters.items():
             try:
                 args += (kwargs_key[argument],)
                 del kwargs_key[argument]
             except KeyError:
-                continue
+                # if a default value is provided, attatch the default to args
+                # otherwhise the mapping will not be corect
+                if value.default is not inspect._empty:
+                    args += (value.default,)
         if kwargs_key:
-            raise TypeError("Wrong or too many arguments provided for function"
-                            f" '{function.__name__}'. The function takes: "
-                            f"{list(signature(function).parameters.keys())}. "
-                            f"Provided: {list(kwargs.keys())}.")
+            raise TypeError(
+                "Wrong or too many arguments provided for function"
+                f" '{function.__name__}'. The function takes: "
+                f"{list(inspect.signature(function).parameters.keys())}. "
+                f"Provided: {list(kwargs.keys())}."
+            )
 
         try:
             return fun_cache[args]
