@@ -60,53 +60,28 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
         expr = e.expr(expr)
 
     filtered = Add(*[term.sympy for term in expr.terms if check_term(term)])
-    filtered = e.expr(filtered, expr.real, expr.sym_tensors)
+    filtered = e.expr(filtered, expr.real, expr.sym_tensors,
+                      expr.provided_target_idx)
     return filtered
 
 
-def simplify(expr, real=False, *sym_tensors):
-    """Simplify an expression by renaming indices. The new index names are
-       determined by establishing a mapping between the indices in different
-       terms. If all indices in two terms share the same pattern (essentially
-       have the same occurences), but have different names. The function will
-       rename the indices in one of the two terms.
-       If real is set, all 'c' are removed in the tensor names in order to make
-       the amplitudes real. Additionally, make_real is called that tries to
-       further simplify the expression by swapping bra and ket of symmetric
-       tensors. By default the Fock matrix 'f' and the ERI 'V' are added to
-       the provided symmetric tensors.
-       """
+def find_compatible_terms(terms):
     from collections import Counter
 
-    start = time.time()
-    if not all(isinstance(t, str) for t in sym_tensors):
-        raise Inputerror("Symmetric tensors need to be provided as string.")
-    sym_tensors = set(sym_tensors)
-    if real:
-        sym_tensors.update(['f', 'V'])
+    if not all(isinstance(term, e.term) for term in terms):
+        raise Inputerror("Expected terms as a list of term Containers.")
 
-    # set up the expression correctly (tensor names are automatically adjusted
-    # if real is set.)
-    if isinstance(expr, e.expr):
-        expr.set_sym_tensors(*sym_tensors)
-    else:
-        # adjust the sym_tensors in the expression
-        expr = e.expr(expr, real, sym_tensors)
-    if real and not expr.real:
-        expr = expr.make_real
-
-    # start1 = time.time()
-    terms = expr.terms
-    # print(f"initializing terms took {time.time() - start1} seconds")
     # extract the pattern of all terms
-    # start1 = time.time()
-    pattern = [term.pattern(coupling=True) for term in terms]
-    # print(f"Pattern creation took {time.time() - start1} seconds")
+    pattern = [term.pattern for term in terms]
     # extract the target indices
-    # start1 = time.time()
     target = [term.target for term in terms]
-    # print(f"Extracting target idx took {time.time() - start1} seconds")
-    # start1 = time.time()
+    # extract tensors, deltas and the objects which hold the target indices
+    # NOTE: tensors and deltas do not cover deltas and tensors in polynoms
+    #       However, this should not be a problem, since a term
+    #       (a+b) / (c+d) * (e+f) may be split in the three brakets which
+    #       can be treated correctly.
+    # additionally, one may compare the number of polynoms in each term
+    # as an additional filter.
     tensors = []
     deltas = []
     target_obj = []
@@ -130,12 +105,9 @@ def simplify(expr, real=False, *sym_tensors):
             temp.extend([(o.description, found['o'], found['v'])
                         for i in range(o.exponent)])
         target_obj.append(sorted(temp))
-    del temp
-    # print("Extracting tensors, deltas and target idx objects took "
-    #       f"{time.time() - start1} seconds.")
+        del temp
 
     # collect terms that are equal according to their pattern
-    # start1 = time.time()
     equal_terms = {}
     matched = set()
     for n, p in enumerate(pattern):
@@ -164,7 +136,7 @@ def simplify(expr, real=False, *sym_tensors):
             match = True
             sub = {}  # {old: new}
             for ov in p.keys():
-                # compare the pattern of the indices in both terms create a
+                # compare the pattern of the indices in both terms and create a
                 # idx map. If a match for all indices is found -> the terms
                 # may be simplified by renaming indices (or swapping bra/kets)
                 idx_map = {}
@@ -206,15 +178,45 @@ def simplify(expr, real=False, *sym_tensors):
                     if n not in equal_terms:
                         equal_terms[n] = {}
                     equal_terms[n][other_n] = sub
-    del pattern
-    del target
-    del tensors
-    del deltas
-    del target_obj
-    # print(f"Comparing pattern took {time.time() - start1} seconds")
+    return equal_terms
+
+
+def simplify(expr, real=False, *sym_tensors):
+    """Simplify an expression by renaming indices. The new index names are
+       determined by establishing a mapping between the indices in different
+       terms. If all indices in two terms share the same pattern (essentially
+       have the same occurences), but have different names. The function will
+       rename the indices in one of the two terms.
+       If real is set, all 'c' are removed in the tensor names in order to make
+       the amplitudes real. Additionally, make_real is called that tries to
+       further simplify the expression by swapping bra and ket of symmetric
+       tensors. By default the Fock matrix 'f' and the ERI 'V' are added to
+       the provided symmetric tensors.
+       """
+
+    start = time.time()
+    if not all(isinstance(t, str) for t in sym_tensors):
+        raise Inputerror("Symmetric tensor names need to be provided as str.")
+    sym_tensors = set(sym_tensors)
+    if real:
+        sym_tensors.update(['f', 'V'])
+
+    expr = expr.expand()
+    # adjust symmetric tensors of the container
+    if isinstance(expr, e.expr):
+        expr.set_sym_tensors(*sym_tensors)
+    # or put the expr in a container
+    else:
+        expr = e.expr(expr, real, sym_tensors)
+    if real and not expr.real:
+        expr = expr.make_real
+
+    # create terms and hand try to find comaptible terms that may be
+    # simplified by substituting indices
+    terms = expr.terms
+    equal_terms = find_compatible_terms(terms)
 
     # substitue the indices in other_n and keep n as is
-    # start1 = time.time()
     res = e.compatible_int(0)
     matched = set()
     for n, sub_dict in equal_terms.items():
@@ -223,13 +225,11 @@ def simplify(expr, real=False, *sym_tensors):
         for other_n, sub in sub_dict.items():
             matched.add(other_n)
             res += terms[other_n].subs(sub, simultaneous=True)
-    # print(f"Substituting expression took {time.time() - start1} seconds")
     # Add the unmatched remainder
-    # start1 = time.time()
     res += e.expr(Add(*[terms[n].sympy for n in range(len(terms))
-                  if n not in matched]), expr.real, expr.sym_tensors)
-    # print(f"Adding the unmatched remainder took {time.time() - start1} sec")
-    del terms
+                  if n not in matched]), expr.real, expr.sym_tensors,
+                  expr.provided_target_idx)
+    del terms  # not valid anymore (expr changed)
     print(f"simplify took {time.time()- start} seconds")
     if real:
         res = make_real(res, *sym_tensors)
@@ -259,7 +259,8 @@ def make_real(expr, *sym_tensors):
             for t in term.tensors:
                 name = t.name
                 if name in t_strings:
-                    t_idx[name].append(t.idx)
+                    idx = t.idx
+                    t_idx[name].extend([idx for i in range(t.exponent)])
             if not all(len(idx) == desired[t] for t, idx in t_idx.items()):
                 raise RuntimeError("Did not find the correct number of "
                                    f"tensors {dict(desired)} in {term}.")
@@ -318,10 +319,10 @@ def make_real(expr, *sym_tensors):
                         if len(new) < len(tensor_terms) and \
                                 len(swapped) <= len(term):
                             return swap_tensors(new, t_strings)
-                        temp = swapped
+                        temp = swapped.terms[0]
         return tensor_terms
 
-    start = time.time()
+    # start = time.time()
     if not all(isinstance(t, str) for t in sym_tensors):
         raise Inputerror("Symmetric tensors need to be provided as strings.")
     sym_tensors = set(sym_tensors)
@@ -372,7 +373,8 @@ def make_real(expr, *sym_tensors):
             temp = e.compatible_int(0)
             for match in matching_terms:
                 to_swap = e.expr(Add(*[t_terms.terms[i].sympy for i in match]),
-                                 True, expr.sym_tensors)
+                                 True, expr.sym_tensors,
+                                 expr.provided_target_idx)
                 temp += swap_tensors(to_swap, t_strings)
             temp += Add(*[t_terms.terms[i].sympy for i in range(len(t_terms))
                         if i not in set(chain.from_iterable(matching_terms))])
@@ -381,5 +383,5 @@ def make_real(expr, *sym_tensors):
         # introduce Pow objects.
         else:
             res += swap_tensors(t_terms, t_strings)
-    print(f"new make_real took {time.time() - start} seconds.")
+    # print(f"make_real took {time.time() - start} seconds.")
     return res

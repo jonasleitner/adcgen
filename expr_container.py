@@ -1003,6 +1003,9 @@ class obj:
                         pos = descr + '_ul'
                     else:
                         pos = descr + '_' + bk[0]
+                    # also attatch the space of the neighbours
+                    pos += '_' + "".join([index_space(i.name)[0]
+                                         for i in idx_tpl if i != s])
                     ret[s].append(pos)
         elif type in ['delta', 'annihilate', 'create']:
             for s in self.idx:
