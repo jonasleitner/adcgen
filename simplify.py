@@ -142,17 +142,27 @@ def find_compatible_terms(terms):
                 idx_map = {}
                 matched_idx = []
                 for idx, pat in p[ov].items():
-                    # target index -> do nothing (filtered later)
+                    # check whether the current index is a target index
+                    # -> only map onto other target indices
+                    is_target = [False, False]
                     if idx in target[n]:
-                        idx_map[idx] = idx
-                        continue
+                        is_target[0] = True
                     count = Counter(pat)
                     for other_idx, other_pat in other_p[ov].items():
-                        # skip target and avoid double counting
-                        if other_idx in target[other_n] or \
-                                other_idx in matched_idx:
+                        # avoid double counting
+                        if other_idx in matched_idx:
+                            continue
+                        is_target[1] = False
+                        if other_idx in target[other_n]:
+                            is_target[1] = True
+                        # check if either both or none are target indices
+                        if is_target[0] != is_target[1]:
                             continue
                         if count == Counter(other_pat):
+                            # target indices need to be equal already -> can't
+                            # substitute them
+                            if all(is_target) and idx != other_idx:
+                                continue
                             matched_idx.append(other_idx)
                             idx_map[other_idx] = idx
                             break
