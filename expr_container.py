@@ -605,19 +605,19 @@ class term:
     def pattern(self):
         """Returns the pattern of the indices in the term. If coupling is set,
            the coupling between the objects is taken into account"""
-        coupl = self.coupling
+        target = self.target
+        coupl = self.coupling(target)
         ret = {'o': {}, 'v': {}}
         for i, o in enumerate(self.objects):
             c = "_" + "_".join(sorted(coupl[i])) if i in coupl else ''
-            for s, pos in o.crude_pos.items():
+            for s, pos in o.crude_pos(target).items():
                 ov = index_space(s.name)[0]
                 if s not in ret[ov]:
                     ret[ov][s] = []
                 ret[ov][s].extend([p + c for p in pos])
         return ret
 
-    @property
-    def coupling(self):
+    def coupling(self, target=None):
         """Returns the coupling between the objects in the term, where two
            objects are coupled when they share common indices."""
         from itertools import product
@@ -625,6 +625,8 @@ class term:
         # 1) collect all the couplings (e.g. if a index s occurs at two tensors
         #    t and V: the crude_pos of s at t will be extended by the crude_pos
         #    of s at V. And vice versa for V.)
+        if target is None:
+            target = self.target
         coupling = {}
         for i, o in enumerate(self.objects):
             descr = o.description
@@ -632,11 +634,11 @@ class term:
                 coupling[descr] = {}
             if i not in coupling[descr]:
                 coupling[descr][i] = []
-            idx_pos = o.crude_pos
+            idx_pos = o.crude_pos(target)
             for other_i, other_o in enumerate(self.objects):
                 if i == other_i:
                     continue
-                other_idx_pos = other_o.crude_pos
+                other_idx_pos = other_o.crude_pos(target)
                 matches = [comb[0] for comb in
                            product(idx_pos.keys(), other_idx_pos.keys())
                            if comb[0] == comb[1]]
@@ -985,27 +987,40 @@ class obj:
         """Returns the canonical space of tensors and other objects."""
         return "".join([index_space(s.name)[0] for s in self.idx])
 
-    @property
-    def crude_pos(self):
+    def crude_pos(self, target=None):
         """Returns the 'crude' position of the indices in the object.
            (e.g. only if they are located in bra/ket, not the exact position)
            """
+        if target is None:
+            target = self.term.target
         ret = {}
         descr = self.description
         type = self.type
         if type == 'tensor':
             can_bk = self.__canonical_bk(self.extract_pow)
+            # extract all target indices
+            target_bk = {bk: [s for s in idx_tpl if s in target]
+                         for bk, idx_tpl in can_bk.items()}
             for bk, idx_tpl in can_bk.items():
+                other_bk = "upper" if bk == 'lower' else 'lower'
                 for s in idx_tpl:
                     if s not in ret:
                         ret[s] = []
-                    if self.symmetric:
-                        pos = descr + '_ul'
-                    else:
-                        pos = descr + '_' + bk[0]
+                    pos = descr + '_ul' if self.symmetric else \
+                        descr + '_' + bk[0]
                     # also attatch the space of the neighbours
                     pos += '_' + "".join([index_space(i.name)[0]
                                          for i in idx_tpl if i != s])
+                    # also need to include the explicit name of target indices
+                    # - target indices that are in the same braket
+                    same_target = [i.name for i in target_bk[bk] if i != s]
+                    pos += '_' + "".join(same_target) if same_target else \
+                        '_none'
+                    # - target indices that are in the other space/braket
+                    other_target = [i.name for i in target_bk[other_bk]
+                                    if i != s]
+                    pos += '_other-' + "".join(other_target) if other_target \
+                        else '_other-none'
                     ret[s].append(pos)
         elif type in ['delta', 'annihilate', 'create']:
             for s in self.idx:
@@ -1225,12 +1240,13 @@ class normal_ordered(obj):
                                       f"second quantized operators. {self}")
         return ret
 
-    @property
-    def crude_pos(self):
+    def crude_pos(self, target=None):
+        if target is None:
+            target = self.term.target
         descr = self.description
         ret = {}
         for o in self.objects:
-            for s, pos in o.crude_pos.items():
+            for s, pos in o.crude_pos(target).items():
                 if s not in ret:
                     ret[s] = []
                 ret[s].extend([f"{descr}_" + p for p in pos])
@@ -1291,15 +1307,16 @@ class polynom(obj):
             idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
         ))
 
-    @property
-    def crude_pos(self):
+    def crude_pos(self, target=None):
         # I think this does not rly work correctly
+        if target is None:
+            target = self.term.target
         ret = {}
         descr = self.description
         for term in self.terms:
             sign = term.sign
             for o in term.objects:
-                for s, pos in o.crude_pos.items():
+                for s, pos in o.crude_pos(target).items():
                     if s not in ret:
                         ret[s] = []
                     ret[s].extend([f"{descr}_{sign[0]}_" + p for p in pos])
