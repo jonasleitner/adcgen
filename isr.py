@@ -1,6 +1,5 @@
 from sympy.physics.secondquant import (
-    F, Fd, evaluate_deltas, wicks, NO, AntiSymmetricTensor,
-    Dagger
+    F, Fd, wicks, NO, AntiSymmetricTensor, Dagger
 )
 from sympy import symbols, latex, nsimplify, Rational, diff, S
 
@@ -12,6 +11,7 @@ from indices import (
 )
 from misc import cached_member, Inputerror, transform_to_tuple, validate_input
 from simplify import simplify
+from func import evaluate_deltas
 
 
 class intermediate_states:
@@ -139,7 +139,7 @@ class intermediate_states:
                     )
                     # print(f"term {term}:", latex(i1))
                     projection += (state * i1).expand()
-                projection = evaluate_deltas(projection)
+                projection = evaluate_deltas(projection).sympy
                 # print(f"NORM FACTOR {norm_term[0]}:", latex(norm))
                 # print(f"PROJECTION {norm_term[1]}:", latex(projection))
                 res -= (norm * projection).expand()
@@ -196,7 +196,7 @@ class intermediate_states:
                         simplify_kronecker_deltas=True,
                     )
                     projection += (prefactor * state * i1).expand()
-                projection = evaluate_deltas(projection)
+                projection = evaluate_deltas(projection).sympy
                 res -= (norm * projection).expand()
 
         print(f"Build precursor {space}_({indices})^({order}) {braket}:"
@@ -294,7 +294,7 @@ class intermediate_states:
                     i1 *= self.overlap_precursor(o, space,
                                                  indices=(idx[n], idx[n+1]))
                 # in combined terms S*S delta evaluation might be necessary
-                res += evaluate_deltas(i1.expand())
+                res += evaluate_deltas(i1.expand()).sympy
         print(f"Build {space} S_root_{indices}^({order}) = {latex(res)}")
         return res
 
@@ -339,7 +339,7 @@ class intermediate_states:
                               indices=s_indices[braket]) *
                   self.precursor(term[1], space=space, braket=braket,
                                  indices=idx_pre))
-            res += evaluate_deltas(i1.expand())
+            res += evaluate_deltas(i1.expand()).sympy
         print(f"Build {space} ISR_({indices}^({order}) "
               f"{braket} = {latex(res)}")
         return res

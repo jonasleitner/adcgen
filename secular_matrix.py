@@ -1,4 +1,4 @@
-from sympy.physics.secondquant import wicks, evaluate_deltas
+from sympy.physics.secondquant import wicks
 from sympy import sqrt, S
 
 from math import factorial
@@ -8,6 +8,7 @@ from indices import (
     repeated_indices, split_idx_string, n_ov_from_space, indices
 )
 from misc import Inputerror, cached_member, transform_to_tuple
+from func import evaluate_deltas
 from simplify import simplify
 
 
@@ -211,7 +212,7 @@ class secular_matrix:
         #       f"{prefactor_mvp}, {prefactor_ampl}.")
         return evaluate_deltas(
             (prefactor_mvp * prefactor_ampl * m * y).expand()
-        )
+        ).sympy
 
     def max_ptorder_spaces(self, order):
         """Returns a dict with the maximum pt order of each space at the
