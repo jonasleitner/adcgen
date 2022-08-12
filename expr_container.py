@@ -141,12 +141,13 @@ class expr:
         return self
 
     def factor(self, num=None):
-        from sympy import factor
+        from sympy import factor, nsimplify
         if num is None:
             self.__expr = factor(self.sympy)
             return self
-        num = sympify(num)
-        factored = map(lambda t: Mul(Pow(num, -1), t.sympy), self.terms)
+        num = sympify(num, rational=True)
+        factored = map(lambda t: Mul(nsimplify(Pow(num, -1), rational=True),
+                       t.sympy), self.terms)
         self.__expr = Mul(num, Add(*factored), evaluate=False)
         return self
 
@@ -426,7 +427,8 @@ class term:
                     self.sym_tensors, self.provided_target_idx)
 
     def permute(self, *perms):
-        """Applies the provided permutations to the term one after another.
+        """Applies the provided permutations to the term one after another,
+           starting with the first one.
            Permutations need to be provided as e.g. tuples (a,b), (i,j), ...
            Indices may be provided as sympy Dummy symbols or strings."""
         from sympy import Dummy
@@ -448,12 +450,19 @@ class term:
            the term. If only contracted is set to True, only permutations of
            indices that are contracted in the term are considered."""
         # TODO: also implement only_target?
-        # TODO: This produces more permutations than necessary currently
-        #       probably create a list of results P_pq ijkl -> jikl
-        #       and check whether the current permutation just respoduces one
-        #       that is already listed.
-        from itertools import combinations
+        from itertools import combinations, permutations
         from simplify import make_real
+        from math import factorial
+
+        def permute_str(string, *perms):
+            string = list(string)
+            for perm in perms:
+                perm = [s.name for s in perm]
+                idx1 = string.index(perm[0])
+                idx2 = string.index(perm[1])
+                string[idx1] = perm[1]
+                string[idx2] = perm[0]
+            return "".join(string)
 
         is_zero = {
             False: lambda x: x.sympy is S.Zero,
@@ -465,21 +474,55 @@ class term:
         # sort indices according to their space
         idx = {'o': [], 'v': []}
         for s in indices[only_contracted]:
-            idx[index_space(s.name)[0]].append(s)
-        permutations = {}
-        for ov in ['o', 'v']:
-            pairs = list(combinations(idx[ov], 2))
+            # in self.idx contracted indices are listed multiple times
+            ov = index_space(s.name)[0]
+            if s not in idx[ov]:
+                idx[ov].append(s)
+        # list of permutations and their symmetry, +-1
+        sym = {'o': {}, 'v': {}}
+        for ov, ov_idx in idx.items():
+            max_perms = factorial(len(ov_idx))
+            # represent the current indices as a string. All perms
+            # will also be applied to the string, in order to
+            # check whether the current permutation produces a new
+            # result.
+            idx_string = "".join([s.name for s in ov_idx])
+            # list that holds all permuted strings
+            permuted_strings = [idx_string]
+            # create all index pairs that may be permuted
+            pairs = list(combinations(ov_idx, 2))
+            # this creates more permutations than necessary
+            # e.g. the cyclic permutation ijk -> kij can be defined
+            # as P_jk P_ij // P_ij P_ik // P_ik P_jk
             combs = [
-                combinations(pairs, r) for r in range(1, len(idx[ov]))
+                permutations(pairs, r) for r in range(1, len(ov_idx))
             ]
             for n_perms in combs:
                 for perms in n_perms:
+                    # we only need to find n! permutations (including
+                    # the identity)
+                    if len(permuted_strings) == max_perms:
+                        break
+                    # apply the perm to the string and check whether
+                    # the resulting permuted string has already been
+                    # created by another permutation
+                    perm_string = permute_str(idx_string, *perms)
+                    if perm_string in permuted_strings:
+                        continue
+                    permuted_strings.append(perm_string)
                     sub = self.permute(*perms)
                     if is_zero(self+sub):
-                        permutations[perms] = -1
+                        sym[ov][perms] = -1
                     elif is_zero(self-sub):
-                        permutations[perms] = +1
-        return permutations
+                        sym[ov][perms] = +1
+        # multiply the occ and virt permutations
+        symmetry = {}
+        symmetry.update(sym['o'])
+        symmetry.update(sym['v'])
+        for o_perms, o_sym in sym['o'].items():
+            for v_perms, v_sym in sym['v'].items():
+                symmetry[o_perms + v_perms] = o_sym * v_sym
+        return symmetry
 
     @property
     def symmetrize(self):
