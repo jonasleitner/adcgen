@@ -1476,38 +1476,44 @@ class compatible_int(int):
         return self.__add__(other)
 
     def __add__(self, other):
-        if isinstance(other, (obj, term, expr)):
+        if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
             return expr(self.num + other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
-        else:
+        elif isinstance(other, compatible_int):
             return compatible_int(self.num + other)
+        else:
+            return other + self.num
 
     def __isub__(self, other):
         return self.__sub__(other)
 
     def __sub__(self, other):
-        if isinstance(other, (obj, term, expr)):
+        if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
             return expr(self.num - other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
-        else:
+        elif isinstance(other, compatible_int):
             return compatible_int(self.num - other)
+        else:
+            return self.num - other
 
     def __imul__(self, other):
         return self.__mul__(other)
 
     def __mul__(self, other):
-        if isinstance(other, (obj, term, expr)):
+        if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
             return expr(self.num * other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
-        else:
+        elif isinstance(other, compatible_int):
             return compatible_int(self.num * other)
+        else:
+            return self.num * other
 
     def __itruediv__(self, other):
         return self.__truediv__(other)
 
     def __truediv__(self, other):
-        if isinstance(other, (obj, term, expr)):
+        if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
             return expr(self.num / other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
         else:
-            return compatible_int(self.num / other)
+            return self.num / other
