@@ -7,12 +7,9 @@ from sympy.physics.secondquant import (
 
 
 class expr:
-    def __new__(cls, e, real=False, sym_tensors=[], target_idx=None):
-        if isinstance(e, (obj, term, expr, normal_ordered, polynom)):
-            return expr(e.sympy, real, sym_tensors, target_idx)
-        return super().__new__(cls)
-
     def __init__(self, e, real=False, sym_tensors=[], target_idx=None):
+        if isinstance(e, (obj, term, expr, normal_ordered, polynom)):
+            e = e.sympy
         self.__expr = sympify(e)
         self.__real = real
         self.__sym_tensors = set(sym_tensors)
@@ -444,7 +441,9 @@ class term:
                     else idx.get_indices(s)[index_space(s)][0] for s in perm]
             sub = {perm[0]: perm[1], perm[1]: perm[0]}
             temp = temp.subs(sub, simultaneous=True)
-        return temp
+        return temp if isinstance(temp, expr) else \
+            expr(temp, self.real, self.sym_tensors, self.provided_target_idx)
+
     def symmetry(self, only_contracted=False):
         """Return a dict with all Symmetric and Antisymmetric Permutations of
            the term. If only contracted is set to True, only permutations of
@@ -1078,7 +1077,9 @@ class obj:
         can_bk = {}
         for bk in ['upper', 'lower']:
             can_bk[bk] = sorted(
-                getattr(o, bk), key=lambda s: (index_space(s.name)[0], s.name)
+                getattr(o, bk), key=lambda s:
+                (index_space(s.name)[0], int(s.name[1:]) if s.name[1:] else 0,
+                 s.name[0])
             )
         return can_bk
 
@@ -1469,8 +1470,7 @@ class polynom(obj):
 
 class compatible_int(int):
     def __init__(self, num):
-        super().__init__()
-        self.num = num
+        self.num = int(num)
 
     def __iadd__(self, other):
         return self.__add__(other)
@@ -1480,7 +1480,7 @@ class compatible_int(int):
             return expr(self.num + other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
         else:
-            return super().__add__(other)
+            return compatible_int(self.num + other)
 
     def __isub__(self, other):
         return self.__sub__(other)
@@ -1490,7 +1490,7 @@ class compatible_int(int):
             return expr(self.num - other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
         else:
-            return super().__sub__(other)
+            return compatible_int(self.num - other)
 
     def __imul__(self, other):
         return self.__mul__(other)
@@ -1500,7 +1500,7 @@ class compatible_int(int):
             return expr(self.num * other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
         else:
-            return super().__mul__(other)
+            return compatible_int(self.num * other)
 
     def __itruediv__(self, other):
         return self.__truediv__(other)
@@ -1510,4 +1510,4 @@ class compatible_int(int):
             return expr(self.num / other.sympy, other.real, other.sym_tensors,
                         other.provided_target_idx)
         else:
-            return super().__truediv__(other)
+            return compatible_int(self.num / other)

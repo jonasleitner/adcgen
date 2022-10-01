@@ -137,27 +137,6 @@ class indices(metaclass=Singleton):
         # option 2: leave all indices that are for sure not specific untouched
         #            should be an equivalent solution, but less general
 
-        def get_first_missing_index(idx_list, ov):
-            """Returns the first index that is missing the provided index list.
-               [i,j,l] -> return k // [i,j,k] -> return l"""
-            idx_base = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
-                        'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
-                        'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}
-            ordered_idx = idx_base[ov].copy()
-            idx_list = sorted(
-                idx_list, key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])
-            )
-            for i, idx in enumerate(idx_list):
-                if idx != ordered_idx[i]:
-                    return ordered_idx[i]
-                if idx[0] in ['o', 'h', 'w']:
-                    n = int(idx[1:]) + 1 if idx[1:] else 1
-                    ordered_idx.extend([b[0] + str(n) for b in ordered_idx])
-                new = ordered_idx[i+1]
-            if not idx_list:
-                new = ordered_idx[0]
-            return new
-
         def substitute_contracted(term):
             # sort all target indices in a dict. Those indices will not be
             # substituted and are therefore, already present in the term
@@ -265,6 +244,31 @@ def repeated_indices(idx_a, idx_b):
     if any(i in split_b for i in split_a):
         return True
     return False
+
+
+def get_first_missing_index(idx_list, ov):
+    """Returns the first index that is missing in the provided index list.
+       The indices need to be provided as strings.
+       [i,j,l] -> return k // [i,j,k] -> return l
+        """
+
+    idx_base = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
+                'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+                'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}
+    ordered_idx = idx_base[ov].copy()
+    idx_list = sorted(
+        idx_list, key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])
+    )
+    for i, idx in enumerate(idx_list):
+        if idx != ordered_idx[i]:
+            return ordered_idx[i]
+        if idx[0] in ['o', 'h', 'w']:
+            n = int(idx[1:]) + 1 if idx[1:] else 1
+            ordered_idx.extend([b[0] + str(n) for b in ordered_idx])
+        new = ordered_idx[i+1]
+    if not idx_list:
+        new = ordered_idx[0]
+    return new
 
 
 def extract_names(syms):
