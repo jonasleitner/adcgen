@@ -353,7 +353,7 @@ def make_real(expr, *sym_tensors):
     for term in expr.terms:
         available = Counter(
             [t.name for t in term.tensors for i in range(t.exponent)
-             if t.name in sym_tensors]
+             if t.symmetric]
         )
         max_occurence.update(
             {t: n for t, n in available.items() if n > max_occurence[t]}
