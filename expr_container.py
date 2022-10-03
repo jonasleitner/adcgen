@@ -1005,14 +1005,15 @@ class obj:
 
     @property
     def symmetric(self):
-        return (True if self.type == 'tensor' and self.name in self.sym_tensors
-                else False)
+        return (self.type == 'tensor' and self.name in self.sym_tensors
+                and len(self.extract_pow.upper) == len(self.extract_pow.lower))
 
     @property
     def idx(self):
         """Return the indices of the canonical ordered object."""
         get_idx = {
             'tensor': lambda o: self.__canonical_idx(o),
+            # delta indices are sorted automatically
             'delta': lambda o: (o.preferred_index, o.killable_index),
             'annihilate': lambda o: (o.args[0], ),
             'create': lambda o: (o.args[0], )
@@ -1065,7 +1066,19 @@ class obj:
                     pos += '_other-' + "".join(other_target) if other_target \
                         else '_other-none'
                     ret[s].append(pos)
-        elif type in ['delta', 'annihilate', 'create']:
+        elif type == 'delta':
+            idx = self.idx
+            target = [s for s in idx if s in target]
+            for s in idx:
+                if s not in ret:
+                    ret[s] = []
+                other_target = [i.name for i in target if i != s]
+                pos = self.description
+                # also add the name of target indices on the same delta
+                if other_target:
+                    pos += "_" + "".join(other_target)
+                ret[s].append(pos)
+        elif type in ['annihilate', 'create']:
             for s in self.idx:
                 if s not in ret:
                     ret[s] = []
