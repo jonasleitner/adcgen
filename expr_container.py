@@ -452,9 +452,10 @@ class term:
         from itertools import combinations, permutations
         from simplify import make_real
         from math import factorial
+        from indices import split_idx_string
 
         def permute_str(string, *perms):
-            string = list(string)
+            string = split_idx_string(string)
             for perm in perms:
                 perm = [s.name for s in perm]
                 idx1 = string.index(perm[0])
