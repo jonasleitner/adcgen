@@ -22,6 +22,26 @@ def by_delta_types(expr):
     return ret
 
 
+def by_delta_indices(expr):
+    """Sort the terms in an expression according to the indices on the
+       KroneckerDeltas in the term."""
+    expr = expr.expand()
+    if not isinstance(expr, e.expr):
+        expr = e.expr(expr)
+    ret = {}
+    for term in expr.terms:
+        d_idx = [o.idx for o in term.deltas for i in range(o.exponent)]
+        for i, d in enumerate(d_idx):
+            d_idx[i] = "".join([s.name for s in d])
+        d_idx = tuple(sorted(d_idx))
+        if not d_idx:
+            d_idx = ('none',)
+        if d_idx not in ret:
+            ret[d_idx] = e.compatible_int(0)
+        ret[d_idx] += term
+    return ret
+
+
 def by_tensor_block(expr, t_string, symmetric=False):
     """Sorts the terms in an expression according to the blocks of a tensor,
        e.g. collect all terms that define the 'oo' block of the density matrix.
@@ -77,7 +97,7 @@ def by_tensor_target_idx(expr, t_string):
     if remaining_terms.sympy is not S.Zero:
         ret[(f'no_{t_string}',)] = remaining_terms
         # if there are no terms that contain the tensor
-        if remaining_terms == expr:
+        if tensor_terms.sympy is S.Zero:
             return ret
     del remaining_terms
 
