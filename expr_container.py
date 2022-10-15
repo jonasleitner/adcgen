@@ -177,6 +177,38 @@ class expr:
         return expr(self.sympy, self.real, self.sym_tensors,
                     self.provided_target_idx)
 
+    def print_latex(self, terms_per_line=None, only_pull_out_pref=False):
+        """Returns a Latex string of the canonical form of the expr.
+           The output may be adjusted to be compatible with the Latex align
+           environment, where the parameter terms_per_line defines the number
+           of terms that should be printed per line.
+           """
+        tex_terms = [term.print_latex(only_pull_out_pref)
+                     for term in self.terms]
+        # remove '+' in the first term
+        if tex_terms[0][0] == '+':
+            tex_terms[0] = tex_terms[0].replace('+', '', 1).lstrip()
+        # just the raw output without linebreaks
+        if terms_per_line is None:
+            return " ".join(tex_terms)
+
+        # only print x terms per line in an align environment
+        if not isinstance(terms_per_line, int):
+            raise Inputerror("terms_per_line needs to be an integer.")
+        # create the string of all but the last line
+        tex_string = ""
+        for i in range(0, len(tex_terms) - terms_per_line, terms_per_line):
+            tex_string += (
+                "& " + " ".join(tex_terms[i:i+terms_per_line]) +
+                " \\nonumber\\\\\n"
+            )
+        # add the last line. Could ommit this if the equation is not supposed
+        # to have a number.
+        remaining = terms_per_line if len(tex_terms) % terms_per_line == 0 \
+            else len(tex_terms) % terms_per_line
+        tex_string += "& " + " ".join(tex_terms[-remaining:])
+        return tex_string
+
     def __iadd__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
             if other.real != self.real or \
@@ -595,10 +627,11 @@ class term:
     @property
     def prefactor(self):
         """Returns the prefactor of the term."""
+        from sympy import nsimplify
         pref = [o.sympy for o in self.objects if o.type == 'prefactor']
         if not pref:
             return sympify(1)
-        return Mul(*pref)
+        return nsimplify(Mul(*pref), rational=True)
 
     @property
     def sign(self):
@@ -646,8 +679,7 @@ class term:
 
     @property
     def pattern(self):
-        """Returns the pattern of the indices in the term. If coupling is set,
-           the coupling between the objects is taken into account"""
+        """Returns the pattern of the indices in the term."""
         target = self.target
         coupl = self.coupling(target)
         ret = {'o': {}, 'v': {}}
@@ -753,6 +785,21 @@ class term:
                 if not o.type == 'prefactor'):
             return True
         return False
+
+    def print_latex(self, only_pull_out_pref=False):
+        """Returns a Latex string of the canonical form of the term."""
+        # - sign and prefactor
+        pref = self.prefactor * -1 if self.sign_change else self.prefactor
+        tex_str = "+ " if pref >= 0 else "- "
+        if pref not in [+1, -1]:
+            tex_str += f"{latex(abs(pref))} "
+
+        # - latex strings for the remaining objects
+        tex_str += " ".join(
+            [o.print_latex(only_pull_out_pref) for o in self.objects
+             if o.type != 'prefactor']
+        )
+        return tex_str
 
     def __iadd__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
@@ -1170,6 +1217,59 @@ class obj:
             return True
         return False
 
+    def print_latex(self, only_pull_out_pref=False):
+        """Returns a Latex string of the canonical form of the object."""
+
+        def tensor_string(idx):
+            name = self.name
+            # ERI; idx = [bra, ket]
+            if name == 'V':
+                tex_string = f"\\langle {idx[0]}\\vert\\vert {idx[1]}\\rangle"
+            # t-amplitude; idx = [lower, upper]
+            elif name[0] == 't':
+                cc = 'c' in name[1:]
+                order = name[1:].replace('c', '')
+                tex_string = (
+                    "{" + name[0] + "^{" + idx[1] + "}_{" + idx[0] + "}}^{(" +
+                    order + ")\\ast}" if cc else
+                    "{" + name[0] + "^{" + idx[1] + "}_{" + idx[0] + "}}^{(" +
+                    order + ")}"
+                )
+            # ADC-amplitude; idx = [lower, upper]
+            elif name[0] in ['X', 'Y']:
+                tex_string = name + "^{" + idx[1] + "}_{" + idx[0] + "}"
+            # arbitrary other tensor; idx = [upper, lower]
+            else:
+                if name == 'e':  # orbital energies as epsilon
+                    name = "\\varepsilon"
+                tex_string = name + "^{" + idx[0] + "}_{" + idx[1] + "}"
+            if self.exponent != 1:
+                tex_string = (
+                    f"{tex_string}^{{{self.exponent}}}" if name == 'V' else
+                    f"\\bigl({tex_string}\\bigr)^{{{self.exponent}}}"
+                )
+            return tex_string
+
+        if only_pull_out_pref or self.type != 'tensor':
+            return self.__str__()
+
+        # Only For Tensors!
+        # idx are in canonical order!
+        idx = [s.name for s in self.idx]
+        is_amplitude = self.name[0] in ['t', 'X', 'Y']
+        # - split the indices in upper and lower spaces
+        # tensor is symmetric:
+        #   has to have an equal amount of upper and lower indices
+        #       -> split idx string at half
+        # tensor is not symmetric:
+        #   idx = [*upper, *lower]
+        # t- or ADC-amplitudes:
+        #   idx = [*lower, *upper]
+        n = (len(self.extract_pow.lower) if is_amplitude
+             else len(self.extract_pow.upper))
+        idx = ("".join(idx[:n]), "".join(idx[n:]))
+        return tensor_string(idx)
+
     def __iadd__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
             if other.real != self.real or \
@@ -1317,6 +1417,11 @@ class normal_ordered(obj):
         n_create = len([o for o in objects if o.type == 'create'])
         n_annihilate = len([o for o in objects if o.type == 'annihilate'])
         return f"{self.type}_{str(n_annihilate)}_{str(n_create)}"
+
+    def print_latex(self, only_pull_out_pref=False):
+        # no prefs possible in NO
+        return " ".join([o.print_latex(only_pull_out_pref)
+                        for o in self.objects])
 
 
 class polynom(obj):
@@ -1480,6 +1585,15 @@ class polynom(obj):
         if all(term.contains_only_orb_energies for term in self.terms):
             return True
         return False
+
+    def print_latex(self, only_pull_out_pref=False):
+        tex_str = " ".join(
+            [term.print_latex(only_pull_out_pref) for term in self.terms]
+        )
+        tex_str = f"\\bigl({tex_str}\\bigr)"
+        if self.exponent != 1:
+            tex_str += f"^{{{self.exponent}}}"
+        return tex_str
 
 
 class compatible_int(int):
