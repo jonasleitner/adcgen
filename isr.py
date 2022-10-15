@@ -24,6 +24,7 @@ class intermediate_states:
             "ea": ["p"],
             "ip": ["h"],
             "dip": ["hh"],
+            "dea": ["pp"],
         }
         if variant not in variants.keys():
             raise Inputerror(f"The ADC variant {variant} is not valid. "
