@@ -9,7 +9,8 @@ from math import factorial
 from indices import (
     n_ov_from_space, repeated_indices, index_space, split_idx_string, indices
 )
-from misc import cached_member, Inputerror, transform_to_tuple, validate_input
+from misc import (cached_member, Inputerror, transform_to_tuple,
+                  validate_input, process_arguments)
 from simplify import simplify
 from func import evaluate_deltas
 
@@ -33,6 +34,7 @@ class intermediate_states:
         self.variant = variant
         self.min_space = variants[variant]
 
+    @process_arguments
     @cached_member
     def precursor(self, order, space, braket, indices):
         """Method used to obtain precursor states of specified order
@@ -204,6 +206,7 @@ class intermediate_states:
               f" {latex(res)}")
         return res
 
+    @process_arguments
     @cached_member
     def overlap_precursor(self, order, space, indices):
         """Method to obtain precursor overlap matrices
@@ -252,6 +255,7 @@ class intermediate_states:
         print(f"Build overlap {space} S_{indices}^({order}) = {res}")
         return res.sympy
 
+    @process_arguments
     @cached_member
     def s_root(self, order, space, indices):
         """Method to obtain S^{-0.5} of a given order.
@@ -299,6 +303,7 @@ class intermediate_states:
         print(f"Build {space} S_root_{indices}^({order}) = {latex(res)}")
         return res
 
+    @process_arguments
     @cached_member
     def intermediate_state(self, order, space, braket, indices):
         """Returns an intermediate state. The index string idx_is represents
@@ -345,8 +350,10 @@ class intermediate_states:
               f"{braket} = {latex(res)}")
         return res
 
-    def overlap_isr(self, order, space, indices):
-        """Computes the overlap matrix <I|J> in the ISR basis."""
+    @process_arguments
+    @cached_member
+    def overlap_isr(self, order, block, indices):
+        """Computes a block of the overlap matrix in the ISR basis."""
 
         space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
@@ -379,6 +386,7 @@ class intermediate_states:
               latex(res))
         return res
 
+    @process_arguments
     @cached_member
     def amplitude_vector(self, indices, lr="right"):
         """Returns an amplitude vector using the provided indices.

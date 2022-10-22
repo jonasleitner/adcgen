@@ -11,32 +11,10 @@ def cached_member(function):
        member variable '_function_cache' of the class instance.
        """
 
-    from indices import split_idx_string
-    import inspect
     fname = function.__name__
 
     @wraps(function)
-    def wrapper(self, *args, **kwargs):
-        def sort_spaces(sp):
-            return ",".join(["".join(sorted(s, reverse=True)) for s in sp])
-
-        def sort_indices(idx_strings):
-            return ",".join(["".join(sorted(split_idx_string(idx),
-                            key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])))
-                            for idx in idx_strings])
-
-        def validate_bk(braket):
-            if len(braket) == 1 and braket[0] in ['bra', 'ket']:
-                return braket[0]
-            else:
-                raise Inputerror(f"Invalid argument for braket: {braket}.")
-
-        def validate_lr(lr):
-            if len(lr) == 1 and lr[0] in ['left', 'right']:
-                return lr[0]
-            else:
-                raise Inputerror(f"Invalid argument for lr: {lr}.")
-
+    def wrapper(self, *args):
         try:
             fun_cache = self._function_cache[fname]
         except AttributeError:
@@ -45,52 +23,85 @@ def cached_member(function):
         except KeyError:
             fun_cache = self._function_cache[fname] = {}
 
-        # all spaces and indices that are in kwargs are sorted
-        # to bring them in a common form to avoid unneccesary
-        # additional calculations
-        process = {
-            # order, adc_order, min_order: type(int) -> already covered
-            # also subtract_gs is already covered: type(bool)
-            'braket': validate_bk,
-            'lr': validate_lr,
-            'space': sort_spaces,
-            'block': sort_spaces,
-            'mvp_space': sort_spaces,
-            'indices': sort_indices,
-            'opstring': sort_spaces,
-        }
-        kwargs_key = {}
-        for var, value in kwargs.items():
-            # catch orders (int), bools and None
-            if isinstance(value, (int, bool)) or value is None:
-                kwargs_key[var] = value
-                continue
-            val = transform_to_tuple(value)
-            kwargs_key[var] = process[var](val)
-
-        # add the kwargs arguments in the appropriate order to args
-        for argument, value in inspect.signature(function).parameters.items():
-            try:
-                args += (kwargs_key[argument],)
-                del kwargs_key[argument]
-            except KeyError:
-                # if a default value is provided, attatch the default to args
-                # otherwhise the mapping will not be corect
-                if value.default is not inspect._empty:
-                    args += (value.default,)
-        if kwargs_key:
-            raise TypeError(
-                "Wrong or too many arguments provided for function"
-                f" '{function.__name__}'. The function takes: "
-                f"{list(inspect.signature(function).parameters.keys())}. "
-                f"Provided: {list(kwargs.keys())}."
-            )
-
         try:
             return fun_cache[args]
         except KeyError:
             fun_cache[args] = result = function(self, *args)
         return result
+    return wrapper
+
+
+def process_arguments(function):
+    """Decorator for a function thats called with at least one argument.
+       All provided arguments (args and kwargs) are processed if necessary to
+       avoid unnecessary calculations. For instance, indices are sorted, i.e.,
+       indices='ijab' and indices='abji' will both be tranformed to 'abij'.
+       Furthermore, all kwargs are forwarded as args to the decorated function.
+       """
+    from indices import split_idx_string
+    import inspect
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        def sort_spaces(spaces):
+            return ",".join(["".join(sorted(s, reverse=True)) for s in spaces])
+
+        def sort_indices(idx_tpl):
+            sorted_list = ["".join(sorted(split_idx_string(idx),
+                           key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])))
+                           for idx in idx_tpl]
+            return ",".join(sorted_list)
+
+        # order, min_order, braket, lr, subtract_gs, adc_order
+        # -> nothing to sort
+        process = {
+            'opstring': sort_spaces,
+            'space': sort_spaces,
+            'indices': sort_indices,
+            'block': sort_spaces,
+            'mvp_space': sort_spaces,
+        }
+
+        n_args = len(args)
+        arg_idx = 0
+        new_args = []
+        for argument, value in inspect.signature(function).parameters.items():
+            # add all args to kwargs and then process if necessary
+            # if this is used to decorate a member function self should also
+            # be handled correctly
+            if n_args > arg_idx:
+                if argument in kwargs:
+                    raise RuntimeError(f"found argument {argument} in kwargs, "
+                                       "but expected it in args.")
+                kwargs[argument] = args[arg_idx]
+                arg_idx += 1
+            try:
+                val = kwargs[argument]
+                # process the value if needed and not just the default value
+                # has been provided
+                if val != value.default:
+                    fun = process.get(argument, None)
+                    val = fun(transform_to_tuple(val)) if fun else val
+                new_args.append(val)
+                del kwargs[argument]
+            except KeyError:
+                # argument is not provided in kwargs or args
+                # -> has to have a default value
+                if value.default is not inspect._empty:
+                    new_args.append(value.default)
+                    continue
+                else:
+                    raise Inputerror(f"Positional argument {argument} "
+                                     "missing.")
+        # if everything worked kwargs should be an empty dict here
+        if kwargs:
+            raise Inputerror(
+                "Wrong or too many arguments provided for function "
+                f"{function.__name__}. Not possible to assign {kwargs} "
+                f"to {inspect.signature(function).parameters}."
+            )
+        return function(*new_args)
+
     return wrapper
 
 

@@ -1,7 +1,6 @@
 from indices import extract_names, indices, n_ov_from_space
-from isr import get_order_two, get_orders_three, intermediate_states
-from secular_matrix import secular_matrix
-from misc import Inputerror, cached_member, transform_to_tuple
+from misc import (Inputerror, cached_member, transform_to_tuple,
+                  process_arguments, validate_input)
 from simplify import simplify
 from sympy.physics.secondquant import wicks
 from sympy import sqrt, S
@@ -52,6 +51,7 @@ class properties:
         return d - self.gs.expectation_value(order, opstring) if subtract_gs \
             else d
 
+    @process_arguments
     @cached_member
     def op_block(self, order, block, opstring, subtract_gs=True):
         """Computes the contribution of the block IJ to the expectation
@@ -112,6 +112,7 @@ class properties:
         # return simplify(res).sympy
         return res
 
+    @process_arguments
     @cached_member
     def expectation_value(self, adc_order, opstring, order=None,
                           subtract_gs=True):
@@ -154,6 +155,7 @@ class properties:
                                      subtract_gs=subtract_gs)
         return res
 
+    @process_arguments
     @cached_member
     def mod_trans_moment_space(self, order, space, opstring=None, lr='left',
                                subtract_gs=True):
@@ -219,6 +221,7 @@ class properties:
             res += (norm * d).expand()
         return simplify(res).sympy
 
+    @process_arguments
     @cached_member
     def mod_trans_moment(self, adc_order, opstring=None, order=None, lr='left',
                          subtract_gs=True):

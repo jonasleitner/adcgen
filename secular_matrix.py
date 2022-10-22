@@ -3,12 +3,8 @@ from sympy import sqrt, S
 
 from math import factorial
 
-from isr import get_order_two, get_orders_three
-from indices import (
-    repeated_indices, split_idx_string, n_ov_from_space, indices
-)
-from misc import Inputerror, cached_member, transform_to_tuple
-from func import evaluate_deltas
+from misc import (Inputerror, cached_member, transform_to_tuple,
+                  process_arguments, validate_input)
 from simplify import simplify
 
 
@@ -27,6 +23,7 @@ class secular_matrix:
         h = get_H[order] if order < 2 else 0
         return h - self.gs.energy(order)
 
+    @process_arguments
     @cached_member
     def precursor_matrix_block(self, order, block, indices):
         """Computes a certain block of the secular matrix in the
@@ -78,6 +75,7 @@ class secular_matrix:
             res += (norm * matrix).expand()
         return simplify(res).sympy
 
+    @process_arguments
     @cached_member
     def isr_matrix_block(self, order, block, indices):
         """Computes a specific block of a specific order of the secular matrix.
@@ -127,6 +125,7 @@ class secular_matrix:
             res += (norm * matrix).expand()
         return simplify(res).sympy
 
+    @process_arguments
     @cached_member
     def mvp_block_order(self, order, mvp_space, block, indices):
         """Computes the Matrix vector product for the provided space by

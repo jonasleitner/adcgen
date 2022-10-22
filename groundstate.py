@@ -4,7 +4,7 @@ from math import factorial
 
 from indices import indices, n_ov_from_space
 from misc import cached_member, cached_property, Inputerror, transform_to_tuple
-from isr import gen_order_S, get_order_two
+                  process_arguments, transform_to_tuple, validate_input)
 from simplify import simplify
 
 
@@ -34,6 +34,7 @@ class Hamiltonian:
         print("H1 = ", latex(h1))
         return h1
 
+    @process_arguments
     @cached_member
     def operator(self, opstring):
         """Constructs an arbitrary operator. The amount of creation (c) and
@@ -61,6 +62,7 @@ class ground_state:
         self.h = hamiltonian
         self.singles = first_order_singles
 
+    @process_arguments
     @cached_member
     def energy(self, order):
         """Returns the ground state energy of specified order."""
@@ -159,6 +161,7 @@ class ground_state:
         print(f"Build gs({order}) {braket} = ", latex(psi))
         return psi
 
+    @process_arguments
     @cached_member
     def amplitude(self, order, space, indices):
         # not working really. The denominator is only represented as symbolic
@@ -236,6 +239,7 @@ class ground_state:
         print(f"Build GS S^({order}) = {res}")
         return res.sympy
 
+    @process_arguments
     @cached_member
     def expectation_value(self, order, opstring):
         """Computes the expectation value for a given operator. The operator
