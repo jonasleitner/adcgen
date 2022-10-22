@@ -1,11 +1,12 @@
-from sympy import nsimplify, Rational, latex, diff, sympify, Mul, S
+from sympy import Rational, latex, sympify, Mul, S
 from sympy.physics.secondquant import AntiSymmetricTensor, NO, F, Fd, wicks
 from math import factorial
 
 from indices import indices, n_ov_from_space
-from misc import cached_member, cached_property, Inputerror, transform_to_tuple
+from misc import (cached_member, cached_property, Inputerror,
                   process_arguments, transform_to_tuple, validate_input)
 from simplify import simplify
+from func import gen_term_orders
 
 
 class Hamiltonian:
@@ -24,9 +25,9 @@ class Hamiltonian:
     @cached_property
     def h1(self):
         p, q, r, s = self.indices.get_indices('pqrs')['general']
-        # this symbol is reserved for h1
-        o42 = self.indices.get_indices('o42')['occ'][0]
-        v1 = AntiSymmetricTensor('V', (p, o42), (q, o42))
+        # get an occ index for 1 particle part of H1
+        occ = self.indices.get_generic_indices(n_o=1)['occ'][0]
+        v1 = AntiSymmetricTensor('V', (p, occ), (q, occ))
         pq = Fd(p) * F(q)
         v2 = AntiSymmetricTensor('V', (p, q), (r, s))
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
@@ -41,9 +42,7 @@ class Hamiltonian:
            annihilation (a) operators must be given by opstring. For example
            'ccaa' will return a two particle operator.
            """
-        if any(letter not in ['a', 'c'] for letter in opstring):
-            raise Inputerror(f"Invalid operator string: {opstring}."
-                             "Must consist of the letters 'a' and 'c'.")
+        validate_input(opstring=opstring)
         n_create = opstring.count('c')
         idx = self.indices.get_generic_indices(n_g=len(opstring))["general"]
         create = idx[:n_create]
@@ -58,6 +57,8 @@ class Hamiltonian:
 
 class ground_state:
     def __init__(self, hamiltonian, first_order_singles=False):
+        if not isinstance(hamiltonian, Hamiltonian):
+            raise Inputerror('Invalid hamiltonian.')
         self.indices = indices()
         self.h = hamiltonian
         self.singles = first_order_singles
@@ -67,16 +68,12 @@ class ground_state:
     def energy(self, order):
         """Returns the ground state energy of specified order."""
 
-        if not isinstance(order, int):
-            raise Inputerror("Order for needs to be a int. "
-                             f"{type(order)} is not valid.")
+        validate_input(order=order)
 
-        def H(o): return self.h.h0 if o == 0 else self.h.h1
-        h = H(order)
-        bra = self.psi(0, "bra")
-        def Ket(o): return self.psi(0, "ket") if o == 0 else \
-            self.psi(order-1, "ket")
-        ket = Ket(order)
+        h = self.h.h0 if order == 0 else self.h.h1
+        bra = self.psi(order=0, braket="bra")
+        ket = self.psi(order=0, braket='ket') if order == 0 else \
+            self.psi(order=order-1, braket='ket')
         e = bra * h * ket
         e = wicks(e, keep_only_fully_contracted=True,
                   simplify_kronecker_deltas=True)
@@ -84,8 +81,7 @@ class ground_state:
         #           terms later on
         # option 2: simplify the energy expression and replace the indices with
         #           new, generic indices
-        # guess option 2 is nicer, because energy more readable and better
-        # performance
+        # guess option 2 is nicer, because energy is more readable and shorter
         e = simplify(e)
         e = self.indices.substitute_with_generic(e)
         print(f"E^({order}) = {e}")
@@ -103,13 +99,7 @@ class ground_state:
         #      But one can still use overlapping indices within a wavefunction
         #      e.g. singles: ia, doubles ijab, triples ijkabc
 
-        if not isinstance(order, int):
-            raise Inputerror("Order for obtaining ground state wave function"
-                             f"needs to of type int. {type(order)} is not "
-                             "valid.")
-        if braket not in ["ket", "bra"]:
-            raise Inputerror("Only possible to build 'bra' or 'ket' gs "
-                             f"wave function {braket} is not valid")
+        validate_input(order=order, braket=braket)
 
         # catch 0th order wavefunction
         if order == 0:
@@ -142,11 +132,8 @@ class ground_state:
             t = AntiSymmetricTensor(
                 tensor_string[braket], idx["virt"], idx["occ"]
             )
-            operators = 1
-            for symbol in idx[get_ov('virt')]:
-                operators *= Fd(symbol)
-            for symbol in reversed(idx[get_ov('occ')]):
-                operators *= F(symbol)
+            operators = Mul(*[Fd(s) for s in idx[get_ov('virt')]]) * \
+                Mul(*[F(s) for s in reversed(idx[get_ov('occ')])])
             # prefactor for lifting index restrictions
             prefactor = Rational(1, factorial(excitation) ** 2)
             # For signs: Decided to subtract all Doubles to stay consistent
@@ -164,6 +151,7 @@ class ground_state:
     @process_arguments
     @cached_member
     def amplitude(self, order, space, indices):
+        # TODO: properly implement this (explicit denominator + energies)
         # not working really. The denominator is only represented as symbolic
         # delta without any indices and therefore it is not possible to
         # subtract: - E*t properly
@@ -171,9 +159,7 @@ class ground_state:
         # manually afterwards.
         space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
-        if len(space) != 1 or len(indices) != 1:
-            raise Inputerror("Expected only 1 space and indice string. "
-                             f"Got space {space}, indices {indices}.")
+        validate_input(order=order, space=space, indices=indices)
         space = space[0]
         indices = indices[0]
 
@@ -204,7 +190,7 @@ class ground_state:
         ret = wicks(ret, keep_only_fully_contracted=True,
                     simplify_kronecker_deltas=True)
         # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
-        terms = get_order_two(order)
+        terms = gen_term_orders(order=order, term_length=2, min_order=1)
         for term in terms:
             if any(o == 0 for o in term):
                 continue
@@ -215,23 +201,19 @@ class ground_state:
 
     def overlap(self, order):
         """Computes the ground state overlap matrix."""
+        validate_input(order=order)
 
         # catch zeroth order
         if order == 0:
             return sympify(1)
-        # import and save gs wave functions to lower workload. At this point
-        # a single variant for a bra/ket wave function of order n is fine
-        wfn = {}
-        for o in range(order + 1):
-            if o not in wfn:
-                wfn[o] = {}
-            for bk in ["bra", "ket"]:
-                wfn[o][bk] = self.psi(o, bk)
 
-        orders = get_order_two(order)
+        orders = gen_term_orders(order=order, term_length=2, min_order=0)
         res = 0
         for term in orders:
-            i1 = wfn[term[0]]["bra"] * wfn[term[1]]["ket"]
+            # each wfn is requested only once -> no need to precompute and
+            # cache
+            i1 = self.psi(order=term[0], braket='bra') * \
+                self.psi(order=term[1], braket='ket')
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
         # simplify the result by permuting contracted indices
@@ -247,6 +229,7 @@ class ground_state:
            that must be provided as string. For example a two particle
            operator is defined as 'ccaa'.
            """
+        validate_input(order=order, opstring=opstring)
         # - import all mp wavefunctions. It should be possible here, because
         #   it is not possible to obtain a term |1>*x*|1>.
         wfn = {}
@@ -255,7 +238,8 @@ class ground_state:
             for bk in ["bra", "ket"]:
                 wfn[o][bk] = self.psi(order=o, braket=bk)
 
-        orders = get_order_two(order)
+        # better to generate twice orders for length 2 than once for length 3
+        orders = gen_term_orders(order=order, term_length=2, min_order=0)
         res = 0
         # iterate over all norm*d combinations of n'th order
         for norm_term in orders:
@@ -263,11 +247,13 @@ class ground_state:
             if norm is S.Zero:
                 continue
             # compute d for a given norm factor
-            orders_d = get_order_two(norm_term[1])
+            orders_d = gen_term_orders(
+                order=norm_term[1], term_length=2, min_order=0
+            )
             d = 0
             for term in orders_d:
                 i1 = (wfn[term[0]]['bra'] *
-                      self.h.operator(opstring) *
+                      self.h.operator(opstring=opstring) *
                       wfn[term[1]]['ket'])
                 d += wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
@@ -287,17 +273,20 @@ class ground_state:
         #   all a(n) only consist of t-amplitudes and all indices are
         #   contracted
         # a(2) = 0.25*t_d^(2)
-        # a(2)*a(2) = 1/16 * t_d^(4) or 1/16 * t_d^(2) * t_d'^(2)
-        # I guess the second should be correct -> no caching allowed
+        # a(2)*a(2) = 1/16 * t_d^(2) * t_d'^(2)
+        #  -> no caching allowed
         # Then it is also not possible to cache the overlap matrix
+        validate_input(order=order)
 
-        prefactors, orders = self.expand_norm_factor(order, min_order=2)
+        taylor_expansion = self.expand_norm_factor(order=order, min_order=2)
         norm_factor = 0
-        for exponent, termlist in orders.items():
-            for o_tuple in termlist:
-                i1 = prefactors[exponent]
-                for o in o_tuple:
+        for pref, termlist in taylor_expansion:
+            for term in termlist:
+                i1 = pref
+                for o in term:
                     i1 *= self.overlap(o)
+                    if i1 is S.Zero:
+                        break
                 norm_factor += i1.expand()
         print(f"norm_factor^({order}): {latex(norm_factor)}")
         return norm_factor
@@ -308,18 +297,26 @@ class ground_state:
            The parameter min_order defines the first non_vanishing contribution
            to S. All lower contributions are assumed to give either 1 or 0.
            """
-        from sympy import symbols
+        from sympy import symbols, diff, nsimplify
+
+        validate_input(order=order, min_order=min_order)
+        if min_order == 0:
+            raise Inputerror("A minimum order of 0 does not make sense here.")
+
+        # below min_order all orders of the overlap matrix should be 0.
+        # only the zeroth order contribution should be 1
+        # -> obtain 0 or 1 from the overlap function -> handled automatically
+        if order < min_order:
+            return [(1, [(order,)])]
 
         x = symbols('x')
         f = (1 + x) ** -1.0
-        intermediate = f
-        diffs = {0: 1}
-        for o in range(1, int(order/min_order) + 1):
-            intermediate = diff(intermediate, x)
-            diffs[o] = nsimplify(intermediate.subs(x, 0) * 1 / factorial(o))
-        orders = gen_order_S(order, min_order=min_order)
-        # if order below min_order just return the order, i.e. the overlap
-        # matrix of order x will be used (which then sould give either 1 or 0)
-        if not orders:
-            orders[0] = [(order,)]
-        return (diffs, orders)
+        ret = []
+        for exp in range(1, order//min_order + 1):
+            f = diff(f, x)
+            pref = nsimplify(f.subs(x, 0) / factorial(exp), rational=True)
+            orders = gen_term_orders(
+                order=order, term_length=exp, min_order=min_order
+            )
+            ret.append((pref, orders))
+        return ret

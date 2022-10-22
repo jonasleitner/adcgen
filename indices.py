@@ -241,9 +241,7 @@ def repeated_indices(idx_a, idx_b):
     """Checks whether both index strings share an index."""
     split_a = split_idx_string(idx_a)
     split_b = split_idx_string(idx_b)
-    if any(i in split_b for i in split_a):
-        return True
-    return False
+    return any(i in split_b for i in split_a)
 
 
 def get_first_missing_index(idx_list, ov):

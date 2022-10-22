@@ -128,29 +128,31 @@ def validate_input(**kwargs):
     # order, min_order, adc_order, braket, space, lr, mvp_space: single input
     # indices, block: 2 strings possible
     validate = {
-        'order': lambda o: isinstance(o, int),  # int
+        'order': lambda o: isinstance(o, int) and o >= 0,  # int
         'braket': lambda bk: bk in ['bra', 'ket'],  # bra/ket
         'space': lambda sp: all(s in ['p', 'h'] for s in sp),
         'indices': lambda idx: all(isinstance(i, str) for i in idx),
-        'min_order': lambda o: isinstance(o, int),  # int
+        'min_order': lambda o: isinstance(o, int) and o >= 0,  # int
         'lr': lambda lr: lr in ['left', 'right'],  # left/right
         'block': lambda b: all(validate['space'](sp) for sp in b),
         'mvp_space': lambda sp: all(s in ['p', 'h'] for s in sp),
-        'adc_order': lambda o: isinstance(o, int),  # int
+        'adc_order': lambda o: isinstance(o, int) and o >= 0,  # int
+        'opstring': lambda op: all(o in ['a', 'c'] for o in op),
+        'lr_isr': lambda lr: lr in ['left', 'right'],  # left/right
     }
     # braket, lr are exprected as str!
     # order, min_order, adc_order are expected as int!
     # space, mvp_space, block and indices as list/tuple or ',' separated string
     for var, val in kwargs.items():
-        if var in {'space', 'mvp_space'}:
+        if var in {'space', 'mvp_space', 'opstring'}:
             tpl = transform_to_tuple(val)
             if len(tpl) != 1:
-                raise Inputerror(f'Invalid input for space/mvp_space: {val}.')
+                raise Inputerror(f'Invalid input for {var}: {val}.')
             val = tpl[0]
         elif var == 'block':
             tpl = transform_to_tuple(val)
             if len(tpl) != 2:
-                raise Inputerror(f'Invalid input for block: {val}')
+                raise Inputerror(f'Invalid input for {var}: {val}')
             val = tpl
         elif var == 'indices':
             tpl = transform_to_tuple(val)

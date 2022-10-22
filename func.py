@@ -2,6 +2,8 @@ import expr_container as e
 
 from sympy import Add
 
+from misc import Inputerror
+
 
 def evaluate_deltas(expr):
     """Basically identical to the evaluate delta function of sympy. The only
@@ -48,3 +50,30 @@ def evaluate_deltas(expr):
         else:
             pass
     return expr
+
+
+def gen_term_orders(order, term_length, min_order):
+    """Generates all combinations that contribute to the n'th order
+       contribution of a term x*x*x*..., where x is expanded in a perturbation
+       expansion.
+
+       :param order: The desired order
+       :type order: int
+       :param term_length: The number of objects in the term to expand in
+            perturbation theory.
+       :type term_length: int
+       :param min_order: The minimum order that should be considered
+       :type min_order: int
+       :return: All possible combinations of a given order
+       :rtype: list
+       """
+    from itertools import product
+
+    if not all(isinstance(n, int) and n >= 0
+               for n in [order, term_length, min_order]):
+        raise Inputerror("Order, term_length and min_order need to be "
+                         "non-negative integers.")
+
+    orders = (o for o in range(min_order, order + 1))
+    combinations = product(orders, repeat=term_length)
+    return [comb for comb in combinations if sum(comb) == order]
