@@ -16,7 +16,7 @@ class expr:
         self.set_target_idx(target_idx)
         if real:
             self.__sym_tensors.update('f', 'V')
-            self.make_real
+            self.make_real()
 
     def __str__(self):
         return latex(self.sympy)
@@ -58,10 +58,7 @@ class expr:
 
     @property
     def terms(self):
-        if self.type == 'expr':
-            return [term(self, i) for i in range(len(self.args))]
-        else:
-            return [term(self, 0)]
+        return [term(self, i) for i in range(len(self))]
 
     def set_sym_tensors(self, *sym_tensors):
         self.__sym_tensors = set(sym_tensors)
@@ -74,7 +71,6 @@ class expr:
                    (int(s.name[1:]) if s.name[1:] else 0, s.name[0]))
         )
 
-    @property
     def make_real(self):
         """Makes the expression real by removing all 'c' in tensor names.
            This only renames the tensor, but their might be more to simplify
@@ -89,16 +85,14 @@ class expr:
                           for t in self.terms])
         return self
 
-    @property
     def block_diagonalize_fock(self):
         """Block diagonalize the Fock matrix, i.e. all terms that contain off
            diagonal Fock matrix blocks (f_ov/f_vo) are set to 0."""
         self.expand()
-        self.__expr = Add(*[t.block_diagonalize_fock.sympy
+        self.__expr = Add(*[t.block_diagonalize_fock().sympy
                           for t in self.terms])
         return self
 
-    @property
     def diagonalize_fock(self):
         """Represent the expression in the canonical orbital basis, i.e. the
            Fock matrix is a diagonal matrix. Because it is not possible to
@@ -129,8 +123,7 @@ class expr:
         self.__expr = self.sympy.subs(*args, **kwargs)
         return self
 
-    @property
-    def substitute(self):
+    def substitute_contracted(self):
         """Tries to substitute all contracted indices with pretty indices, i.e.
            i, j, k instad of i3, n4, o42 etc."""
         from indices import indices
@@ -405,11 +398,11 @@ class term:
         return expr(real_term, True, self.sym_tensors,
                     self.provided_target_idx)
 
-    @property
     def block_diagonalize_fock(self):
         """Block diagonalize the Fock matrix, i.e. if the term contains a off
            diagonal Fock matrix block (f_ov/f_vo) it is set to 0."""
-        bl_diag = Mul(*[o.block_diagonalize_fock.sympy for o in self.objects])
+        bl_diag = Mul(*[o.block_diagonalize_fock().sympy
+                        for o in self.objects])
         return expr(bl_diag, self.real, self.sym_tensors,
                     self.provided_target_idx)
 
@@ -754,7 +747,6 @@ class term:
             #     ret.update(temp)
         return ret
 
-    @property
     def split_orb_energy(self):
         """Splits the term in a orbital energy fraction and a remainder, e.g.
            (e_i + e_j) / (e_i + e_j - e_a - e_b) * (tensor1 * tensor2). To
@@ -781,10 +773,8 @@ class term:
 
     @property
     def contains_only_orb_energies(self):
-        if all(o.contains_only_orb_energies for o in self.objects
-                if not o.type == 'prefactor'):
-            return True
-        return False
+        return all(o.contains_only_orb_energies for o in self.objects
+                   if not o.type == 'prefactor')
 
     def print_latex(self, only_pull_out_pref=False):
         """Returns a Latex string of the canonical form of the term."""
@@ -945,7 +935,6 @@ class obj:
             return real_obj
         return expr(real_obj, True, self.sym_tensors, self.provided_target_idx)
 
-    @property
     def block_diagonalize_fock(self):
         if self.type == 'tensor' and self.name == 'f' and \
                 self.space in ['ov', 'vo']:
@@ -969,10 +958,14 @@ class obj:
                     self.idx, key=lambda s:
                     (int(s.name[1:]) if s.name[1:] else 0, s.name[0])
             )
-            # don't touch: diagonal fock elements (for not loosing
-            # a contracted index by accident)
-            # fock elements with both indices being target indices
-            # (for not loosing a target index in the term)
+            if len(idx) != 2:
+                raise RuntimeError(f"found fock matrix element {self} that "
+                                   "does not hold exactly 2 indices.")
+            # don't touch:
+            #  - diagonal fock elements (for not loosing
+            #    a contracted index by accident)
+            #  - fock elements with both indices being target indices
+            #    (for not loosing a target index in the term)
             if idx[0] == idx[1] or all(s in target for s in idx):
                 return expr(self.sympy, self.real, self.sym_tensors,
                             self.provided_target_idx), sub
@@ -1213,9 +1206,7 @@ class obj:
 
     @property
     def contains_only_orb_energies(self):
-        if self.type == 'tensor' and self.name == 'e':
-            return True
-        return False
+        return self.type == 'tensor' and self.name == 'e'
 
     def print_latex(self, only_pull_out_pref=False):
         """Returns a Latex string of the canonical form of the object."""
@@ -1490,7 +1481,9 @@ class polynom(obj):
         content = []
         for term in self.terms:
             # differentiate prefactors
-            descr = "".join(sorted([o.description for o in term.objects]))
+            descr = "".join(sorted(
+                [o.description for o in term.objects if o.sympy not in [1, -1]]
+            ))
             content.append(f"_{term.sign[0]}_{descr}")
         content = sorted(content)
         return "".join([f"{self.type}_{len(self)}", *content,
@@ -1503,16 +1496,15 @@ class polynom(obj):
             return real
         return expr(real, True, self.sym_tensors, self.provided_target_idx)
 
-    @property
     def block_diagonalize_fock(self):
-        bl_diag = Add(*[t.block_diagonalize_fock.sympy for t in self.terms])
+        bl_diag = Add(*[t.block_diagonalize_fock().sympy for t in self.terms])
         return expr(Pow(bl_diag, self.exponent), self.real, self.sym_tensors,
                     self.provided_target_idx)
 
     def diagonalize_fock(self, target=None):
         # block diagonalize first. There is not much to think about here and
         # the number of terms may be reduced
-        bl_diag = self.block_diagonalize_fock
+        bl_diag = self.block_diagonalize_fock()
         # block diagonalized polynom may be no longer a polynom
         # exponent 1 may also give just a tensor/delta/...
         if not isinstance(bl_diag.sympy, Pow) or \
@@ -1520,7 +1512,7 @@ class polynom(obj):
                 not isinstance(bl_diag.sympy.args[0], Add):
             if target is not None:
                 bl_diag.set_target_idx(target)
-            return bl_diag.diagonalize_fock
+            return bl_diag.diagonalize_fock()
         # we are still having a (now block diagonal) polynom
         if len(bl_diag) != 1 or len(bl_diag.terms[0]) != 1:
             raise RuntimeError("Obtained an unexpected block diagonalized "
@@ -1582,9 +1574,7 @@ class polynom(obj):
 
     @property
     def contains_only_orb_energies(self):
-        if all(term.contains_only_orb_energies for term in self.terms):
-            return True
-        return False
+        return all(term.contains_only_orb_energies for term in self.terms)
 
     def print_latex(self, only_pull_out_pref=False):
         tex_str = " ".join(
