@@ -1138,9 +1138,6 @@ class obj:
                      can_bk['lower']), self.exponent)
         return isinstance(tensor, Mul)
 
-        else:
-            return False
-
     def description(self, include_exponent=True):
         """A string that describes the object."""
         descr = self.type
