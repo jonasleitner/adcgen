@@ -41,6 +41,8 @@ def process_arguments(function):
     from indices import split_idx_string
     import inspect
 
+    sig = inspect.signature(function)
+
     @wraps(function)
     def wrapper(*args, **kwargs):
         def sort_spaces(spaces):
@@ -63,27 +65,25 @@ def process_arguments(function):
         }
 
         n_args = len(args)
-        arg_idx = 0
         new_args = []
-        for argument, value in inspect.signature(function).parameters.items():
+        for arg_idx, (arg, value) in enumerate(sig.parameters.items()):
             # add all args to kwargs and then process if necessary
             # if this is used to decorate a member function self should also
             # be handled correctly
             if n_args > arg_idx:
-                if argument in kwargs:
-                    raise RuntimeError(f"found argument {argument} in kwargs, "
+                if arg in kwargs:
+                    raise RuntimeError(f"found argument {arg} in kwargs, "
                                        "but expected it in args.")
-                kwargs[argument] = args[arg_idx]
-                arg_idx += 1
+                kwargs[arg] = args[arg_idx]
             try:
-                val = kwargs[argument]
+                val = kwargs[arg]
                 # process the value if needed and not just the default value
                 # has been provided
                 if val != value.default:
-                    fun = process.get(argument, None)
+                    fun = process.get(arg, None)
                     val = fun(transform_to_tuple(val)) if fun else val
                 new_args.append(val)
-                del kwargs[argument]
+                del kwargs[arg]
             except KeyError:
                 # argument is not provided in kwargs or args
                 # -> has to have a default value
@@ -91,8 +91,7 @@ def process_arguments(function):
                     new_args.append(value.default)
                     continue
                 else:
-                    raise Inputerror(f"Positional argument {argument} "
-                                     "missing.")
+                    raise TypeError(f"Positional argument {arg} missing.")
         # if everything worked kwargs should be an empty dict here
         if kwargs:
             raise Inputerror(

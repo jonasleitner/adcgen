@@ -276,3 +276,36 @@ def extract_names(syms):
     if isinstance(syms, dict):
         syms = chain.from_iterable(syms.values())
     return [s.name for s in syms]
+
+
+def get_symbols(idx):
+    """Ensure that all provided indices are sympy symbols. If a string of
+       indices is provided the corresponding sympy symbols are
+       created automatically."""
+
+    if not idx:
+        return []
+    elif isinstance(idx, Dummy):  # a single symbol is not iterable
+        return [idx]
+    elif all(isinstance(i, Dummy) for i in idx):
+        return idx
+    elif all(isinstance(i, str) for i in idx):
+        idx_cls = indices()
+        idx = split_idx_string(idx)
+        return [
+            idx_cls.get_indices(i)[index_space(i)][0] for i in idx
+        ]
+    else:
+        raise Inputerror("Indices need to be provided as string or a list "
+                         "of sympy Dummy objects.")
+
+
+def sort_idx_canonical(s):
+    """Function that can be used as key to bring indices in canonical order."""
+    return (index_space(s.name)[0], int(s.name[1:]) if s.name[1:] else 0,
+            s.name[0])
+
+
+def sort_idx(s):
+    """Function that can be used as key to sort indices."""
+    return (int(s.name[1:]) if s.name[1:] else 0, s.name)

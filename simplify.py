@@ -28,7 +28,7 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
     from collections import Counter
 
     def check_term(term):
-        available = [o.name for o in term.tensors for i in range(o.exponent)]
+        available = [o.name for o in term.tensors for _ in range(o.exponent)]
         # True if all requested tensors are in the term
         if strict == 'low':
             return all(t in available for t in set(t_strings))
@@ -41,10 +41,15 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
         # amount
         elif strict == 'high':
             if ignore_amplitudes:
-                amplitudes = [t for t in ['t', 'X', 'Y'] if t not in
-                              [name[0] for name in t_strings]]
+                requested_amplitudes = [
+                    name for name in t_strings if name[0] in ['X', 'Y'] or
+                    (name[0] == 't' and name[1:].isnumeric())
+                ]
+                ignored_amplitudes = {name for name in available
+                                      if name[0] in ['t', 'X', 'Y'] and
+                                      name not in requested_amplitudes}
                 available = Counter([t for t in available
-                                     if t[0] not in amplitudes])
+                                     if t not in ignored_amplitudes])
             else:
                 available = Counter(available)
             desired = Counter(t_strings)
@@ -61,9 +66,7 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
         expr = e.expr(expr)
 
     filtered = Add(*[term.sympy for term in expr.terms if check_term(term)])
-    filtered = e.expr(filtered, expr.real, expr.sym_tensors,
-                      expr.provided_target_idx)
-    return filtered
+    return e.expr(filtered, **expr.assumptions)
 
 
 def find_compatible_terms(terms):
@@ -103,7 +106,7 @@ def find_compatible_terms(terms):
             for s in target[i]:
                 if s in idx:
                     found[index_space(s.name)[0]] += 1
-            temp.extend([(o.description, found['o'], found['v'])
+            temp.extend([(o.description(), found['o'], found['v'])
                         for i in range(o.exponent)])
         target_obj.append(sorted(temp))
         del temp
@@ -111,17 +114,17 @@ def find_compatible_terms(terms):
     # collect terms that are equal according to their pattern
     equal_terms = {}
     matched = set()
-    for n, p in enumerate(pattern):
+    for n, pat in enumerate(pattern):
         matched.add(n)
-        for other_n, other_p in enumerate(pattern):
+        for other_n, other_pat in enumerate(pattern):
             if other_n in matched:
                 continue
             # check if terms are compatible: same length (up to a prefactor),
             # same amount of o/v indices, same tensors, same deltas, and that
             # the target indices occur at the same tensors (e.g. 1o/1v at Y)
             if abs(len(terms[n]) - len(terms[other_n])) > 1 or \
-                    len(p['o'].keys()) != len(other_p['o'].keys()) or \
-                    len(p['v'].keys()) != len(other_p['v'].keys()) or \
+                    len(pat['o']) != len(other_pat['o']) or \
+                    len(pat['v']) != len(other_pat['v']) or \
                     Counter(tensors[n]) != Counter(tensors[other_n]) or \
                     Counter(deltas[n]) != Counter(deltas[other_n]) or \
                     Counter(target_obj[n]) != Counter(target_obj[other_n]):
@@ -129,6 +132,8 @@ def find_compatible_terms(terms):
 
             # compare the target indices, though the function should also work
             # if they differ.
+            # If target indices are different, it should not be possible to
+            # map the terms on each other -> continue would be more appropriate
             if target[n] != target[other_n]:
                 raise RuntimeError(f"Target indices of the terms {terms[n]} "
                                    f"and {terms[other_n]} are not identical:"
@@ -136,30 +141,26 @@ def find_compatible_terms(terms):
             # try to map each index in other_n to an index in n
             match = True
             sub = {}  # {old: new}
-            for ov in p.keys():
+            for ov, idx_pat in pat.items():
                 # compare the pattern of the indices in both terms and create a
                 # idx map. If a match for all indices is found -> the terms
                 # may be simplified by renaming indices (or swapping bra/kets)
                 idx_map = {}
                 matched_idx = []
-                for idx, pat in p[ov].items():
+                for idx, p in idx_pat.items():
                     # check whether the current index is a target index
                     # -> only map onto other target indices
-                    is_target = [False, False]
-                    if idx in target[n]:
-                        is_target[0] = True
-                    count = Counter(pat)
-                    for other_idx, other_pat in other_p[ov].items():
+                    is_target = [idx in target[n], False]
+                    count = Counter(p)
+                    for other_idx, other_p in other_pat[ov].items():
                         # avoid double counting
                         if other_idx in matched_idx:
                             continue
-                        is_target[1] = False
-                        if other_idx in target[other_n]:
-                            is_target[1] = True
+                        is_target[1] = other_idx in target[other_n]
                         # check if either both or none are target indices
                         if is_target[0] != is_target[1]:
                             continue
-                        if count == Counter(other_pat):
+                        if count == Counter(other_p):
                             # target indices need to be equal already -> can't
                             # substitute them
                             if all(is_target) and idx != other_idx:
@@ -168,7 +169,7 @@ def find_compatible_terms(terms):
                             idx_map[other_idx] = idx
                             break
                 # found a match for all indices
-                if len(idx_map.keys()) == len(other_p[ov].keys()):
+                if len(idx_map) == len(other_pat[ov]):
                     # filter target indices and other indices that already
                     # have the same name
                     sub.update({old: new for old, new in idx_map.items()
@@ -215,12 +216,12 @@ def simplify(expr, real=False, *sym_tensors):
     expr = expr.expand()
     # adjust symmetric tensors of the container
     if isinstance(expr, e.expr):
-        expr.set_sym_tensors(*sym_tensors)
+        expr.set_sym_tensors(sym_tensors)
     # or put the expr in a container
     else:
         expr = e.expr(expr, real, sym_tensors)
     if real and not expr.real:
-        expr = expr.make_real
+        expr = expr.make_real()
 
     # create terms and hand try to find comaptible terms that may be
     # simplified by substituting indices
@@ -238,8 +239,7 @@ def simplify(expr, real=False, *sym_tensors):
             res += terms[other_n].subs(sub, simultaneous=True)
     # Add the unmatched remainder
     res += e.expr(Add(*[terms[n].sympy for n in range(len(terms))
-                  if n not in matched]), expr.real, expr.sym_tensors,
-                  expr.provided_target_idx)
+                  if n not in matched]), **expr.assumptions)
     del terms  # not valid anymore (expr changed)
     print(f"simplify took {time.time()- start} seconds")
     if real:
@@ -271,7 +271,7 @@ def make_real(expr, *sym_tensors):
                 name = t.name
                 if name in t_strings:
                     idx = t.idx
-                    t_idx[name].extend([idx for i in range(t.exponent)])
+                    t_idx[name].extend([idx for _ in range(t.exponent)])
             if not all(len(idx) == desired[t] for t, idx in t_idx.items()):
                 raise RuntimeError("Did not find the correct number of "
                                    f"tensors {dict(desired)} in {term}.")
@@ -301,11 +301,37 @@ def make_real(expr, *sym_tensors):
 
     def swap_tensors(tensor_terms, t_strings):
         # swap bra and ket of all possible combinations of the requested
-        # tensors, e.g. for f,f,V -> f1 / f2/ V / f1,f2 / f1,V / f2,V /
+        # tensors, e.g. for f,f,V -> f1 / f2 / V / f1,f2 / f1,V / f2,V /
         #                            f1,f2,V
         # This is done for every term. If a swap leads to a simplified
         # expression, the function starts over again with the new
         # expression.
+        def swap_brakets(term: e.term, t_n_pairs):
+            # swaps all desired tensors simultaneously
+            from sympy.physics.secondquant import AntiSymmetricTensor, Pow
+            swapped = e.expr(1, **term.assumptions)
+            occurences = {t: 1 for t, _ in t_n_pairs}
+            for o in term.objects:
+                name = o.name
+                if o.type != 'tensor' or name not in occurences:
+                    swapped *= o
+                    continue
+                matches = [
+                    (name, n) for n in
+                    range(occurences[t], occurences[t]+o.exponent)
+                    if (name, n) in t_n_pairs
+                ]
+                occurences[name] += o.exponent
+                if not matches:
+                    swapped *= o
+                    continue
+                n_swaps = len(matches)
+                base = o.extract_pow
+                swapped_tensor = AntiSymmetricTensor(name, base.lower,
+                                                     base.upper)
+                swapped *= (Pow(swapped_tensor, n_swaps) *
+                            Pow(base, o.exponent - n_swaps))
+            return swapped
 
         t_n_pairs = []
         for t, count in Counter(t_strings).items():
@@ -321,16 +347,14 @@ def make_real(expr, *sym_tensors):
         for term in tensor_terms.terms:
             for n_swaps in combs:
                 for comb in n_swaps:
-                    temp = term
-                    for tensor in comb:
-                        # swap the n'th occurence of the tensor in the term
-                        # and check if the result leads to a simplification
-                        swapped = temp.swap_braket(tensor[0], tensor[1])
+                    swapped = swap_brakets(term, comb)
+                    # keep the term as short as possible
+                    if len(swapped) <= len(term):
                         new = tensor_terms - term + swapped
-                        if len(new) < len(tensor_terms) and \
-                                len(swapped) <= len(term):
+                        if new.sympy.is_number:
+                            return new
+                        elif len(new) < len(tensor_terms):
                             return swap_tensors(new, t_strings)
-                        temp = swapped.terms[0]
         return tensor_terms
 
     # start = time.time()
@@ -342,23 +366,23 @@ def make_real(expr, *sym_tensors):
     # import and set up the expression
     expr = expr.expand()
     if isinstance(expr, e.expr):
-        expr.set_sym_tensors(*sym_tensors)
+        expr.set_sym_tensors(sym_tensors)
     else:
         expr = e.expr(expr, True, sym_tensors)
     if not expr.real:
-        expr = expr.make_real
+        expr = expr.make_real()
 
     # determine the maximum amount each symmetric tensor occurs in a term.
     max_occurence = {t: 0 for t in sym_tensors}
     for term in expr.terms:
         available = Counter(
-            [t.name for t in term.tensors for i in range(t.exponent)
+            [t.name for t in term.tensors for _ in range(t.exponent)
              if t.symmetric]
         )
         max_occurence.update(
             {t: n for t, n in available.items() if n > max_occurence[t]}
         )
-    sym_tensors = [t for t in sym_tensors for i in range(max_occurence[t])]
+    sym_tensors = [t for t in sym_tensors for _ in range(max_occurence[t])]
 
     # split the expression in subsets that all contain the same symmetric
     # tensors in the same amount.
@@ -375,7 +399,7 @@ def make_real(expr, *sym_tensors):
                 filtered[comb] = comb_terms
 
     # Add all terms to the result that do not contain any symmetric tensor
-    res = expr - Add(*[terms.sympy for terms in filtered.values()])
+    res = expr - Add(*[sub_expr.sympy for sub_expr in filtered.values()])
 
     # now try to simplify by swapping bra/ket of the symmetric tensors
     for t_strings, t_terms in filtered.items():
@@ -394,7 +418,6 @@ def make_real(expr, *sym_tensors):
         # introduce Pow objects.
         else:
             res += swap_tensors(t_terms, t_strings)
-    # print(f"make_real took {time.time() - start} seconds.")
     return res
 
 
@@ -430,9 +453,9 @@ def extract_dm(expr, symmetric=False):
         return term, d_tensor
 
     def symmetrize_keep_pref(term, symmetry):
-        symmetrized = term.copy
+        symmetrized = term.copy()
         for perms, factor in symmetry.items():
-            symmetrized += term.copy.permute(*perms) * factor
+            symmetrized += term.copy().permute(*perms) * factor
         return symmetrized
 
     def sort_canonical(idx):
@@ -579,7 +602,7 @@ def extract_dm(expr, symmetric=False):
             # print("found symmetry: ", sym)
             symmetrized = symmetrize_keep_pref(new_term, sym)
             if diagonal_block:
-                swapped_braket = new_term.copy.permute(*permute_braket)
+                swapped_braket = new_term.copy().permute(*permute_braket)
                 symmetrized += symmetrize_keep_pref(swapped_braket, sym)
             symmetrized = simplify(symmetrized, True, *symmetrized.sym_tensors)
             # print("WITH SYMMETRY: ", symmetrized)

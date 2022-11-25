@@ -17,7 +17,7 @@ def evaluate_deltas(expr):
     if len(expr) > 1:
         return e.expr(
             Add(*[evaluate_deltas(term).sympy for term in expr.terms]),
-            expr.real, expr.sym_tensors, expr.provided_target_idx
+            **expr.assumptions
         )
     # just a single term or object
     expr = expr.terms[0]

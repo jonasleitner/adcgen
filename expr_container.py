@@ -7,15 +7,18 @@ from sympy.physics.secondquant import (
 
 
 class expr:
-    def __init__(self, e, real=False, sym_tensors=[], target_idx=None):
+    def __init__(self, e, real=False, sym_tensors=None, target_idx=None):
         if isinstance(e, (obj, term, expr, normal_ordered, polynom)):
             e = e.sympy
         self.__expr = sympify(e)
-        self.__real = real
-        self.__sym_tensors = set(sym_tensors)
+        self.__assumptions = {
+            'real': real,
+            'sym_tensors': set() if sym_tensors is None else set(sym_tensors),
+            'target_idx': None
+        }
+        if target_idx is not None:
         self.set_target_idx(target_idx)
         if real:
-            self.__sym_tensors.update('f', 'V')
             self.make_real()
 
     def __str__(self):
@@ -32,16 +35,20 @@ class expr:
         return getattr(self.__expr, attr)
 
     @property
+    def assumptions(self):
+        return self.__assumptions
+
+    @property
     def real(self):
-        return self.__real
+        return self.__assumptions['real']
 
     @property
     def sym_tensors(self):
-        return self.__sym_tensors
+        return self.__assumptions['sym_tensors']
 
     @property
     def provided_target_idx(self):
-        return self.__target
+        return self.__assumptions['target_idx']
 
     @property
     def sympy(self):
@@ -60,14 +67,21 @@ class expr:
     def terms(self):
         return [term(self, i) for i in range(len(self))]
 
-    def set_sym_tensors(self, *sym_tensors):
-        self.__sym_tensors = set(sym_tensors)
+    def set_sym_tensors(self, sym_tensors):
+        if not all(isinstance(t, str) for t in sym_tensors):
+            raise Inputerror("Symmetric tensors need to be provided as str.")
+        self.__assumptions['sym_tensors'] = set(sym_tensors)
         if self.real:
-            self.__sym_tensors.update(['f', 'V'])
+            self.__assumptions['sym_tensors'].update(['f', 'V'])
 
     def set_target_idx(self, target_idx):
-        self.__target = target_idx if target_idx is None else tuple(
-            sorted(target_idx, key=lambda s:
+        from indices import get_symbols
+        if target_idx is None:
+            self.__assumptions['target_idx'] = None
+        else:
+            target_idx = get_symbols(target_idx)
+            self.__assumptions['target_idx'] = tuple(
+                sorted(set(target_idx), key=lambda s:
                    (int(s.name[1:]) if s.name[1:] else 0, s.name[0]))
         )
 
@@ -79,8 +93,8 @@ class expr:
         # need to have the option return_sympy at lower levels, because
         # this function may be called upon instantiation
 
-        self.__real = True
-        self.__sym_tensors.update(['f', 'V'])
+        self.__assumptions['real'] = True
+        self.__assumptions['sym_tensors'].update(['f', 'V'])
         self.__expr = Add(*[t.make_real(return_sympy=True)
                           for t in self.terms])
         return self
@@ -105,10 +119,13 @@ class expr:
         for term in self.terms:
             diag += term.diagonalize_fock()
         self.__expr = diag.sympy
-        self.__target = diag.provided_target_idx
+        self.__assumptions['target_idx'] = diag.provided_target_idx
         return self
 
     def rename_tensor(self, current, new):
+        if not isinstance(current, str) or not isinstance(new, str):
+            raise Inputerror("Old and new tensor name need to be provided as "
+                             "strings.")
         renamed = compatible_int(0)
         for t in self.terms:
             renamed += t.rename_tensor(current, new)
@@ -142,18 +159,13 @@ class expr:
         return self
 
     def permute(self, *perms):
-        from sympy import Dummy
-        from indices import indices
+        from indices import get_symbols
 
-        idx = indices()
         for perm in perms:
             if len(perm) != 2:
                 raise Inputerror(f"Permutation {perm} needs to be of length 2")
-            if not all(isinstance(s, (Dummy, str)) for s in perm):
-                raise Inputerror(f"Symbols {perm} needs to be a str or Dummy.")
-            perm = [s if isinstance(s, Dummy)
-                    else idx.get_indices(s)[index_space(s)][0] for s in perm]
-            sub = {perm[0]: perm[1], perm[1]: perm[0]}
+            p, q = get_symbols(perm)
+            sub = {p: q, q: p}
             self.subs(sub, simultaneous=True)
         return self
     @property
@@ -165,10 +177,8 @@ class expr:
             idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
         ))
 
-    @property
     def copy(self):
-        return expr(self.sympy, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy, **self.assumptions)
 
     def print_latex(self, terms_per_line=None, only_pull_out_pref=False):
         """Returns a Latex string of the canonical form of the expr.
@@ -204,116 +214,84 @@ class expr:
 
     def __iadd__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
         self.__expr = self.sympy + other
         return self
 
     def __add__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy + other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy + other, **self.assumptions)
 
     def __isub__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
         self.__expr = self.sympy - other
         return self
 
     def __sub__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy - other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy - other, **self.assumptions)
 
     def __imul__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
         self.__expr = self.sympy * other
         return self
 
     def __mul__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy * other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy * other, **self.assumptions)
 
     def __itruediv__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
         self.__expr = self.sympy / other
         return self
 
     def __truediv__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy / other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy / other, **self.assumptions)
 
     def __eq__(self, other):
-        if isinstance(other, (obj, term, expr, normal_ordered, polynom)) and \
-                self.real == other.real and \
-                self.sym_tensors == other.sym_tensors and \
-                self.provided_target_idx == other.provided_target_idx and \
-                self.sympy == other.sympy:
-            return True
-        return False
+        return isinstance(other, (obj, term, expr, normal_ordered, polynom)) \
+                and self.assumptions == other.assumptions and \
+                self.sympy == other.sympy
 
 
 class term:
-    def __new__(cls, t, pos=None, real=False, sym_tensors=[], target_idx=None):
-        if isinstance(t, (expr, polynom)):
-            if pos is None:
-                raise Inputerror('No position provided.')
+    def __new__(cls, e, pos=None, real=False, sym_tensors=[], target_idx=None):
+        if isinstance(e, (expr, polynom)):
+            if not isinstance(pos, int):
+                raise Inputerror('Position needs to be provided as int.')
             return super().__new__(cls)
         else:
-            return expr(t, real=real, sym_tensors=sym_tensors,
+            return expr(e, real=real, sym_tensors=sym_tensors,
                         target_idx=target_idx)
 
-    def __init__(self, t, pos=None, real=False, sym_tensors=[],
+    def __init__(self, e, pos=None, real=False, sym_tensors=[],
                  target_idx=None):
-        self.__expr = t
-        self.__pos = pos
+        self.__expr: expr = e
+        self.__pos: int = pos
 
     def __str__(self):
         return latex(self.term)
@@ -334,6 +312,10 @@ class term:
             return self.__expr.args[self.__pos]
         else:
             return self.__expr.sympy
+
+    @property
+    def assumptions(self):
+        return self.expr.assumptions
 
     @property
     def real(self):
@@ -395,16 +377,15 @@ class term:
                         for o in self.objects])
         if return_sympy:
             return real_term
-        return expr(real_term, True, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(real_term, real=True, sym_tensors=self.sym_tensors,
+                    target_idx=self.provided_target_idx)
 
     def block_diagonalize_fock(self):
         """Block diagonalize the Fock matrix, i.e. if the term contains a off
            diagonal Fock matrix block (f_ov/f_vo) it is set to 0."""
         bl_diag = Mul(*[o.block_diagonalize_fock().sympy
                         for o in self.objects])
-        return expr(bl_diag, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(bl_diag, **self.assumptions)
 
     def diagonalize_fock(self, target=None):
         """Transform the term in the canonical basis without loosing any
@@ -422,11 +403,12 @@ class term:
         # if term is part of a polynom -> return the sub dict and perform the
         # substitution in the polynoms parent term object.
         if isinstance(self.expr, polynom):
-            return expr(diag, self.real, self.sym_tensors, target), sub
+            return expr(diag, real=self.real, sym_tensors=self.sym_tensors,
+                        target_idx=target), sub
         # provide the target indices to the returned expression, because
-        # the current target indices might be lost due to the canonicalization
-        return expr(diag.subs(sub, simultaneous=True), self.real,
-                    self.sym_tensors, target)
+        # the current target indices might be lost due to the diagonalization
+        return expr(diag.subs(sub, simultaneous=True), real=self.real,
+                    sym_tensors=self.sym_tensors, target_idx=target)
 
     def rename_tensor(self, current, new):
         """Rename tensors in a terms. Returns a new expr instance."""
@@ -436,45 +418,38 @@ class term:
         return renamed
 
     def expand(self):
-        return expr(self.term.expand(), self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.term.expand(), **self.assumptions)
 
     def factor(self):
         from sympy import factor
-        return expr(factor(self.sympy), self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(factor(self.sympy), **self.assumptions)
 
     def subs(self, *args, **kwargs):
-        return expr(self.term.subs(*args, **kwargs), self.real,
-                    self.sym_tensors, self.provided_target_idx)
+        return expr(self.term.subs(*args, **kwargs), **self.assumptions)
 
     def permute(self, *perms):
         """Applies the provided permutations to the term one after another,
            starting with the first one.
            Permutations need to be provided as e.g. tuples (a,b), (i,j), ...
            Indices may be provided as sympy Dummy symbols or strings."""
-        from sympy import Dummy
-        from indices import indices
-        idx = indices()
+        from indices import get_symbols
         temp = self
         for perm in perms:
             if len(perm) != 2:
                 raise Inputerror(f"Permutation {perm} needs to be of length 2")
-            if not all(isinstance(s, (Dummy, str)) for s in perm):
-                raise Inputerror(f"Symbols {perm} needs to be a str or Dummy.")
-            perm = [s if isinstance(s, Dummy)
-                    else idx.get_indices(s)[index_space(s)][0] for s in perm]
-            sub = {perm[0]: perm[1], perm[1]: perm[0]}
+            p, q = get_symbols(perm)
+            sub = {p: q, q: p}
             temp = temp.subs(sub, simultaneous=True)
         return temp if isinstance(temp, expr) else \
-            expr(temp, self.real, self.sym_tensors, self.provided_target_idx)
+            expr(temp, **self.assumptions)
 
-    def symmetry(self, only_contracted=False):
+    def symmetry(self, only_contracted=False, only_target=False):
         """Return a dict with all Symmetric and Antisymmetric Permutations of
            the term. If only contracted is set to True, only permutations of
-           indices that are contracted in the term are considered."""
-        # TODO: also implement only_target?
-        from itertools import combinations, permutations
+           indices that are contracted in the term are considered. If
+           only_target is set, only permutations of target indices are taken
+           into account."""
+        from itertools import combinations, permutations, chain
         from simplify import make_real
         from math import factorial
         from indices import split_idx_string
@@ -482,12 +457,22 @@ class term:
         def permute_str(string, *perms):
             string = split_idx_string(string)
             for perm in perms:
-                perm = [s.name for s in perm]
-                idx1 = string.index(perm[0])
-                idx2 = string.index(perm[1])
-                string[idx1] = perm[1]
-                string[idx2] = perm[0]
+                p, q = [s.name for s in perm]
+                idx1 = string.index(p)
+                idx2 = string.index(q)
+                string[idx1] = q
+                string[idx2] = p
             return "".join(string)
+
+        if only_contracted and only_target:
+            raise Inputerror("Can not set only_contracted and only_target "
+                             "simultaneously.")
+        if only_contracted:
+            indices = self.contracted
+        elif only_target:
+            indices = self.target
+        else:
+            indices = self.idx
 
         is_zero = {
             False: lambda x: x.sympy is S.Zero,
@@ -495,10 +480,9 @@ class term:
         }
         is_zero = is_zero[self.real]
 
-        indices = {True: self.contracted, False: self.idx}
-        # sort indices according to their space
+        # sort indices according to their space. Use list for nice ordering
         idx = {'o': [], 'v': []}
-        for s in indices[only_contracted]:
+        for s in indices:
             # in self.idx contracted indices are listed multiple times
             ov = index_space(s.name)[0]
             if s not in idx[ov]:
@@ -506,27 +490,24 @@ class term:
         # list of permutations and their symmetry, +-1
         sym = {'o': {}, 'v': {}}
         for ov, ov_idx in idx.items():
-            max_perms = factorial(len(ov_idx))
+            max_n_perms = factorial(len(ov_idx))
             # represent the current indices as a string. All perms
             # will also be applied to the string, in order to
-            # check whether the current permutation produces a new
-            # result.
+            # check whether the current perm is redundant
             idx_string = "".join([s.name for s in ov_idx])
-            # list that holds all permuted strings
             permuted_strings = [idx_string]
             # create all index pairs that may be permuted
             pairs = list(combinations(ov_idx, 2))
             # this creates more permutations than necessary
             # e.g. the cyclic permutation ijk -> kij can be defined
             # as P_jk P_ij // P_ij P_ik // P_ik P_jk
-            combs = [
-                permutations(pairs, r) for r in range(1, len(ov_idx))
-            ]
-            for n_perms in combs:
-                for perms in n_perms:
+            combs = chain.from_iterable(
+                [permutations(pairs, r) for r in range(1, len(ov_idx))]
+            )
+            for perms in combs:
                     # we only need to find n! permutations (including
                     # the identity)
-                    if len(permuted_strings) == max_perms:
+                if len(permuted_strings) == max_n_perms:
                         break
                     # apply the perm to the string and check whether
                     # the resulting permuted string has already been
@@ -541,9 +522,7 @@ class term:
                     elif is_zero(self-sub):
                         sym[ov][perms] = +1
         # multiply the occ and virt permutations
-        symmetry = {}
-        symmetry.update(sym['o'])
-        symmetry.update(sym['v'])
+        symmetry = sym['o'] | sym['v']
         for o_perms, o_sym in sym['o'].items():
             for v_perms, v_sym in sym['v'].items():
                 symmetry[o_perms + v_perms] = o_sym * v_sym
@@ -561,8 +540,7 @@ class term:
             res += factor * self.permute(*perm).sympy
         # renormalize the term
         res *= Rational(1, len(symmetry) + 1)
-        return expr(res.expand(), self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(res.expand(), **self.assumptions)
 
     @property
     def contracted(self):
@@ -599,7 +577,7 @@ class term:
         """Returns all indices that occur in the term. Indices that occur multiple
            times will be listed multiple times."""
         counter = self.__idx_counter
-        idx = [s for s in counter.keys() for n in range(counter[s] + 1)]
+        idx = [s for s in counter.keys() for _ in range(counter[s] + 1)]
         return tuple(sorted(
             idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
         ))
@@ -642,110 +620,66 @@ class term:
             sign_change = not sign_change if o.sign_change else sign_change
         return sign_change
 
-    def swap_braket(self, t_string, occurence=1):
-        """Method to swap bra and ket for the n-th occurence of a tensor."""
-
-        relevant_tensors = [o for o in self.tensors if o.name == t_string]
-        # tensor not often enough included in the term
-        if sum(o.exponent for o in relevant_tensors) < occurence:
-            return expr(self.sympy, self.real, self.sym_tensors,
-                        self.provided_target_idx)
-        current_occurence = 1
-        swapped = 1
-        for o in self.objects:
-            if o in relevant_tensors:
-                if current_occurence <= occurence < \
-                        current_occurence + o.exponent:
-                    swapped *= (
-                        AntiSymmetricTensor(t_string, o.extract_pow.lower,
-                                            o.extract_pow.upper) *
-                        Pow(AntiSymmetricTensor(t_string, o.extract_pow.upper,
-                            o.extract_pow.lower), o.exponent - 1)
-                    )
-                else:
-                    swapped *= o.sympy
-                current_occurence += o.exponent
-            else:
-                swapped *= o.sympy
-        return expr(swapped, self.real, self.sym_tensors,
-                    self.provided_target_idx)
-
     @property
     def pattern(self):
         """Returns the pattern of the indices in the term."""
         target = self.target
-        coupl = self.coupling(target)
+        objects = self.objects
+        positions = [o.crude_pos(target=target) for o in objects]
+        coupl = self.coupling(target=target, positions=positions)
         ret = {'o': {}, 'v': {}}
-        for i, o in enumerate(self.objects):
-            c = "_" + "_".join(sorted(coupl[i])) if i in coupl else ''
-            for s, pos in o.crude_pos(target).items():
+        for i, pos in enumerate(positions):
+            c = f"_{'_'.join(sorted(coupl[i]))}" if i in coupl else None
+            for s, ps in pos.items():
                 ov = index_space(s.name)[0]
                 if s not in ret[ov]:
                     ret[ov][s] = []
-                ret[ov][s].extend([p + c for p in pos])
+                ret[ov][s].extend([p + c if c else p for p in ps])
         return ret
 
-    def coupling(self, target=None):
+    def coupling(self, target=None, target_idx_string=True, positions=None,
+                 include_exponent=True, descriptions=None):
         """Returns the coupling between the objects in the term, where two
-           objects are coupled when they share common indices."""
-        from itertools import product
-        # from collections import Counter
+           objects are coupled when they share common indices. Only the
+           coupling of non unique objects is returned, i.e., the coupling
+           of e.g. a t2_1 amplitude is only returned if there is another one in
+           the same term."""
+        from collections import Counter
         # 1) collect all the couplings (e.g. if a index s occurs at two tensors
         #    t and V: the crude_pos of s at t will be extended by the crude_pos
         #    of s at V. And vice versa for V.)
         if target is None:
             target = self.target
+        objects = self.objects
+        if descriptions is None:
+            descriptions = [o.description(include_exponent) for o in objects]
+        descr_counter = Counter(descriptions)
+        if positions is None:
+            positions = [
+                o.crude_pos(target=target, target_idx_string=target_idx_string,
+                            include_exponent=include_exponent,
+                            description=descriptions[i])
+                for i, o in enumerate(objects)
+            ]
         coupling = {}
-        for i, o in enumerate(self.objects):
-            descr = o.description
-            if descr not in coupling:
-                coupling[descr] = {}
-            if i not in coupling[descr]:
-                coupling[descr][i] = []
-            idx_pos = o.crude_pos(target)
-            for other_i, other_o in enumerate(self.objects):
+        for i, descr in enumerate(descriptions):
+            # if the tensor is unique in the term -> no coupling necessary
+            if descr_counter[descr] == 1:
+                continue
+            if i not in coupling:
+                coupling[i] = []
+            idx_pos = positions[i]
+            for other_i, other_idx_pos in enumerate(positions):
                 if i == other_i:
                     continue
-                other_idx_pos = other_o.crude_pos(target)
-                matches = [comb[0] for comb in
-                           product(idx_pos.keys(), other_idx_pos.keys())
-                           if comb[0] == comb[1]]
-                coupling[descr][i].extend(
+                matches = [idx for idx in idx_pos if idx in other_idx_pos]
+                coupling[i].extend(
                     [p for s in matches for p in other_idx_pos[s]]
                 )
-        # 2) check whether some identical tensors (according to their
-        #    description) also have identical coupling. If this is the case
-        #    a counter is added to the coupling to differentiate them.
-        ret = {}
-        for coupl in coupling.values():
-            # tensor is unique in the term no need to track coupling
-            if len(coupl.keys()) == 1:
-                continue
-            ret.update(coupl)
-            # TODO: I think this should not be needed... try without
-            # identify and collect equal couplings
-            # equal_coupl = []
-            # matched = []
-            # for i, c in coupl.items():
-            #     if i in matched:
-            #         continue
-            #     matched.append(i)
-            #     temp = [i]
-            #     count_c = Counter(c)
-            #     for other_i, other_c in coupl.items():
-            #         if other_i in matched:
-            #             continue
-            #         if count_c == Counter(other_c):
-            #             temp.append(other_i)
-            #             matched.append(other_i)
-            #     equal_coupl.append(temp)
-            # # attach a number to the equal coupling
-            # for equal_c in equal_coupl:
-            #     temp = {}
-            #     for n, i in enumerate(equal_c):
-            #         temp[i] = coupl[i] + [str(n+1)]
-            #     ret.update(temp)
-        return ret
+        # at some point it might be necessary to also add a counter to the
+        # coupling if also the coupling is identical. However, so far I found
+        # no example where this is necessary.
+        return coupling
 
     def split_orb_energy(self):
         """Splits the term in a orbital energy fraction and a remainder, e.g.
@@ -793,68 +727,48 @@ class term:
 
     def __iadd__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy + other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy + other, **self.assumptions)
 
     def __add__(self, other):
         return self.__iadd__(other)
 
     def __isub__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy - other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy - other, **self.assumptions)
 
     def __sub__(self, other):
         return self.__isub__(other)
 
     def __imul__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy * other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy * other, **self.assumptions)
 
     def __mul__(self, other):
         return self.__imul__(other)
 
     def __itruediv__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy / other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy / other, **self.assumptions)
 
     def __truediv__(self, other):
         return self.__itruediv__(other)
 
     def __eq__(self, other):
-        if isinstance(other, (obj, term, expr, normal_ordered, polynom)) and \
-                self.real == other.real and \
-                self.sym_tensors == other.sym_tensors and \
-                self.provided_target_idx == other.provided_target_idx and \
-                self.sympy == other.sympy:
-            return True
-        return False
+        return isinstance(other, (obj, term, expr, normal_ordered, polynom)) \
+                and self.assumptions == other.assumptions and \
+                self.sympy == other.sympy
 
 
 class obj:
@@ -866,8 +780,8 @@ class obj:
             Add: lambda o: 'polynom'
         }
         if isinstance(t, (term, normal_ordered)):
-            if pos is None:
-                raise Inputerror('No position provided.')
+            if not isinstance(pos, int):
+                raise Inputerror('Position needs to be provided as int.')
             o = t.sympy if len(t) == 1 else t.args[pos]
             obj_type = types.get(type(o), lambda x: 'obj')(o)
             if obj_type == 'obj':
@@ -882,9 +796,9 @@ class obj:
 
     def __init__(self, t, pos=None, real=False, sym_tensors=[],
                  target_idx=None):
-        self.__expr = t.expr
-        self.__term = t
-        self.__pos = pos
+        self.__expr: expr = t.expr
+        self.__term: term = t
+        self.__pos: int = pos
 
     def __str__(self):
         return latex(self.sympy)
@@ -904,6 +818,10 @@ class obj:
     def obj(self):
         return self.term.sympy if len(self.term) == 1 \
             else self.term.args[self.__pos]
+
+    @property
+    def assumptions(self):
+        return self.expr.assumptions
 
     @property
     def real(self):
@@ -941,16 +859,14 @@ class obj:
             bl_diag = 0
         else:
             bl_diag = self.sympy
-        return expr(bl_diag, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(bl_diag, **self.assumptions)
 
     def diagonalize_fock(self, target=None):
         sub = {}
         if self.type == 'tensor' and self.name == 'f':
             # block diagonalize -> target indices don't change
             if self.space in ['ov', 'vo']:
-                return expr(0, self.real, self.sym_tensors,
-                            self.provided_target_idx), sub
+                return expr(0, **self.assumptions), sub
             if target is None:
                 target = self.term.target
             # 0 is preferred, 1 is killable
@@ -967,8 +883,7 @@ class obj:
             #  - fock elements with both indices being target indices
             #    (for not loosing a target index in the term)
             if idx[0] == idx[1] or all(s in target for s in idx):
-                return expr(self.sympy, self.real, self.sym_tensors,
-                            self.provided_target_idx), sub
+                return expr(self.sympy, **self.assumptions), sub
             # killable is contracted -> kill
             if idx[1] not in target:
                 sub[idx[1]] = idx[0]
@@ -980,7 +895,7 @@ class obj:
             diag = Pow(AntiSymmetricTensor('e', tuple(), (preferred,)),
                        self.exponent)
             return expr(diag, self.real, self.sym_tensors, target), sub
-        return expr(self.sympy, self.real, self.sym_tensors, target), sub
+        return expr(self.sympy, **self.assumptions), sub
 
     def rename_tensor(self, current, new):
         """Renames a tensor object."""
@@ -989,16 +904,13 @@ class obj:
                           self.extract_pow.lower), self.exponent)
         else:
             new_obj = self.sympy
-        return expr(new_obj, real=self.real, sym_tensors=self.sym_tensors,
-                    target_idx=self.provided_target_idx)
+        return expr(new_obj, **self.assumptions)
 
     def expand(self):
-        return expr(self.sympy.expand(), self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy.expand(), **self.assumptions)
 
     def subs(self, *args, **kwargs):
-        return expr(self.obj.subs(*args, **kwargs), self.real,
-                    self.sym_tensors, self.provided_target_idx)
+        return expr(self.obj.subs(*args, **kwargs), **self.assumptions)
 
     @property
     def exponent(self):
@@ -1031,6 +943,14 @@ class obj:
             return self.extract_pow.symbol.name
 
     @property
+    def is_amplitude(self):
+        if (name := self.name) in ['X', 'Y']:
+            return True  # ADC amplitudes
+        elif name[0] == 't' and name[1:].isnumeric():
+            return True  # t-amplitudes
+        return False
+
+    @property
     def pretty_name(self):
         name = None
         if self.type == 'tensor':
@@ -1052,7 +972,7 @@ class obj:
     def idx(self):
         """Return the indices of the canonical ordered object."""
         get_idx = {
-            'tensor': lambda o: self.__canonical_idx(o),
+            'tensor': lambda _: self.canonical_idx_space[0],
             # delta indices are sorted automatically
             'delta': lambda o: (o.preferred_index, o.killable_index),
             'annihilate': lambda o: (o.args[0], ),
@@ -1071,18 +991,65 @@ class obj:
         """Returns the canonical space of tensors and other objects."""
         return "".join([index_space(s.name)[0] for s in self.idx])
 
-    def crude_pos(self, target=None):
+    @property
+    def canonical_idx_space(self):
+        can_uplo = self.__canonical_uplo
+        # amplitudes
+        if self.is_amplitude:
+            can_order = ('lower', 'upper')
+        elif self.symmetric:
+            uplo_space = {}
+            uplo_idx = {}
+            for uplo, idx in can_uplo.items():
+                uplo_space[uplo] = (
+                    "".join([index_space(s.name)[0] for s in idx])
+                )
+                # the 0'th index should be the lowest of the space
+                uplo_idx[uplo] = idx[0].name
+            can_order = sorted(
+                uplo_space, key=lambda uplo:
+                (uplo_space[uplo].count('v'),
+                 int(uplo_idx[uplo][1:]) if uplo_idx[uplo][1:] else 0,
+                 uplo_idx[uplo][0])
+            )
+            can_order = tuple(can_order)
+        else:
+            can_order = ('upper', 'lower')
+        sp_len = {}
+        for uplo in can_order:
+            sp_len[uplo] = len(getattr(self.extract_pow, uplo))
+        can_idx = tuple(s for uplo in can_order for s in can_uplo[uplo])
+        return can_idx, can_order, sp_len
+
+    @property
+    def __canonical_uplo(self):
+        """Sorts the indices of the upper and lower space in canonical order"""
+        can_uplo = {}
+        o = self.extract_pow
+        for uplo in ['upper', 'lower']:
+            can_uplo[uplo] = sorted(
+                getattr(o, uplo), key=lambda s:
+                (index_space(s.name)[0], int(s.name[1:]) if s.name[1:] else 0,
+                 s.name[0])
+            )
+        return can_uplo
+
+    def crude_pos(self, target=None, target_idx_string=True,
+                  include_exponent=True, description=None):
         """Returns the 'crude' position of the indices in the object.
            (e.g. only if they are located in bra/ket, not the exact position)
            """
-        if target is None:
+        if target_idx_string and target is None:
             target = self.term.target
         ret = {}
-        descr = self.description
+        descr = self.description(include_exponent) if description is None \
+            else description
         type = self.type
         if type == 'tensor':
-            can_bk = self.__canonical_bk(self.extract_pow)
-            # extract all target indices
+            can_bk = self.__canonical_uplo
+            # extract all target indices if the full position including
+            # the names of target indices is desired.
+            if target_idx_string:
             target_bk = {bk: [s for s in idx_tpl if s in target]
                          for bk, idx_tpl in can_bk.items()}
             for bk, idx_tpl in can_bk.items():
@@ -1090,33 +1057,37 @@ class obj:
                 for s in idx_tpl:
                     if s not in ret:
                         ret[s] = []
-                    pos = descr + '_ul' if self.symmetric else \
-                        descr + '_' + bk[0]
+                    pos = f"{descr}_ul" if self.symmetric else \
+                        f"{descr}_{bk[0]}"
                     # also attatch the space of the neighbours
-                    pos += '_' + "".join([index_space(i.name)[0]
-                                         for i in idx_tpl if i != s])
+                    neighbour_sp = [index_space(i.name)[0]
+                                    for i in idx_tpl if i != s]
+                    if neighbour_sp:
+                        pos += f"_{''.join(neighbour_sp)}"
                     # also need to include the explicit name of target indices
+                    if target_idx_string:
                     # - target indices that are in the same braket
                     same_target = [i.name for i in target_bk[bk] if i != s]
-                    pos += '_' + "".join(same_target) if same_target else \
-                        '_none'
+                        if same_target:
+                            pos += f"_{''.join(same_target)}"
                     # - target indices that are in the other space/braket
-                    other_target = [i.name for i in target_bk[other_bk]
-                                    if i != s]
-                    pos += '_other-' + "".join(other_target) if other_target \
-                        else '_other-none'
+                        other_target = [i.name for i in target_bk[other_bk]]
+                        if other_target:
+                            pos += f"_other-{''.join(other_target)}"
                     ret[s].append(pos)
         elif type == 'delta':
             idx = self.idx
+            if target_idx_string:
             target = [s for s in idx if s in target]
             for s in idx:
                 if s not in ret:
                     ret[s] = []
-                other_target = [i.name for i in target if i != s]
-                pos = self.description
+                pos = descr
                 # also add the name of target indices on the same delta
+                if target_idx_string:
+                    other_target = [i.name for i in target if i != s]
                 if other_target:
-                    pos += "_" + "".join(other_target)
+                        pos += f"_{''.join(other_target)}"
                 ret[s].append(pos)
         elif type in ['annihilate', 'create']:
             for s in self.idx:
@@ -1126,82 +1097,39 @@ class obj:
         # for prefactor a empty dict is returned
         return ret
 
-    def __canonical_bk(self, o):
-        # sorts the indices in bra and ket in canonical order
-        can_bk = {}
-        for bk in ['upper', 'lower']:
-            can_bk[bk] = sorted(
-                getattr(o, bk), key=lambda s:
-                (index_space(s.name)[0], int(s.name[1:]) if s.name[1:] else 0,
-                 s.name[0])
-            )
-        return can_bk
-
-    def __canonical_idx(self, o):
-        # sorts the overall index string in canonical order (swapps bra/ket)
-        from collections import Counter
-
-        can_bk = self.__canonical_bk(o)
-        # amplitudes
-        if self.name[0] in ['t', 'X', 'Y']:
-            can_order = ['lower', 'upper']
-        # symmetric tensors
-        elif self.symmetric:
-            ov = {}
-            for bk in can_bk:
-                ov[bk] = (
-                    "".join([index_space(s.name)[0] for s in can_bk[bk]]),
-                    "".join(s.name for s in can_bk[bk])
-                )
-            can_order = sorted(
-                ov, key=lambda ov_idx:
-                (Counter(ov[ov_idx][0])['v'], ov[ov_idx][1])
-            )
-        # non symmetric tensors (also V if the expr is not real)
-        else:
-            can_order = ['upper', 'lower']
-        return tuple(s for bk in can_order for s in can_bk[bk])
-
     @property
     def sign_change(self):
         """Returns True if the sign of the tensor object changes upon
            reordering the indices in canonical order."""
         if self.type != 'tensor':
             return False
-        can_bk = self.__canonical_bk(self.extract_pow)
+        can_bk = self.__canonical_uplo
         tensor = Pow(AntiSymmetricTensor('42', can_bk['upper'],
                      can_bk['lower']), self.exponent)
-        if isinstance(tensor, Mul):
-            return True
+        return isinstance(tensor, Mul)
+
         else:
             return False
 
-    @property
-    def description(self):
+    def description(self, include_exponent=True):
         """A string that describes the object."""
-        from collections import Counter
         descr = self.type
         if descr == 'tensor':
             # try to define the description by including the space
             # mainly relevant for ERI
-            idx = self.__canonical_bk(self.extract_pow)
-            sp = {uplo: "".join([index_space(s.name)[0] for s in idx_list])
-                  for uplo, idx_list in idx.items()}
-            can_order = ['upper', 'lower']
-            # if the tensor is symmetric, the the canonical braket order should
-            # be used, i.e. <vv||oo>  ->  <oo||vv>
-            if self.symmetric:
-                can_order = sorted(
-                    sp, key=lambda uplo: Counter(sp[uplo])['v']
-            )
-            descr = '_'.join([descr, self.name, sp[can_order[0]],
-                              sp[can_order[1]], str(self.exponent)])
-            # descr = '_'.join(
-            #     [descr, self.name, str(len(self.extract_pow.upper)),
-            #      str(len(self.extract_pow.lower)), str(self.exponent)]
-            # )
-        elif descr in ['delta', 'annihilate', 'create']:
-            descr = '_'.join([descr, str(self.exponent)])
+            idx, can_order, sp_len = self.canonical_idx_space
+            first_sp = [
+                index_space(s.name)[0] for s in idx[:sp_len[can_order[0]]]
+            ]
+            second_sp = [
+                index_space(s.name)[0] for s in idx[sp_len[can_order[0]]:]
+            ]
+            descr += f"_{self.name}_{''.join(first_sp)}_{''.join(second_sp)}"
+            if include_exponent:
+                descr += f"_{self.exponent}"
+        elif include_exponent and descr in ['delta', 'annihilate', 'create']:
+            descr += f"_{self.exponent}"
+        # prefactor
         return descr
 
     @property
@@ -1217,12 +1145,11 @@ class obj:
             if name == 'V':
                 tex_string = f"\\langle {idx[0]}\\vert\\vert {idx[1]}\\rangle"
             # t-amplitude; idx = [lower, upper]
-            elif name[0] == 't':
-                cc = 'c' in name[1:]
+            elif name[0] == 't' and name[1:].isnumeric():
                 order = name[1:].replace('c', '')
                 tex_string = (
                     "{" + name[0] + "^{" + idx[1] + "}_{" + idx[0] + "}}^{(" +
-                    order + ")\\ast}" if cc else
+                    order + ")\\ast}" if 'c' in name[1:] else
                     "{" + name[0] + "^{" + idx[1] + "}_{" + idx[0] + "}}^{(" +
                     order + ")}"
                 )
@@ -1246,93 +1173,65 @@ class obj:
 
         # Only For Tensors!
         # idx are in canonical order!
-        idx = [s.name for s in self.idx]
-        is_amplitude = self.name[0] in ['t', 'X', 'Y']
+        idx, sp_order, sp_len = self.canonical_idx_space
         # - split the indices in upper and lower spaces
-        # tensor is symmetric:
-        #   has to have an equal amount of upper and lower indices
-        #       -> split idx string at half
-        # tensor is not symmetric:
-        #   idx = [*upper, *lower]
-        # t- or ADC-amplitudes:
-        #   idx = [*lower, *upper]
-        n = (len(self.extract_pow.lower) if is_amplitude
-             else len(self.extract_pow.upper))
-        idx = ("".join(idx[:n]), "".join(idx[n:]))
+        n = sp_len[sp_order[0]]
+        idx = ("".join([s.name for s in idx[:n]]),
+               "".join([s.name for s in idx[n:]]))
         return tensor_string(idx)
 
     def __iadd__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy + other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy + other, **self.assumptions)
 
     def __add__(self, other):
         return self.__iadd__(other)
 
     def __isub__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy - other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy - other, **self.assumptions)
 
     def __sub__(self, other):
         return self.__isub__(other)
 
     def __imul__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy * other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy * other, **self.assumptions)
 
     def __mul__(self, other):
         return self.__imul__(other)
 
     def __itruediv__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            if other.real != self.real or \
-                    other.sym_tensors != self.sym_tensors or \
-                    self.provided_target_idx != other.provided_target_idx:
-                raise TypeError("Real, user provided target indices and "
-                                "symmetric tensors need to be equal.")
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal.")
             other = other.sympy
-        return expr(self.sympy / other, self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(self.sympy / other, **self.assumptions)
 
     def __truediv__(self, other):
         return self.__itruediv__(other)
 
     def __eq__(self, other):
-        if isinstance(other, (obj, term, expr, normal_ordered, polynom)) and \
-                self.real == other.real and \
-                self.sym_tensors == other.sym_tensors and \
-                self.provided_target_idx == other.provided_target_idx and \
-                self.sympy == other.sympy:
-            return True
-        return False
+        return isinstance(other, (obj, term, expr, normal_ordered, polynom)) \
+                and self.assumptions == other.assumptions and \
+                self.sympy == other.sympy
 
 
 class normal_ordered(obj):
     """Container for a normal ordered operator string."""
     def __new__(cls, t, pos=None, real=False, sym_tensors=[], target_idx=None):
         if isinstance(t, term):
-            if pos is None:
-                raise Inputerror('No position provided.')
+            if not isinstance(pos, int):
+                raise Inputerror('Position needs to be provided as int.')
             o = t.sympy if len(t) == 1 else t.args[pos]
             if isinstance(o, NO):
                 return object.__new__(cls)
@@ -1369,7 +1268,7 @@ class normal_ordered(obj):
         # obj or anything else than a*b*c
         exp = set(o.exponent for o in self.objects)
         if len(exp) == 1:
-            return next(iter(exp))
+            return exp.pop()
         else:
             raise NotImplementedError(
                 'Exponent only implemented for NO objects, where all '
@@ -1383,7 +1282,8 @@ class normal_ordered(obj):
     @property
     def idx(self):
         objects = self.objects
-        ret = tuple(s for o in objects for s in o.idx)
+        exp = self.exponent
+        ret = tuple(s for o in objects for s in o.idx for _ in range(exp))
         if len(objects) != len(ret):
             raise NotImplementedError('Expected a NO object only to contain'
                                       f"second quantized operators. {self}")
@@ -1419,8 +1319,8 @@ class polynom(obj):
     """Container for a polynom (a+b+c)^x."""
     def __new__(cls, t, pos=None, real=False, sym_tensors=[], target_idx=None):
         if isinstance(t, term):
-            if pos is None:
-                raise Inputerror("No position provided.")
+            if not isinstance(pos, int):
+                raise Inputerror("Position needs to be provided as int.")
             o = t.sympy if len(t) == 1 else t.args[pos]
             if isinstance(o.args[0], Add) or isinstance(o, Add):
                 return object.__new__(cls)
@@ -1498,8 +1398,7 @@ class polynom(obj):
 
     def block_diagonalize_fock(self):
         bl_diag = Add(*[t.block_diagonalize_fock().sympy for t in self.terms])
-        return expr(Pow(bl_diag, self.exponent), self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(Pow(bl_diag, self.exponent), **self.assumptions)
 
     def diagonalize_fock(self, target=None):
         # block diagonalize first. There is not much to think about here and
@@ -1558,8 +1457,7 @@ class polynom(obj):
         renamed = 0
         for term in self.terms:
             renamed += term.rename_tensor(current, new).sympy
-        return expr(Pow(renamed, self.exponent), self.real, self.sym_tensors,
-                    self.provided_target_idx)
+        return expr(Pow(renamed, self.exponent), **self.assumptions)
 
     @property
     def symmetric(self):
@@ -1595,8 +1493,7 @@ class compatible_int(int):
 
     def __add__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            return expr(self.num + other.sympy, other.real, other.sym_tensors,
-                        other.provided_target_idx)
+            return expr(self.num + other.sympy, **other.assumptions)
         elif isinstance(other, compatible_int):
             return compatible_int(self.num + other)
         else:
@@ -1607,8 +1504,7 @@ class compatible_int(int):
 
     def __sub__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            return expr(self.num - other.sympy, other.real, other.sym_tensors,
-                        other.provided_target_idx)
+            return expr(self.num - other.sympy, **other.assumptions)
         elif isinstance(other, compatible_int):
             return compatible_int(self.num - other)
         else:
@@ -1619,8 +1515,7 @@ class compatible_int(int):
 
     def __mul__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            return expr(self.num * other.sympy, other.real, other.sym_tensors,
-                        other.provided_target_idx)
+            return expr(self.num * other.sympy, **other.assumptions)
         elif isinstance(other, compatible_int):
             return compatible_int(self.num * other)
         else:
@@ -1631,7 +1526,6 @@ class compatible_int(int):
 
     def __truediv__(self, other):
         if isinstance(other, (obj, term, expr, normal_ordered, polynom)):
-            return expr(self.num / other.sympy, other.real, other.sym_tensors,
-                        other.provided_target_idx)
+            return expr(self.num / other.sympy, **other.assumptions)
         else:
             return self.num / other

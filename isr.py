@@ -65,8 +65,8 @@ class intermediate_states:
             raise Inputerror(f"The provided indices {indices} include a "
                              "general index.")
         n_ov = n_ov_from_space(space)
-        if len(idx['occ']) != n_ov['n_occ'] or \
-                len(idx['virt']) != n_ov['n_virt']:
+        if len(idx.get('occ', [])) != n_ov.get('n_occ', 0) or \
+                len(idx.get('virt', [])) != n_ov.get('n_virt', 0):
             raise Inputerror(f"The indices {indices} and the space {space} "
                              "are not compatible.")
 
@@ -455,7 +455,7 @@ class intermediate_states:
         """Generate all lower spaces for the provided space string, e.g.
            ['ph'] for 'pphh'."""
         lower_spaces = []
-        while True:
+        for _ in range(min(space_str.count('p'), space_str.count('h'))):
             space_str = space_str.replace('p', '', 1).replace('h', '', 1)
             if not space_str:
                 break

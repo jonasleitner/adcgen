@@ -56,11 +56,11 @@ def by_tensor_block(expr, t_string, symmetric=False):
     if symmetric and t_string not in expr.sym_tensors:
         sym_tensors = expr.sym_tensors
         sym_tensors.add(t_string)
-        expr.set_sym_tensors(*sym_tensors)
+        expr.set_sym_tensors(sym_tensors)
     elif not symmetric and t_string in expr.sym_tensors:
         sym_tensors = expr.sym_tensors
         sym_tensors.remove(t_string)
-        expr.set_sym_tensors(*sym_tensors)
+        expr.set_sym_tensors(sym_tensors)
 
     ret = {}
     for term in expr.terms:
