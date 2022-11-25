@@ -18,7 +18,7 @@ class expr:
             'target_idx': None
         }
         if target_idx is not None:
-        self.set_target_idx(target_idx)
+            self.set_target_idx(target_idx)
         if real:
             self.make_real()
 
@@ -83,8 +83,8 @@ class expr:
             target_idx = get_symbols(target_idx)
             self.__assumptions['target_idx'] = tuple(
                 sorted(set(target_idx), key=lambda s:
-                   (int(s.name[1:]) if s.name[1:] else 0, s.name[0]))
-        )
+                       (int(s.name[1:]) if s.name[1:] else 0, s.name[0]))
+            )
 
     def make_real(self):
         """Makes the expression real by removing all 'c' in tensor names.
@@ -97,7 +97,7 @@ class expr:
         self.__assumptions['real'] = True
         self.__assumptions['sym_tensors'].update(['f', 'V'])
         self.__expr = Add(*[t.make_real(return_sympy=True)
-                          for t in self.terms])
+                            for t in self.terms])
         return self
 
     def block_diagonalize_fock(self):
@@ -105,7 +105,7 @@ class expr:
            diagonal Fock matrix blocks (f_ov/f_vo) are set to 0."""
         self.expand()
         self.__expr = Add(*[t.block_diagonalize_fock().sympy
-                          for t in self.terms])
+                            for t in self.terms])
         return self
 
     def diagonalize_fock(self):
@@ -372,10 +372,15 @@ class term:
                 ret.append(o)
         return ret
 
+    @property
+    def order(self):
+        """Returns the perturbation theoretical order of the term."""
+        return sum(t.order for t in self.tensors)
+
     def make_real(self, return_sympy=False):
         """Makes the expression real by removing all 'c' in tensor names."""
         real_term = Mul(*[o.make_real(return_sympy=True)
-                        for o in self.objects])
+                          for o in self.objects])
         if return_sympy:
             return real_term
         return expr(real_term, real=True, sym_tensors=self.sym_tensors,
@@ -506,22 +511,22 @@ class term:
                 [permutations(pairs, r) for r in range(1, len(ov_idx))]
             )
             for perms in combs:
-                    # we only need to find n! permutations (including
-                    # the identity)
+                # we only need to find n! permutations (including
+                # the identity)
                 if len(permuted_strings) == max_n_perms:
-                        break
-                    # apply the perm to the string and check whether
-                    # the resulting permuted string has already been
-                    # created by another permutation
-                    perm_string = permute_str(idx_string, *perms)
-                    if perm_string in permuted_strings:
-                        continue
-                    permuted_strings.append(perm_string)
-                    sub = self.permute(*perms)
-                    if is_zero(self+sub):
-                        sym[ov][perms] = -1
-                    elif is_zero(self-sub):
-                        sym[ov][perms] = +1
+                    break
+                # apply the perm to the string and check whether
+                # the resulting permuted string has already been
+                # created by another permutation
+                perm_string = permute_str(idx_string, *perms)
+                if perm_string in permuted_strings:
+                    continue
+                permuted_strings.append(perm_string)
+                sub = self.permute(*perms)
+                if is_zero(self+sub):
+                    sym[ov][perms] = -1
+                elif is_zero(self-sub):
+                    sym[ov][perms] = +1
         # multiply the occ and virt permutations
         symmetry = sym['o'] | sym['v']
         for o_perms, o_sym in sym['o'].items():
@@ -550,7 +555,7 @@ class term:
            convention will be applied."""
 
         if self.provided_target_idx is not None:
-        return tuple(sorted(
+            return tuple(sorted(
                 [s for s in self.__idx_counter.keys()
                  if s not in self.provided_target_idx], key=lambda s:
                 (int(s.name[1:]) if s.name[1:] else 0, s.name)
@@ -939,8 +944,8 @@ class obj:
         except KeyError:
             if self.is_number:
                 return 'prefactor'
-                raise RuntimeError(f"Unknown object: {self.obj} of type "
-                                   f"{type(self.obj)}.")
+            raise RuntimeError(f"Unknown object: {self.obj} of type "
+                               f"{type(self.obj)}.")
 
     @property
     def name(self):
@@ -1057,8 +1062,8 @@ class obj:
             # extract all target indices if the full position including
             # the names of target indices is desired.
             if target_idx_string:
-            target_bk = {bk: [s for s in idx_tpl if s in target]
-                         for bk, idx_tpl in can_bk.items()}
+                target_bk = {bk: [s for s in idx_tpl if s in target]
+                             for bk, idx_tpl in can_bk.items()}
             for bk, idx_tpl in can_bk.items():
                 other_bk = "upper" if bk == 'lower' else 'lower'
                 for s in idx_tpl:
@@ -1073,11 +1078,11 @@ class obj:
                         pos += f"_{''.join(neighbour_sp)}"
                     # also need to include the explicit name of target indices
                     if target_idx_string:
-                    # - target indices that are in the same braket
-                    same_target = [i.name for i in target_bk[bk] if i != s]
+                        # - target indices that are in the same braket
+                        same_target = [i.name for i in target_bk[bk] if i != s]
                         if same_target:
                             pos += f"_{''.join(same_target)}"
-                    # - target indices that are in the other space/braket
+                        # - target indices that are in the other space/braket
                         other_target = [i.name for i in target_bk[other_bk]]
                         if other_target:
                             pos += f"_other-{''.join(other_target)}"
@@ -1103,7 +1108,7 @@ class obj:
         elif type == 'delta':
             idx = self.idx
             if target_idx_string:
-            target = [s for s in idx if s in target]
+                target = [s for s in idx if s in target]
             for s in idx:
                 if s not in ret:
                     ret[s] = []
@@ -1111,7 +1116,7 @@ class obj:
                 # also add the name of target indices on the same delta
                 if target_idx_string:
                     other_target = [i.name for i in target if i != s]
-                if other_target:
+                    if other_target:
                         pos += f"_{''.join(other_target)}"
                 ret[s].append(pos)
         elif type in ['annihilate', 'create']:
@@ -1202,12 +1207,12 @@ class obj:
 
         # Only For Tensors!
         if type == 'antisym_tensor':
-        # idx are in canonical order!
-        idx, sp_order, sp_len = self.canonical_idx_space
-        # - split the indices in upper and lower spaces
-        n = sp_len[sp_order[0]]
-        idx = ("".join([s.name for s in idx[:n]]),
-               "".join([s.name for s in idx[n:]]))
+            # idx are in canonical order!
+            idx, sp_order, sp_len = self.canonical_idx_space
+            # - split the indices in upper and lower spaces
+            n = sp_len[sp_order[0]]
+            idx = ("".join([s.name for s in idx[:n]]),
+                   "".join([s.name for s in idx[n:]]))
         elif type == 'nonsym_tensor':  # always upper, lower
             idx = ("", "".join(s.name for s in self.idx))
         return tensor_string(idx)

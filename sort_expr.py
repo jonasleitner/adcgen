@@ -106,9 +106,12 @@ def by_tensor_target_idx(expr, t_string):
         target = term.target
         for o in term.tensors:
             if o.name == t_string:
-                obj_target_space = "".join(sorted(
-                    [index_space(s.name)[0] for s in o.idx if s in target]
-                ))
+                obj_target_space = [
+                    index_space(s.name)[0] for s in o.idx if s in target
+                ]
+                if o.type == 'antisym_tensor':
+                    obj_target_space = sorted(obj_target_space)
+                obj_target_space = "".join(obj_target_space)
                 if obj_target_space:
                     key.append(obj_target_space)
         key = tuple(sorted(key))
