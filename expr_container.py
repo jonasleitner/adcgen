@@ -1,5 +1,6 @@
 from indices import index_space
 from misc import Inputerror
+from sympy_objects import NonSymmetricTensor
 from sympy import latex, Add, Mul, Pow, sympify, S
 from sympy.physics.secondquant import (
     AntiSymmetricTensor, NO, F, Fd, KroneckerDelta
@@ -35,19 +36,19 @@ class expr:
         return getattr(self.__expr, attr)
 
     @property
-    def assumptions(self):
+    def assumptions(self) -> dict:
         return self.__assumptions
 
     @property
-    def real(self):
+    def real(self) -> bool:
         return self.__assumptions['real']
 
     @property
-    def sym_tensors(self):
+    def sym_tensors(self) -> set:
         return self.__assumptions['sym_tensors']
 
     @property
-    def provided_target_idx(self):
+    def provided_target_idx(self) -> None | tuple:
         return self.__assumptions['target_idx']
 
     @property
@@ -55,7 +56,7 @@ class expr:
         return self.__expr
 
     @property
-    def type(self):
+    def type(self) -> str:
         if isinstance(self.sympy, Add):
             return 'expr'
         elif isinstance(self.sympy, Mul):
@@ -303,7 +304,7 @@ class term:
         return getattr(self.term, attr)
 
     @property
-    def expr(self):
+    def expr(self) -> expr:
         return self.__expr
 
     @property
@@ -314,23 +315,23 @@ class term:
             return self.__expr.sympy
 
     @property
-    def assumptions(self):
+    def assumptions(self) -> dict:
         return self.expr.assumptions
 
     @property
-    def real(self):
+    def real(self) -> bool:
         return self.expr.real
 
     @property
-    def sym_tensors(self):
+    def sym_tensors(self) -> set:
         return self.expr.sym_tensors
 
     @property
-    def provided_target_idx(self):
+    def provided_target_idx(self) -> None | tuple:
         return self.expr.provided_target_idx
 
     @property
-    def pos(self):
+    def pos(self) -> int:
         return self.__pos
 
     @property
@@ -338,17 +339,17 @@ class term:
         return self.term
 
     @property
-    def type(self):
+    def type(self) -> str:
         return 'term' if isinstance(self.term, Mul) else 'obj'
 
     @property
-    def objects(self):
+    def objects(self) -> list:
         return [obj(self, i) for i in range(len(self))]
 
     @property
-    def tensors(self):
+    def tensors(self) -> list:
         """Returns all tensor objects in the term."""
-        return [o for o in self.objects if o.type == 'tensor']
+        return [o for o in self.objects if 'tensor' in o.type]
 
     @property
     def deltas(self):
@@ -807,11 +808,11 @@ class obj:
         return getattr(self.obj, attr)
 
     @property
-    def expr(self):
+    def expr(self) -> expr:
         return self.__expr
 
     @property
-    def term(self):
+    def term(self) -> term:
         return self.__term
 
     @property
@@ -820,19 +821,19 @@ class obj:
             else self.term.args[self.__pos]
 
     @property
-    def assumptions(self):
+    def assumptions(self) -> dict:
         return self.expr.assumptions
 
     @property
-    def real(self):
+    def real(self) -> bool:
         return self.expr.real
 
     @property
-    def sym_tensors(self):
+    def sym_tensors(self) -> set:
         return self.expr.sym_tensors
 
     @property
-    def provided_target_idx(self):
+    def provided_target_idx(self) -> None | tuple:
         return self.expr.provided_target_idx
 
     @property
@@ -841,7 +842,7 @@ class obj:
 
     def make_real(self, return_sympy=False):
         """Removes all 'c' in tensor names."""
-        if self.type == 'tensor':
+        if self.type == 'antisym_tensor':
             old = self.name
             new = old.replace('c', '')
             real_obj = (Pow(AntiSymmetricTensor(new, self.extract_pow.upper,
@@ -854,7 +855,7 @@ class obj:
         return expr(real_obj, True, self.sym_tensors, self.provided_target_idx)
 
     def block_diagonalize_fock(self):
-        if self.type == 'tensor' and self.name == 'f' and \
+        if self.type == 'antisym_tensor' and self.name == 'f' and \
                 self.space in ['ov', 'vo']:
             bl_diag = 0
         else:
@@ -863,7 +864,7 @@ class obj:
 
     def diagonalize_fock(self, target=None):
         sub = {}
-        if self.type == 'tensor' and self.name == 'f':
+        if self.type == 'antisym_tensor' and self.name == 'f':
             # block diagonalize -> target indices don't change
             if self.space in ['ov', 'vo']:
                 return expr(0, **self.assumptions), sub
@@ -892,16 +893,20 @@ class obj:
             elif idx[0] not in target:
                 sub[idx[0]] = idx[1]
                 preferred = idx[1]
-            diag = Pow(AntiSymmetricTensor('e', tuple(), (preferred,)),
-                       self.exponent)
+            diag = Pow(NonSymmetricTensor('e', (preferred,)), self.exponent)
             return expr(diag, self.real, self.sym_tensors, target), sub
         return expr(self.sympy, **self.assumptions), sub
 
     def rename_tensor(self, current, new):
         """Renames a tensor object."""
-        if self.type == 'tensor' and self.name == current:
-            new_obj = Pow(AntiSymmetricTensor(new, self.extract_pow.upper,
-                          self.extract_pow.lower), self.exponent)
+        if 'tensor' in (type := self.type) and self.name == current:
+            if type == 'antisym_tensor':
+                base = AntiSymmetricTensor(
+                        new, self.extract_pow.upper, self.extract_pow.lower
+                    )
+            elif type == 'nonsym_tensor':
+                base = NonSymmetricTensor(new, self.extract_pow.indices)
+            new_obj = Pow(base, self.exponent)
         else:
             new_obj = self.sympy
         return expr(new_obj, **self.assumptions)
@@ -923,10 +928,11 @@ class obj:
     @property
     def type(self):
         types = {
-            AntiSymmetricTensor: 'tensor',
+            AntiSymmetricTensor: 'antisym_tensor',
             KroneckerDelta: 'delta',
             F: 'annihilate',
             Fd: 'create',
+            NonSymmetricTensor: 'nonsym_tensor',
         }
         try:
             return types[type(self.extract_pow)]
@@ -939,7 +945,7 @@ class obj:
     @property
     def name(self):
         """Return the name of tensor objects."""
-        if self.type == 'tensor':
+        if 'tensor' in self.type:
             return self.extract_pow.symbol.name
 
     @property
@@ -953,10 +959,9 @@ class obj:
     @property
     def pretty_name(self):
         name = None
-        if self.type == 'tensor':
+        if 'tensor' in self.type:
             name = self.name
-            # t-amplitudes
-            if name[0] == 't':
+            if name[0] == 't' and name[1:].isnumeric():  # t-amplitudes
                 if len(self.extract_pow.upper) != len(self.extract_pow.lower):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for t-amplitude {self}.")
@@ -965,18 +970,20 @@ class obj:
 
     @property
     def symmetric(self):
-        return (self.type == 'tensor' and self.name in self.sym_tensors
+        # nonsym_tensors are assumed to not have any symmetry atm!.
+        return (self.type == 'antisym_tensor' and self.name in self.sym_tensors
                 and len(self.extract_pow.upper) == len(self.extract_pow.lower))
 
     @property
     def idx(self):
         """Return the indices of the canonical ordered object."""
         get_idx = {
-            'tensor': lambda _: self.canonical_idx_space[0],
+            'antisym_tensor': lambda _: self.canonical_idx_space[0],
             # delta indices are sorted automatically
             'delta': lambda o: (o.preferred_index, o.killable_index),
             'annihilate': lambda o: (o.args[0], ),
-            'create': lambda o: (o.args[0], )
+            'create': lambda o: (o.args[0], ),
+            'nonsym_tensor': lambda o: o.indices
         }
         try:
             return get_idx[self.type](self.extract_pow)
@@ -1042,10 +1049,10 @@ class obj:
         if target_idx_string and target is None:
             target = self.term.target
         ret = {}
-        descr = self.description(include_exponent) if description is None \
-            else description
+        if description is None:
+            description = self.description(include_exponent)
         type = self.type
-        if type == 'tensor':
+        if type == 'antisym_tensor':
             can_bk = self.__canonical_uplo
             # extract all target indices if the full position including
             # the names of target indices is desired.
@@ -1057,8 +1064,8 @@ class obj:
                 for s in idx_tpl:
                     if s not in ret:
                         ret[s] = []
-                    pos = f"{descr}_ul" if self.symmetric else \
-                        f"{descr}_{bk[0]}"
+                    pos = f"{description}_ul" if self.symmetric else \
+                        f"{description}_{bk[0]}"
                     # also attatch the space of the neighbours
                     neighbour_sp = [index_space(i.name)[0]
                                     for i in idx_tpl if i != s]
@@ -1075,6 +1082,24 @@ class obj:
                         if other_target:
                             pos += f"_other-{''.join(other_target)}"
                     ret[s].append(pos)
+        elif type == 'nonsym_tensor':
+            # something like nonsym_tensor_name_space_expo_pos_targetname+pos
+            idx = self.idx
+            if target_idx_string:
+                # should always be sorted! (insertion order of dicts)
+                target_pos = {i: s.name for i, s in enumerate(idx)
+                              if s in target}
+            for i, s in enumerate(idx):
+                if s not in ret:
+                    ret[s] = []
+                pos = f"{description}_{i}"
+                if target_idx_string:
+                    other_target = ["-".join([name, str(j)])
+                                    for j, name in target_pos.items()
+                                    if j != i]
+                    if other_target:
+                        pos += f"_{'_'.join((name for name in other_target))}"
+                ret[s].append(pos)
         elif type == 'delta':
             idx = self.idx
             if target_idx_string:
@@ -1082,7 +1107,7 @@ class obj:
             for s in idx:
                 if s not in ret:
                     ret[s] = []
-                pos = descr
+                pos = description
                 # also add the name of target indices on the same delta
                 if target_idx_string:
                     other_target = [i.name for i in target if i != s]
@@ -1093,7 +1118,7 @@ class obj:
             for s in self.idx:
                 if s not in ret:
                     ret[s] = []
-                ret[s].append(descr)
+                ret[s].append(description)
         # for prefactor a empty dict is returned
         return ret
 
@@ -1101,7 +1126,7 @@ class obj:
     def sign_change(self):
         """Returns True if the sign of the tensor object changes upon
            reordering the indices in canonical order."""
-        if self.type != 'tensor':
+        if self.type != 'antisym_tensor':
             return False
         can_bk = self.__canonical_uplo
         tensor = Pow(AntiSymmetricTensor('42', can_bk['upper'],
@@ -1114,7 +1139,7 @@ class obj:
     def description(self, include_exponent=True):
         """A string that describes the object."""
         descr = self.type
-        if descr == 'tensor':
+        if descr == 'antisym_tensor':
             # try to define the description by including the space
             # mainly relevant for ERI
             idx, can_order, sp_len = self.canonical_idx_space
@@ -1127,6 +1152,10 @@ class obj:
             descr += f"_{self.name}_{''.join(first_sp)}_{''.join(second_sp)}"
             if include_exponent:
                 descr += f"_{self.exponent}"
+        elif descr == 'nonsym_tensor':
+            descr += f"_{self.name}_{self.space}"
+            if include_exponent:
+                descr += f"_{self.exponent}"
         elif include_exponent and descr in ['delta', 'annihilate', 'create']:
             descr += f"_{self.exponent}"
         # prefactor
@@ -1134,7 +1163,7 @@ class obj:
 
     @property
     def contains_only_orb_energies(self):
-        return self.type == 'tensor' and self.name == 'e'
+        return 'tensor' in self.type and self.name == 'e'
 
     def print_latex(self, only_pull_out_pref=False):
         """Returns a Latex string of the canonical form of the object."""
@@ -1168,16 +1197,19 @@ class obj:
                 )
             return tex_string
 
-        if only_pull_out_pref or self.type != 'tensor':
+        if only_pull_out_pref or 'tensor' not in (type := self.type):
             return self.__str__()
 
         # Only For Tensors!
+        if type == 'antisym_tensor':
         # idx are in canonical order!
         idx, sp_order, sp_len = self.canonical_idx_space
         # - split the indices in upper and lower spaces
         n = sp_len[sp_order[0]]
         idx = ("".join([s.name for s in idx[:n]]),
                "".join([s.name for s in idx[n:]]))
+        elif type == 'nonsym_tensor':  # always upper, lower
+            idx = ("", "".join(s.name for s in self.idx))
         return tensor_string(idx)
 
     def __iadd__(self, other):

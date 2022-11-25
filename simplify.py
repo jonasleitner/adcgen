@@ -92,10 +92,10 @@ def find_compatible_terms(terms):
     for i, term in enumerate(terms):
         # extract tensors
         tensors.append([o.name for o in term.tensors
-                        for i in range(o.exponent)])
+                        for _ in range(o.exponent)])
         # extract deltas
         deltas.append([o.space for o in term.deltas
-                       for i in range(o.exponent)])
+                       for _ in range(o.exponent)])
         # extract objects that hold the target indices and also how many occ
         # virt target indices the object holds, e.g. f_cc Y_ij^ac
         # Y holds 2o, 1v
@@ -107,7 +107,7 @@ def find_compatible_terms(terms):
                 if s in idx:
                     found[index_space(s.name)[0]] += 1
             temp.extend([(o.description(), found['o'], found['v'])
-                        for i in range(o.exponent)])
+                        for _ in range(o.exponent)])
         target_obj.append(sorted(temp))
         del temp
 
@@ -313,7 +313,7 @@ def make_real(expr, *sym_tensors):
             occurences = {t: 1 for t, _ in t_n_pairs}
             for o in term.objects:
                 name = o.name
-                if o.type != 'tensor' or name not in occurences:
+                if o.type != 'antisym_tensor' or name not in occurences:
                     swapped *= o
                     continue
                 matches = [
@@ -377,7 +377,7 @@ def make_real(expr, *sym_tensors):
     for term in expr.terms:
         available = Counter(
             [t.name for t in term.tensors for _ in range(t.exponent)
-             if t.symmetric]
+             if t.symmetric]  # only asym_tensor can be found here!
         )
         max_occurence.update(
             {t: n for t, n in available.items() if n > max_occurence[t]}
@@ -480,7 +480,7 @@ def extract_dm(expr, symmetric=False):
             d_tensor = None
             for t in term.objects:
                 # found the d tensor
-                if t.type == 'tensor' and t.name == 'd':
+                if t.type == 'antisym_tensor' and t.name == 'd':
                     if d_tensor is not None:
                         raise RuntimeError("Found two d tensors in the term "
                                            f"{term}.")
