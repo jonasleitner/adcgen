@@ -169,6 +169,16 @@ class expr:
             sub = {p: q, q: p}
             self.subs(sub, simultaneous=True)
         return self
+
+    def expand_intermediates(self):
+        """Insert all defined intermediates in the expression."""
+        # TODO: only expand specific intermediates
+        expanded = compatible_int(0)
+        for t in self.terms:
+            expanded += t.expand_intermediates()
+        self.__expr = expanded.sympy
+        return self
+
     @property
     def idx(self):
         """Returns all indices that occur in the expression. Indices that occur
@@ -449,6 +459,12 @@ class term:
         return temp if isinstance(temp, expr) else \
             expr(temp, **self.assumptions)
 
+    def expand_intermediates(self, target=None):
+        target = self.target if target is None else target
+        expanded = Mul(*[o.expand_intermediates(target).sympy
+                         for o in self.objects])
+        return expr(expanded, self.real, self.sym_tensors, target)
+
     def symmetry(self, only_contracted=False, only_target=False):
         """Return a dict with all Symmetric and Antisymmetric Permutations of
            the term. If only contracted is set to True, only permutations of
@@ -473,6 +489,9 @@ class term:
         if only_contracted and only_target:
             raise Inputerror("Can not set only_contracted and only_target "
                              "simultaneously.")
+        if self.sympy.is_number or isinstance(self.sympy, NonSymmetricTensor):
+            return {}  # in both cases we can't find any symmetry
+
         if only_contracted:
             indices = self.contracted
         elif only_target:
@@ -580,8 +599,8 @@ class term:
 
     @property
     def idx(self):
-        """Returns all indices that occur in the term. Indices that occur multiple
-           times will be listed multiple times."""
+        """Returns all indices that occur in the term. Indices that occur
+           multiple times will be listed multiple times."""
         counter = self.__idx_counter
         idx = [s for s in counter.keys() for _ in range(counter[s] + 1)]
         return tuple(sorted(
@@ -962,6 +981,23 @@ class obj:
         return False
 
     @property
+    def order(self):
+        """Returns the perturbation theoretical order of the obj."""
+        from intermediates import intermediates
+
+        itmd = intermediates()
+        if 'tensor' in self.type:
+            if (name := self.name) == 'V':  # eri
+                return 1
+            elif name[0] == 't' and name[1:].isnumeric():  # t-amplitudes
+                return int(name[1:])
+            # all intermediates
+            itmd_cls = itmd.available.get(self.pretty_name)
+            if itmd_cls is not None:
+                return itmd_cls.order
+        return 0
+
+    @property
     def pretty_name(self):
         name = None
         if 'tensor' in self.type:
@@ -971,6 +1007,14 @@ class obj:
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for t-amplitude {self}.")
                 name = f"t{len(self.extract_pow.upper)}_{name[1:]}"
+            elif name[0] == 'p' and name[1:].isnumeric():  # mp densities
+                if len(self.extract_pow.upper) != len(self.extract_pow.lower):
+                    raise RuntimeError("Number of upper and lower indices not "
+                                       f"equal for mp density {self}.")
+                name = f"p0_{name[1:]}_{self.space}"
+            elif name.startswith('t2eri'):  # t2eri
+                name = f"t2eri_{name[5:]}"
+            # t2sq -> just return name
         return name
 
     @property
@@ -1138,8 +1182,25 @@ class obj:
                      can_bk['lower']), self.exponent)
         return isinstance(tensor, Mul)
 
+    def expand_intermediates(self, target=None):
+        from intermediates import intermediates
+        # only tensors atm
+        if 'tensor' not in (type := self.type):
+            return expr(self.sympy, **self.assumptions)
+        if target is None:
+            target = self.term.target
+        itmd = intermediates()
+        itmd = itmd.available.get(self.pretty_name, None)
+        if itmd:
+            if type == 'antisym_tensor':
+                idx = {bk: getattr(self.extract_pow, bk)
+                       for bk in ['upper', 'lower']}
+            elif type == 'nonsym_tensor':
+                idx = {'indices': self.extract_pow.indices}
+            expanded = Pow(itmd.expand_itmd(**idx).sympy, self.exponent)
         else:
-            return False
+            expanded = self.sympy
+        return expr(expanded, self.real, self.sym_tensors, target)
 
     def description(self, include_exponent=True):
         """A string that describes the object."""
@@ -1326,25 +1387,28 @@ class normal_ordered(obj):
                                       f"second quantized operators. {self}")
         return ret
 
-    def crude_pos(self, target=None):
-        if target is None:
-            target = self.term.target
-        descr = self.description
-        ret = {}
-        for o in self.objects:
-            for s, pos in o.crude_pos(target).items():
-                if s not in ret:
-                    ret[s] = []
-                ret[s].extend([f"{descr}_" + p for p in pos])
-        return ret
+    def crude_pos(self, target=None, target_idx_string=True,
+                  include_exponent=True):
+        # if target_idx_string and target is None:
+        #     target = self.term.target
+        # descr = self.description(include_exponent)
+        # ret = {}
+        # for o in self.objects:
+        #     for s, pos in o.crude_pos(target, target_idx_string,
+        #                               include_exponent).items():
+        #         if s not in ret:
+        #             ret[s] = []
+        #         ret[s].extend([f"{descr}_" + p for p in pos])
+        # return ret
+        raise NotImplementedError("Need to rethink this.")
 
-    @property
-    def description(self):
+    def description(self, include_exponent=True):
         # normal_ordered_#create_#annihilate
-        objects = self.objects
-        n_create = len([o for o in objects if o.type == 'create'])
-        n_annihilate = len([o for o in objects if o.type == 'annihilate'])
-        return f"{self.type}_{str(n_annihilate)}_{str(n_create)}"
+        # objects = self.objects
+        # n_create = len([o for o in objects if o.type == 'create'])
+        # n_annihilate = len([o for o in objects if o.type == 'annihilate'])
+        # return f"{self.type}_{n_annihilate}_{n_create}"
+        raise NotImplementedError("Need to rethink this.")
 
     def print_latex(self, only_pull_out_pref=False):
         # no prefs possible in NO
@@ -1390,6 +1454,10 @@ class polynom(obj):
         return 'polynom'
 
     @property
+    def order(self):
+        raise NotImplementedError("Order not implemented for polynoms.")
+
+    @property
     def idx(self):
         """Returns all indices that occur in the polynom. Indices that occur
            multiple times will be listed multiple times."""
@@ -1398,33 +1466,36 @@ class polynom(obj):
             idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
         ))
 
-    def crude_pos(self, target=None):
+    def crude_pos(self, target=None, target_idx_string=True,
+                  include_exponent=True):
         # I think this does not rly work correctly
-        if target is None:
-            target = self.term.target
-        ret = {}
-        descr = self.description
-        for term in self.terms:
-            sign = term.sign
-            for o in term.objects:
-                for s, pos in o.crude_pos(target).items():
-                    if s not in ret:
-                        ret[s] = []
-                    ret[s].extend([f"{descr}_{sign[0]}_" + p for p in pos])
-        return ret
+        # if target is None:
+        #     target = self.term.target
+        # ret = {}
+        # descr = self.description(include_exponent)
+        # for term in self.terms:
+        #     sign = term.sign
+        #     for o in term.objects:
+        #         for s, pos in o.crude_pos(target, target_idx_string).items():
+        #             if s not in ret:
+        #                 ret[s] = []
+        #             ret[s].extend([f"{descr}_{sign[0]}_" + p for p in pos])
+        # return ret
+        raise NotImplementedError("Need to rethink this.")
 
-    @property
-    def description(self):
-        content = []
-        for term in self.terms:
-            # differentiate prefactors
-            descr = "".join(sorted(
-                [o.description for o in term.objects if o.sympy not in [1, -1]]
-            ))
-            content.append(f"_{term.sign[0]}_{descr}")
-        content = sorted(content)
-        return "".join([f"{self.type}_{len(self)}", *content,
-                       f"_{str(self.exponent)}"])
+    def description(self, include_exponent=True):
+        # content = []
+        # for term in self.terms:
+        #     # differentiate prefactors
+        #     descr = "".join(sorted(
+        #         [o.description() for o in term.objects
+        #          if o.sympy not in [1, -1]]
+        #     ))
+        #     content.append(f"_{term.sign[0]}_{descr}")
+        # content = sorted(content)
+        # return "".join([f"{self.type}_{len(self)}", *content,
+        #                f"_{str(self.exponent)}"])
+        raise NotImplementedError("Need to rethink this.")
 
     def make_real(self, return_sympy=False):
         real = Add(*[t.make_real(return_sympy=True) for t in self.terms])
@@ -1506,6 +1577,13 @@ class polynom(obj):
     def sign_change(self):
         # whether it is possible to pull a minus out, if ordering canonical?
         return all(t.sign_change for t in self.terms)
+
+    def expand_intermediates(self, target=None):
+        target = self.term.target if target is None else target
+        expanded = Add(*[t.expand_intermediates(target).sympy
+                         for t in self.terms])
+        return expr(Pow(expanded, self.exponent), self.real, self.sym_tensors,
+                    target)
 
     @property
     def contains_only_orb_energies(self):
