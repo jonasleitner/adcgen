@@ -1,7 +1,7 @@
 from sympy import S
-import expr_container as e
-from misc import Inputerror
-from indices import index_space
+import sympy_adc.expr_container as e
+from .misc import Inputerror
+from .indices import index_space
 
 
 def by_delta_types(expr):
@@ -81,7 +81,7 @@ def by_tensor_target_idx(expr, t_string):
        target indices on a specified tensor, e.g. f_cc Y_ij^ac -> if sorting
        according to Y: oov; if sorting acording to f: none.
        """
-    from simplify import filter_tensor
+    from .simplify import filter_tensor
 
     if not isinstance(t_string, str):
         raise Inputerror("Tensor name must be provided as string.")

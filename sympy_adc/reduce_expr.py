@@ -1,6 +1,6 @@
-import expr_container as e
-from eri_orbenergy import eri_orbenergy
-from misc import Inputerror
+import sympy_adc.expr_container as e
+from .eri_orbenergy import eri_orbenergy
+from .misc import Inputerror
 from sympy import S
 import time
 
@@ -84,7 +84,7 @@ def reduce_expr(expr):
 
 
 def factor_eri(expr, real=False):
-    from simplify import make_real, find_compatible_terms
+    from .simplify import make_real, find_compatible_terms
     terms = [eri_orbenergy(term) for term in expr.terms]
     eris = [term.eri for term in terms]
 

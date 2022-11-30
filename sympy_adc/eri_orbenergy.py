@@ -1,5 +1,5 @@
-from misc import Inputerror
-import expr_container as e
+from .misc import Inputerror
+import sympy_adc.expr_container as e
 from sympy import Pow, S
 
 
@@ -191,7 +191,7 @@ class eri_orbenergy:
            all virtual orbital energies will be added, while all occupied
            energies are subtracted. This might change numerator, denominator
            and prefactor."""
-        from indices import index_space
+        from .indices import index_space
 
         def adjust_sign(expr):
             # function that extracts the sign of the occupied and virtual

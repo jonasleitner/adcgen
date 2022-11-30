@@ -1,13 +1,13 @@
-import expr_container as e
-from misc import Inputerror
-from simplify import make_real
+import sympy_adc.expr_container as e
+from .misc import Inputerror
+from .simplify import make_real
+from .eri_orbenergy import eri_orbenergy
 from sympy import S
-from eri_orbenergy import eri_orbenergy
 from collections import Counter
 
 
 def factor_intermediates(expr):
-    from intermediates import intermediates
+    from .intermediates import intermediates
     if not isinstance(expr, e.expr):
         raise Inputerror("The expression to factor needs to be provided "
                          f"as {e.expr} instance.")
@@ -346,7 +346,7 @@ def _compare_obj(obj: e.obj, itmd_obj: e.obj, obj_coupl: list[str],
     """Compare the two provided objects and return the substitutions as dict
         that are required to transform the itmd_obj."""
     from collections import Counter
-    from indices import index_space
+    from .indices import index_space
 
     if obj_descr is None:
         obj_descr = obj.description(include_exponent=False)

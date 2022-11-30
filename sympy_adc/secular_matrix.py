@@ -3,17 +3,17 @@ from sympy import sqrt, S
 
 from math import factorial
 
-from indices import repeated_indices
-from misc import (Inputerror, cached_member, transform_to_tuple,
-                  process_arguments, validate_input)
-from func import evaluate_deltas, gen_term_orders
-from simplify import simplify
+from .indices import repeated_indices
+from .misc import (Inputerror, cached_member, transform_to_tuple,
+                   process_arguments, validate_input)
+from .func import evaluate_deltas, gen_term_orders
+from .simplify import simplify
 
 
 class secular_matrix:
     def __init__(self, isr):
-        from isr import intermediate_states
-        from indices import indices
+        from .isr import intermediate_states
+        from .indices import indices
         if not isinstance(isr, intermediate_states):
             raise Inputerror("Invalid intermediate_states object.")
         self.isr = isr
@@ -132,7 +132,7 @@ class secular_matrix:
            spaces. However, it may be necessary to cancel a few terms by hand
            (interchange some indice names).
            """
-        from indices import n_ov_from_space, extract_names
+        from .indices import n_ov_from_space, extract_names
 
         mvp_space = transform_to_tuple(mvp_space)
         block = transform_to_tuple(block)

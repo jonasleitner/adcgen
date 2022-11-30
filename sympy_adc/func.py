@@ -1,8 +1,6 @@
-import expr_container as e
-
+import sympy_adc.expr_container as e
+from .misc import Inputerror
 from sympy import Add
-
-from misc import Inputerror
 
 
 def evaluate_deltas(expr):

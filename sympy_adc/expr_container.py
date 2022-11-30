@@ -1,6 +1,6 @@
-from indices import index_space
-from misc import Inputerror
-from sympy_objects import NonSymmetricTensor
+from .indices import index_space
+from .misc import Inputerror
+from .sympy_objects import NonSymmetricTensor
 from sympy import latex, Add, Mul, Pow, sympify, S
 from sympy.physics.secondquant import (
     AntiSymmetricTensor, NO, F, Fd, KroneckerDelta
@@ -76,7 +76,7 @@ class expr:
             self.__assumptions['sym_tensors'].update(['f', 'V'])
 
     def set_target_idx(self, target_idx):
-        from indices import get_symbols
+        from .indices import get_symbols
         if target_idx is None:
             self.__assumptions['target_idx'] = None
         else:
@@ -144,7 +144,7 @@ class expr:
     def substitute_contracted(self):
         """Tries to substitute all contracted indices with pretty indices, i.e.
            i, j, k instad of i3, n4, o42 etc."""
-        from indices import indices
+        from .indices import indices
         self.__expr = indices().substitute(self).sympy
         return self
 
@@ -160,7 +160,7 @@ class expr:
         return self
 
     def permute(self, *perms):
-        from indices import get_symbols
+        from .indices import get_symbols
 
         for perm in perms:
             if len(perm) != 2:
@@ -448,7 +448,7 @@ class term:
            starting with the first one.
            Permutations need to be provided as e.g. tuples (a,b), (i,j), ...
            Indices may be provided as sympy Dummy symbols or strings."""
-        from indices import get_symbols
+        from .indices import get_symbols
         temp = self
         for perm in perms:
             if len(perm) != 2:
@@ -472,9 +472,9 @@ class term:
            only_target is set, only permutations of target indices are taken
            into account."""
         from itertools import combinations, permutations, chain
-        from simplify import make_real
         from math import factorial
-        from indices import split_idx_string
+        from .simplify import make_real
+        from .indices import split_idx_string
 
         def permute_str(string, *perms):
             string = split_idx_string(string)
@@ -983,7 +983,7 @@ class obj:
     @property
     def order(self):
         """Returns the perturbation theoretical order of the obj."""
-        from intermediates import intermediates
+        from .intermediates import intermediates
 
         itmd = intermediates()
         if 'tensor' in self.type:
@@ -1202,7 +1202,7 @@ class obj:
         return isinstance(tensor, Mul)
 
     def expand_intermediates(self, target=None):
-        from intermediates import intermediates
+        from .intermediates import intermediates
         # only tensors atm
         if 'tensor' not in (type := self.type):
             return expr(self.sympy, **self.assumptions)

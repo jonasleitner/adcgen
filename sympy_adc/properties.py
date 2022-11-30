@@ -1,8 +1,8 @@
-from func import gen_term_orders
-from indices import extract_names, indices, n_ov_from_space
-from misc import (Inputerror, cached_member, transform_to_tuple,
-                  process_arguments, validate_input)
-from simplify import simplify
+from .func import gen_term_orders
+from .indices import extract_names, indices, n_ov_from_space
+from .misc import (Inputerror, cached_member, transform_to_tuple,
+                   process_arguments, validate_input)
+from .simplify import simplify
 from sympy.physics.secondquant import wicks
 from sympy import sqrt, S, sympify
 from math import factorial
@@ -19,8 +19,8 @@ class properties:
        """
 
     def __init__(self, l_isr, r_isr=None):
-        from isr import intermediate_states
-        from secular_matrix import secular_matrix
+        from .isr import intermediate_states
+        from .secular_matrix import secular_matrix
 
         if not isinstance(l_isr, intermediate_states) or r_isr is not None \
                 and not isinstance(r_isr, intermediate_states):

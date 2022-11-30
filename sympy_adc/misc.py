@@ -38,7 +38,7 @@ def process_arguments(function):
        indices='ijab' and indices='abji' will both be tranformed to 'abij'.
        Furthermore, all kwargs are forwarded as args to the decorated function.
        """
-    from indices import split_idx_string
+    from .indices import split_idx_string
     import inspect
 
     sig = inspect.signature(function)

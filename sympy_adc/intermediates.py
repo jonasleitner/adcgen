@@ -1,9 +1,9 @@
-from indices import get_symbols, index_space
-from misc import Inputerror, Singleton
-import expr_container as e
-from simplify import make_real
-from eri_orbenergy import eri_orbenergy
-from sympy_objects import NonSymmetricTensor
+from .indices import get_symbols, index_space
+from .misc import Inputerror, Singleton
+import sympy_adc.expr_container as e
+from .simplify import make_real
+from .eri_orbenergy import eri_orbenergy
+from .sympy_objects import NonSymmetricTensor
 
 from sympy.physics.secondquant import AntiSymmetricTensor
 from sympy import S, Dummy
@@ -119,7 +119,7 @@ class registered_intermediate:
            to the target indices of the itmd."""
         from math import factorial
         from itertools import combinations, permutations, chain, product
-        from indices import split_idx_string
+        from .indices import split_idx_string
 
         def permute_str(string: str, *perms: tuple[Dummy]) -> str:
             string: list = split_idx_string(string)
@@ -247,7 +247,7 @@ class registered_intermediate:
     def _minimal_itmd_indices(self, remainder: e.expr, sub: dict,
                               itmd_term_map: dict):
         """Minimize the target indices of the intermediate to factor."""
-        from indices import get_first_missing_index, get_symbols, index_space
+        from .indices import get_first_missing_index, get_symbols, index_space
 
         if not isinstance(remainder, e.expr) or len(remainder) != 1:
             raise Inputerror("Expected a expr of length 1 as input.")
@@ -290,8 +290,8 @@ class registered_intermediate:
 
     def factor_itmd(self, expr: e.expr, factored_itmds: list[str] = None,
                     max_order: int = None) -> e.expr:
-        from factor_intermediates import (_factor_long_intermediate,
-                                          _factor_short_intermediate)
+        from .factor_intermediates import (_factor_long_intermediate,
+                                           _factor_short_intermediate)
         from collections import Counter
         if not isinstance(expr, e.expr):
             raise Inputerror("Expr to factor needs to be an instance of "
@@ -395,7 +395,7 @@ class t2_1(registered_intermediate):
 
     def factor_itmd(self, expr: e.expr, factored_itmds: list[str] = None,
                     max_order: int = None):
-        from factor_intermediates import _compare_obj
+        from .factor_intermediates import _compare_obj
         # special function for factoring t2_1 amplitudes
         # maybe replace this later with a function for intermediates of length
         # 1, i.e., intermediates that consist of a single term
@@ -483,7 +483,7 @@ class t1_2(registered_intermediate):
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
         from sympy import Rational
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
         # target_indices
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
         if (itmd := self.__cache.get(idx, None)) is not None:
@@ -526,7 +526,7 @@ class t2_2(registered_intermediate):
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
         from sympy import Rational
 
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
@@ -577,7 +577,7 @@ class p0_2_oo(registered_intermediate):
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
         from sympy import Rational
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
 
         idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
         if (itmd := self.__cache.get(idx, None)) is not None:
@@ -615,7 +615,7 @@ class p0_2_vv(registered_intermediate):
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
         from sympy import Rational
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
 
         idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
         if (itmd := self.__cache.get(idx, None)) is not None:
@@ -651,7 +651,7 @@ class t2eri_3(registered_intermediate):
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
 
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
         if (itmd := self.__cache.get(idx, None)) is not None:
@@ -685,7 +685,7 @@ class t2eri_4(registered_intermediate):
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
 
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
         if (itmd := self.__cache.get(idx, None)) is not None:
@@ -719,7 +719,7 @@ class t2eri_5(registered_intermediate):
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
 
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
         if (itmd := self.__cache.get(idx, None)) is not None:
@@ -753,7 +753,7 @@ class t2sq(registered_intermediate):
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from indices import indices as idx_cls
+        from .indices import indices as idx_cls
 
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
         if (itmd := self.__cache.get(idx, None)) is not None:

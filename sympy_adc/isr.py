@@ -3,14 +3,14 @@ from sympy import latex, Rational, S, Mul, sympify
 
 from math import factorial
 
-from indices import (
+from .indices import (
     n_ov_from_space, repeated_indices, indices, extract_names
 )
-from misc import (cached_member, Inputerror, transform_to_tuple,
-                  validate_input, process_arguments)
-from simplify import simplify
-from func import evaluate_deltas, gen_term_orders
-from groundstate import ground_state
+from .misc import (cached_member, Inputerror, transform_to_tuple,
+                   validate_input, process_arguments)
+from .simplify import simplify
+from .func import evaluate_deltas, gen_term_orders
+from .groundstate import ground_state
 
 
 class intermediate_states:

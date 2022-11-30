@@ -1,9 +1,8 @@
-from indices import index_space, get_first_missing_index, indices
-from misc import Inputerror
-import expr_container as e
+from .indices import index_space, get_first_missing_index, indices
+from .misc import Inputerror
+import sympy_adc.expr_container as e
 from sympy import Add, S
 import time
-import sort_expr as sort
 
 
 def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
@@ -427,6 +426,7 @@ def extract_dm(expr, symmetric=False):
        defintions of all canonical blocks of the density matrix."""
     from sympy.physics.secondquant import KroneckerDelta, AntiSymmetricTensor
     from sympy import Rational
+    import sympy_adc.sort_expr as sort
 
     def minimize_d_indices(term, d_tensor):
         used_d_idx = {'occ': [], 'virt': []}
