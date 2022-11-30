@@ -1023,6 +1023,25 @@ class obj:
         return (self.type == 'antisym_tensor' and self.name in self.sym_tensors
                 and len(self.extract_pow.upper) == len(self.extract_pow.lower))
 
+    def symmetry(self, only_contracted=False, only_target=False):
+        """Determines the symmetry of the obj."""
+        if only_contracted and only_target:
+            raise Inputerror("Can not determine the symmetry only for "
+                             "contracted and target indices simultaneously.")
+        if self.sympy.is_number or isinstance(self.sympy, NonSymmetricTensor):
+            return {}  # can not find any symmetry in both cases
+        # obtain the desired indices
+        if only_contracted:
+            indices = self.term.contracted
+        elif only_target:
+            indices = self.term.target
+        else:
+            indices = self.idx
+        # create a term obj and use the appropriate indices as target_idx
+        new_expr = expr(self.sympy, self.real, self.sym_tensors, indices)
+        sym = new_expr.terms[0].symmetry(only_target=True)
+        return sym
+
     @property
     def idx(self):
         """Return the indices of the canonical ordered object."""

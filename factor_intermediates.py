@@ -31,8 +31,7 @@ def factor_intermediates(expr):
 
 
 def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
-                              itmd_pattern: list[dict],
-                              itmd_tensors: list[Counter],
+                              itmd_data: list[dict],
                               itmd_term_map: dict,
                               unmapped_itmd_terms: list[int],
                               itmd_instance) -> e.expr:
@@ -50,20 +49,22 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
         term = eri_orbenergy(term).canonicalize_sign()
         if term.eri.order < itmd_instance.order:
             continue
-        term_pattern = term.eri_pattern(include_exponent=False,
-                                        target_idx_string=False)
-        term_tensors = Counter(
+        pattern = term.eri_pattern(include_exponent=False,
+                                   target_idx_string=False)
+        indices = [o.idx for o in term.eri.objects]
+        term_data = {'pattern': pattern, 'indices': indices}
+        tensors = Counter(
             [t.name for t in term.eri.tensors for _ in range(t.exponent)]
         )
-        for itmd_term_i, (itmd_term, itmd_pat) in \
-                enumerate(zip(itmd, itmd_pattern)):
+        for itmd_term_i, (itmd_term_data, itmd_term) in \
+                enumerate(zip(itmd_data, itmd)):
             # do the tensors in both terms match?
-            if any(term_tensors[t] < count
-                   for t, count in itmd_tensors[itmd_term_i].items()):
+            itmd_tensors = itmd_term_data['itmd_tensors']
+            if any(tensors[t] < count for t, count in itmd_tensors.items()):
                 continue
             combinations = _compare_terms(term, itmd_term,
-                                          eri_pattern=term_pattern,
-                                          itmd_eri_pattern=itmd_pat)
+                                          term_data=term_data,
+                                          itmd_term_data=itmd_term_data)
             found_remainders = {}  # collect all found remainders
             for term_data in combinations:
                 obj_i = term_data['obj_i']
@@ -157,8 +158,7 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
 
 
 def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
-                               itmd_pattern: dict, itmd_tensors: Counter,
-                               itmd_instance) -> e.expr:
+                               itmd_data: dict, itmd_instance) -> e.expr:
     """Function for factoring a short intermediate, i.e., an intermediate that
        consists of a single term."""
 
@@ -177,12 +177,12 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
         tensors = Counter(
             [t.name for t in term.eri.tensors for _ in range(t.exponent)]
         )
+        itmd_tensors = itmd_data['itmd_tensors']
         if any(tensors[t] < count for t, count in itmd_tensors.items()):
             factored_expr += term.expr
             continue
-        term_pattern = term.eri_pattern(include_exponent=False,
-                                        target_idx_string=False)
-        combs = _compare_terms(term, itmd, term_pattern, itmd_pattern)
+        # compare the term and the itmd term
+        combs = _compare_terms(term, itmd, itmd_term_data=itmd_data)
         if not combs:
             factored_expr += term.expr
             continue
@@ -213,7 +213,7 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
         factored_itmd = True
         # can we factor the itmd another time?
         if any(all(i not in obj_i for i in set(d['obj_i'])) for d in combs):
-            term = _factor_short_intermediate(term, itmd, itmd_pattern,
+            term = _factor_short_intermediate(term, itmd, itmd_data,
                                               itmd_instance).sympy
         factored_expr += term
     # if we found the itmd and it is symmetric -> add to the sym_tensors set
@@ -380,7 +380,7 @@ def _compare_obj(obj: e.obj, itmd_obj: e.obj, obj_coupl: list[str],
             sub_list.append((dict(zip(swapped_idx, obj_idx)), 1))
     # account for the symmetry of the itmd_obj -> try all perms
     if itmd_obj_sym is None:
-        itmd_obj_sym = e.expr(itmd_obj.sympy).terms[0].symmetry()
+        itmd_obj_sym = itmd_obj.symmetry()
     for perms, factor in itmd_obj_sym.items():
         for base in permute_base:
             for p, q in perms:  # permute the base indices
@@ -391,8 +391,8 @@ def _compare_obj(obj: e.obj, itmd_obj: e.obj, obj_coupl: list[str],
 
 
 def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
-                       eri_pattern: dict = None,
-                       itmd_eri_pattern: dict = None) -> list:
+                       term_data: dict = None,
+                       itmd_term_data: dict = None) -> list:
     """Compare the eri parts of two terms and return the substitutions
            that are necessary to transform the itmd_eri."""
     from sympy import Mul
@@ -401,29 +401,34 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
     # eri part of the itmd (prefactors are separated!)
     if len(itmd_term.eri) > len(term.eri):
         return []
-    # generate pattern if not provided
-    if eri_pattern is None:
-        eri_pattern = term.eri_pattern(include_exponent=False,
-                                       target_idx_string=False)
-    if itmd_eri_pattern is None:
-        itmd_eri_pattern = itmd_term.eri_pattern(include_exponent=False,
-                                                 target_idx_string=False)
     objects = term.eri.objects
+    # generate term_data if not provided
+    if term_data is None:
+        term_data = {}
+    if (pattern := term_data.get('pattern')) is None:
+        pattern = term.eri_pattern(include_exponent=False,
+                                   target_idx_string=False)
+    if (indices := term_data.get('indices')) is None:
+        indices = [o.idx for o in objects]
+    # generate itmd_data if not provided
     itmd_objects = itmd_term.eri.objects
-    itmd_indices = [o.idx for o in itmd_objects]
-    itmd_obj_sym = [
-        e.expr(o.sympy).terms[0].symmetry() for o in itmd_objects
-    ]
+    if itmd_term_data is None:
+        itmd_term_data = {}
+    if (itmd_pattern := itmd_term_data.get('itmd_pattern')) is None:
+        itmd_pattern = itmd_term.eri_pattern(include_exponent=False,
+                                             target_idx_string=False)
+    if (itmd_indices := itmd_term_data.get('itmd_indices')) is None:
+        itmd_indices = [o.idx for o in itmd_objects]
+    if (itmd_obj_sym := itmd_term_data.get('itmd_obj_sym')) is None:
+        itmd_obj_sym = [o.symmetry() for o in itmd_objects]
     # compare the objects in both terms and collect the necessary
     # substitutions to map the objects onto each other
     matches = {}
-    for obj_i, (descr, coupl) in eri_pattern.items():
-        obj = objects[obj_i]
-        kwargs = {'obj': obj, 'obj_idx': obj.idx, 'obj_descr': descr,
+    for (obj_i, (descr, coupl)), obj in zip(pattern.items(), objects):
+        kwargs = {'obj': obj, 'obj_idx': indices[obj_i], 'obj_descr': descr,
                   'obj_coupl': coupl}
-        for itmd_obj_i, (itmd_descr, itmd_coupl) in \
-                itmd_eri_pattern.items():
-            itmd_obj = itmd_objects[itmd_obj_i]
+        for (itmd_obj_i, (itmd_descr, itmd_coupl)), itmd_obj in \
+                zip(itmd_pattern.items(), itmd_objects):
             itmd_idx = itmd_indices[itmd_obj_i]
             itmd_sym = itmd_obj_sym[itmd_obj_i]
             kwargs.update({'itmd_obj': itmd_obj, 'itmd_obj_idx': itmd_idx,
@@ -488,7 +493,8 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
 
 
 def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
-                   eri_pattern: dict = None, itmd_eri_pattern: dict = None) -> list: # noqa E501
+                   term_data: dict = None,
+                   itmd_term_data: dict = None) -> list: # noqa E501
     """Compare two terms and return a substitution dict that makes the
         itmd_term equal to the term. Also the indices of the objects in the
         eri part and the denominator that match the intermediate's objects
@@ -497,8 +503,8 @@ def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
     # if the itmd term has a denom -> the term also needs to have one
     if not itmd_term.denom.sympy.is_number and term.denom.sympy.is_number:
         return []
-    eri_combs = _compare_eri_parts(term, itmd_term, eri_pattern=eri_pattern,
-                                   itmd_eri_pattern=itmd_eri_pattern)
+    eri_combs = _compare_eri_parts(term, itmd_term, term_data=term_data,
+                                   itmd_term_data=itmd_term_data)
     # was not possible to map the eri parts onto each other
     if not eri_combs:
         return []

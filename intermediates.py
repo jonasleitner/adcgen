@@ -305,12 +305,11 @@ class registered_intermediate:
             max_order = max((term.order for term in expr.terms))
         if max_order < self.order:  # the order of the itmd is to high
             return expr
-        # if we want to factor a t_amplitude -> do we have any denom?
-        # all t_amplitudes need to have a denom, if they have not been
-        # factored already
+        # try to reduce the number of terms that can be factored
         to_factor = e.expr(0, **expr.assumptions)
         remainder = e.expr(0, **expr.assumptions)
         if self.itmd_type == 't_amplitude':
+            # only necessary to consider terms with an denominator
             for term in expr.terms:
                 if any(o.exponent < 0 and o.contains_only_orb_energies
                        for o in term.objects):  # do we have a denominator?
@@ -319,8 +318,7 @@ class registered_intermediate:
                     remainder += term
         else:  # TODO: add some additional prescreening?
             to_factor = expr
-        # do we have sth to factor
-        if to_factor.sympy is S.Zero:
+        if to_factor.sympy is S.Zero:  # don't have anything to factor
             return expr
         # prepare the intermediate before factorization
         itmd_expr = self._prepare_itmd(factored_itmds=factored_itmds,
@@ -328,20 +326,25 @@ class registered_intermediate:
         # extract data from the intermediate
         itmd: list[eri_orbenergy] = [eri_orbenergy(term).canonicalize_sign()
                                      for term in itmd_expr.terms]
-        itmd_pattern: list[dict] = []
-        itmd_tensors: list[Counter] = []
+        itmd_data: list[dict] = []
         for term in itmd:
-            itmd_pattern.append(term.eri_pattern(include_exponent=False,
-                                                 target_idx_string=False))
-            itmd_tensors.append(Counter([t.name for t in term.eri.tensors
-                                         for _ in range(t.exponent)]))
+            itmd_pattern = term.eri_pattern(include_exponent=False,
+                                            target_idx_string=False)
+            itmd_tensors = Counter([t.name for t in term.eri.tensors
+                                    for _ in range(t.exponent)])
+            itmd_indices = [o.idx for o in term.eri.objects]
+            itmd_obj_sym = [o.symmetry() for o in term.eri.objects]
+            itmd_data.append({'itmd_pattern': itmd_pattern,
+                              'itmd_tensors': itmd_tensors,
+                              'itmd_indices': itmd_indices,
+                              'itmd_obj_sym': itmd_obj_sym})
         # actually factor the expression
         if len(itmd) == 1:  # short intermediate -> only a single term
             itmd: eri_orbenergy = itmd[0]
             itmd_pattern: dict = itmd_pattern[0]
             itmd_tensors: Counter = itmd_tensors[0]
-            expr = _factor_short_intermediate(to_factor, itmd, itmd_pattern,
-                                              itmd_tensors, self)
+            itmd_data: dict = itmd_data[0]
+            expr = _factor_short_intermediate(to_factor, itmd, itmd_data, self)
             expr += remainder.sympy
         else:  # long intermediate -> multiple terms
             # create a map that connects terms that can be mapped onto
@@ -349,7 +352,7 @@ class registered_intermediate:
             itmd_term_map, unmapped_itmd_terms = self.itmd_term_map(itmd_expr)
             for _ in range(max_order // self.order):
                 to_factor = _factor_long_intermediate(
-                    to_factor, itmd, itmd_pattern, itmd_tensors, itmd_term_map,
+                    to_factor, itmd, itmd_data, itmd_term_map,
                     unmapped_itmd_terms, self
                 )
             expr = to_factor + remainder.sympy
