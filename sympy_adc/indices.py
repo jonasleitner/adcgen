@@ -302,10 +302,16 @@ def get_symbols(idx):
 
 def sort_idx_canonical(s):
     """Function that can be used as key to bring indices in canonical order."""
-    return (index_space(s.name)[0], int(s.name[1:]) if s.name[1:] else 0,
-            s.name[0])
+    if isinstance(s, Dummy):
+        return (index_space(s.name)[0], int(s.name[1:]) if s.name[1:] else 0,
+                s.name[0])
+    else:  # necessary for subs to work with antisym tensor
+        return ('',)
 
 
 def sort_idx(s):
     """Function that can be used as key to sort indices."""
-    return (int(s.name[1:]) if s.name[1:] else 0, s.name)
+    if isinstance(s, Dummy):
+        return (int(s.name[1:]) if s.name[1:] else 0, s.name)
+    else:
+        return (0, '')
