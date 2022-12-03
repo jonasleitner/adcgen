@@ -1,11 +1,9 @@
 from .indices import get_symbols, index_space
 from .misc import Inputerror, Singleton
 import sympy_adc.expr_container as e
-from .simplify import make_real
 from .eri_orbenergy import eri_orbenergy
-from .sympy_objects import NonSymmetricTensor
+from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
 
-from sympy.physics.secondquant import AntiSymmetricTensor
 from sympy import S, Dummy
 
 
@@ -175,11 +173,6 @@ class registered_intermediate:
         del sym
         # now that we have found all relevant permutations: apply them to
         # each term and check if the result gives another term
-        is_zero = {
-            True: lambda x: make_real(x, *x.sym_tensors).sympy is S.Zero,
-            False: lambda x: x.sympy is S.Zero
-        }
-        is_zero = is_zero[itmd.real]
         itmd_terms = itmd.terms
         unmapped_terms = [i for i in range(len(itmd_terms))]
         itmd_term_indices = unmapped_terms.copy()
@@ -189,10 +182,10 @@ class registered_intermediate:
                 perm_term = itmd_terms[i].permute(*perms)
                 other_term = itmd_terms[other_i]
                 factor = None
-                if is_zero(perm_term + other_term):
+                if perm_term.sympy + other_term.sympy is S.Zero:
                     # P_pq X + (- P_pq X) = 0
                     factor = -1
-                elif is_zero(perm_term - other_term):
+                elif perm_term.sympy - other_term.sympy is S.Zero:
                     # P_pq X - (+ P_pq X) = 0
                     factor = 1
                 else:
@@ -423,7 +416,6 @@ class t2_1(registered_intermediate):
         t2_eri_descr = t2_eri.description(include_exponent=False)
         t2_eri_idx = t2_eri.idx
         t2_eri_sym = e.expr(t2_eri.sympy).terms[0].symmetry()
-        t2_pref = t2.pref * -1 if t2_eri.sign_change else t2.pref
 
         substituted_expr = e.expr(0, **expr.assumptions)
         for term in expr.terms:
@@ -455,12 +447,8 @@ class t2_1(registered_intermediate):
                         target = self._determine_target_idx(sub)
                         # construct the t2 ampltude and multiply to the result
                         itmd = self.tensor(indices=target).sympy
-                        # cancelled eri in canonical form do we need to change
-                        # the sign to bring it in this form?
-                        if eri.sign_change:
-                            itmd *= -1
                         # adjust the final pref (sign) for factoring the itmd
-                        pref /= t2_pref
+                        pref /= t2.pref
                         substituted_term *= itmd
             # remove the matched eri
             denom = term.cancel_denom_brakets(denom_indices)
@@ -600,7 +588,7 @@ class p0_2_oo(registered_intermediate):
     def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
         idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
         i, j = idx
-        p0 = AntiSymmetricTensor('p2', (i,), (j,))
+        p0 = AntiSymmetricTensor('p2', (i,), (j,), 1)
         return e.expr(p0, sym_tensors=["p2"])
 
 
@@ -637,7 +625,7 @@ class p0_2_vv(registered_intermediate):
     def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
         idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
         a, b = idx
-        p0 = AntiSymmetricTensor('p2', (a,), (b,))
+        p0 = AntiSymmetricTensor('p2', (a,), (b,), 1)
         return e.expr(p0, sym_tensors=["p2"])
 
 

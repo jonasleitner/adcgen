@@ -298,20 +298,3 @@ def get_symbols(idx):
     else:
         raise Inputerror("Indices need to be provided as string or a list "
                          "of sympy Dummy objects.")
-
-
-def sort_idx_canonical(s):
-    """Function that can be used as key to bring indices in canonical order."""
-    if isinstance(s, Dummy):
-        return (index_space(s.name)[0], int(s.name[1:]) if s.name[1:] else 0,
-                s.name[0])
-    else:  # necessary for subs to work with antisym tensor
-        return ('',)
-
-
-def sort_idx(s):
-    """Function that can be used as key to sort indices."""
-    if isinstance(s, Dummy):
-        return (int(s.name[1:]) if s.name[1:] else 0, s.name)
-    else:
-        return (0, '')

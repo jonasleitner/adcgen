@@ -396,7 +396,7 @@ class intermediate_states:
     def amplitude_vector(self, indices, lr="right"):
         """Returns an amplitude vector using the provided indices.
            """
-        from sympy.physics.secondquant import AntiSymmetricTensor
+        from .sympy_objects import AntiSymmetricTensor
 
         validate_input(indices=indices, lr=lr)
 

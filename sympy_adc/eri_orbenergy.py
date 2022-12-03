@@ -100,8 +100,7 @@ class eri_orbenergy:
            (description, coupling)."""
         descriptions = [o.description(include_exponent=include_exponent)
                         for o in self.eri.objects]
-        coupling = self.eri.coupling(target_idx_string=target_idx_string,
-                                     descriptions=descriptions)
+        coupling = self.eri.coupling(target_idx_string=target_idx_string)
         return {i: (descr, coupling.get(i))
                 for i, descr in enumerate(descriptions)}
 

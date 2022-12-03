@@ -1,6 +1,5 @@
 import sympy_adc.expr_container as e
 from .misc import Inputerror
-from .simplify import make_real
 from .eri_orbenergy import eri_orbenergy
 from sympy import S
 from collections import Counter
@@ -67,11 +66,10 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                                           itmd_term_data=itmd_term_data)
             found_remainders = {}  # collect all found remainders
             for term_data in combinations:
-                obj_i = term_data['obj_i']
-                denom_i = term_data['denom_i']
                 # extract the remainder that remains after factoring the itmd
                 # excluding the prefactor that has to be added manually
-                remainder: e.expr = _remainder(term, obj_i, denom_i)
+                remainder: e.expr = _remainder(term, term_data['obj_i'],
+                                               term_data['denom_i'])
                 # determine the minimal target indices of the itmd to factor
                 minimized = itmd_instance._minimal_itmd_indices(
                     remainder, term_data['sub'], itmd_term_map
@@ -91,7 +89,7 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                         continue
                     found_remainders[idx_str].append(remainder)
                 factor *= term_data['factor']
-                pref = _determine_prefactor(term, itmd_term, obj_i, factor)
+                pref = _determine_prefactor(term, itmd_term, factor)
                 if itmd_term_i in unmapped_itmd_terms:
                     matching_itmd_terms = [itmd_term_i]
                 else:
@@ -205,8 +203,7 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
         remainder, idx, factor, _ = itmd_instance._minimal_itmd_indices(
             remainder, term_data['sub'], {}
         )
-        pref = _determine_prefactor(term, itmd, obj_i,
-                                    factor*term_data['factor'])
+        pref = _determine_prefactor(term, itmd, factor*term_data['factor'])
         # print(f"\nFacoring {term} to ", end='')
         term = remainder * pref * itmd_instance.tensor(indices=idx).sympy
         # print(term)
@@ -239,25 +236,15 @@ def _remainder(term: eri_orbenergy, obj_i: list[int], denom_i: list[int]) -> e.e
 
 
 def _determine_prefactor(term: eri_orbenergy, itmd_term: eri_orbenergy,
-                         obj_i: list[int], factor=None):
+                         factor=None):
     """Determines the prefactor of the resulting term after the itmd has been
        factored."""
     if factor is None:
         factor = 1
-    # print(f"{factor=}")
     # Because the symmetry of the itmd objects is now already taken into
     # account during object comparison, it is not necessary to adjust the
     # prefactor of the itmd here!
-    itmd_term_pref = -1 * itmd_term.pref if itmd_term.eri.sign_change else \
-        itmd_term.pref
-    obj: list[e.obj] = term.eri.objects
-    sign_change = False
-    for i in set(obj_i):
-        sign_change = not sign_change if obj[i].sign_change else sign_change
-    term_pref = term.pref * -1 if sign_change else term.pref
-    # print(f"{term_pref = }")
-    # print(f"{itmd_term_pref = }")
-    return term_pref * factor / itmd_term_pref
+    return term.pref * factor / itmd_term.pref
 
 
 def _map_on_other_terms(term_i: int, remainder: e.expr, idx: list, pref,
@@ -371,7 +358,7 @@ def _compare_obj(obj: e.obj, itmd_obj: e.obj, obj_coupl: list[str],
     sub_list = [(dict(zip(itmd_obj_idx, obj_idx)), 1)]
     # do we have a diagonal block of a symmetric tensor?
     # (ijkl vs klij / iajb vs jbia)
-    if itmd_obj.symmetric:
+    if itmd_obj.bra_ket_sym is not S.Zero:
         space = "".join(index_space(s.name)[0] for s in itmd_obj_idx)
         n = len(space) // 2  # has to have an even amount of indices
         if space[:n] == space[n:]:  # diagonal block
@@ -468,11 +455,6 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
                 factor = factor * additional_factor
                 temp.append((idx_list, sub, factor))
         combs = temp
-    is_zero = {
-        True: lambda expr: make_real(expr, *term.eri.sym_tensors).sympy is S.Zero,  # noqa E501
-        False: lambda expr: expr is S.Zero
-    }
-    is_zero = is_zero[term.eri.real]
     # check which of the found combinations is valid
     valid = []
     for obj_indices, sub, factor in combs:
@@ -487,7 +469,7 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
         # substitutions). Only the prefactor arising from the permutations
         # (introduced above) is relevant.
         sub_itmd *= sub_itmd.terms[0].prefactor
-        if is_zero(relevant_obj-sub_itmd.sympy):
+        if relevant_obj-sub_itmd.sympy is S.Zero:
             valid.append((obj_indices, sub, sub_itmd.terms[0], factor))
     return valid
 
@@ -544,12 +526,7 @@ def _compare_remainder(remainder: eri_orbenergy, indices: list,
     """Compare the two remainders."""
 
     # very quick check if the remainders are already equal
-    is_zero = {
-        True: lambda x: make_real(x, *x.sym_tensors).sympy is S.Zero,
-        False: lambda x: x.sympy is S.Zero
-    }
-    is_zero = is_zero[remainder.eri.real]
-    if is_zero(remainder.expr - ref_remainder.expr):
+    if remainder.expr.sympy - ref_remainder.expr.sympy is S.Zero:
         return 1
     # compare the remainder (eri and denoms).
     # Try to map remainder on ref_remainder
@@ -575,17 +552,13 @@ def _compare_remainder(remainder: eri_orbenergy, indices: list,
         sub_remainder = (
             comb['sub_itmd_eri'] * comb['factor'] * sub_num / sub_denom
         )
-        # sub_remainder = \
-        #     remainder.expr.subs(sub, simultaneous=True) * comb['factor']
-        if remainder.eri.sign_change:
-            sub_remainder *= -1
         # the remainder are identical
-        if is_zero(sub_remainder - ref_remainder.expr):
+        if sub_remainder.sympy - ref_remainder.expr.sympy is S.Zero:
             return 1
         # alternatively the remainder can be identical up to a factor of -1
         # try to find an exact match, but also test for this
         # if they agree up to a factor of -1 the prefactor has to be adjusted!
         elif not mapped_with_sign_change and \
-                is_zero(sub_remainder + ref_remainder.expr):
+                sub_remainder.sympy + ref_remainder.expr.sympy is S.Zero:
             mapped_with_sign_change = True
     return -1 if mapped_with_sign_change else None

@@ -13,7 +13,7 @@ def by_delta_types(expr):
     ret = {}
     for term in expr.terms:
         d_spaces = tuple(sorted([o.space for o in term.deltas
-                         for i in range(o.exponent)]))
+                         for _ in range(o.exponent)]))
         if not d_spaces:
             d_spaces = ('none',)
         if d_spaces not in ret:
@@ -30,7 +30,7 @@ def by_delta_indices(expr):
         expr = e.expr(expr)
     ret = {}
     for term in expr.terms:
-        d_idx = [o.idx for o in term.deltas for i in range(o.exponent)]
+        d_idx = [o.idx for o in term.deltas for _ in range(o.exponent)]
         for i, d in enumerate(d_idx):
             d_idx[i] = "".join([s.name for s in d])
         d_idx = tuple(sorted(d_idx))
@@ -58,9 +58,8 @@ def by_tensor_block(expr, t_string, symmetric=False):
         sym_tensors.add(t_string)
         expr.set_sym_tensors(sym_tensors)
     elif not symmetric and t_string in expr.sym_tensors:
-        sym_tensors = expr.sym_tensors
-        sym_tensors.remove(t_string)
-        expr.set_sym_tensors(sym_tensors)
+        raise Inputerror("Tensor is set as symmetric in the expression, "
+                         "but symmetric is not set in the function.")
 
     ret = {}
     for term in expr.terms:

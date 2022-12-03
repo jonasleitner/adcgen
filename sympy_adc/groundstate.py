@@ -1,7 +1,8 @@
 from sympy import Rational, latex, sympify, Mul, S
-from sympy.physics.secondquant import AntiSymmetricTensor, NO, F, Fd, wicks
+from sympy.physics.secondquant import NO, F, Fd, wicks
 from math import factorial
 
+from .sympy_objects import AntiSymmetricTensor
 from .indices import indices, n_ov_from_space
 from .misc import (cached_member, cached_property, Inputerror,
                    process_arguments, transform_to_tuple, validate_input)

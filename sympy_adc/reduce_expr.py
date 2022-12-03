@@ -84,15 +84,10 @@ def reduce_expr(expr):
 
 
 def factor_eri(expr, real=False):
-    from .simplify import make_real, find_compatible_terms
+    from .simplify import find_compatible_terms
+
     terms = [eri_orbenergy(term) for term in expr.terms]
     eris = [term.eri for term in terms]
-
-    is_zero = {
-        True: lambda x: make_real(x, *x.sym_tensors).sympy is S.Zero,
-        False: lambda x: x.sympy is S.Zero
-    }
-    is_zero = is_zero[real]
 
     # check for equal eri without permuting indices
     equal_eri = {}
@@ -106,7 +101,7 @@ def factor_eri(expr, real=False):
             if other_i in matched:
                 continue
             # if real is given, use make real to also cover <ab||ij> = <ij||ab>
-            if is_zero(eri - other_eri):
+            if eri.sympy - other_eri.sympy is S.Zero:
                 matched.add(other_i)
                 equal_eri[i].append(other_i)
 
@@ -135,7 +130,7 @@ def factor_eri(expr, real=False):
                 terms[other_i].expr.subs(sub, simultaneous=True)
             )
             # double check that the current pattern is sufficient
-            if not is_zero(eri - term.eri):
+            if not eri.sympy - term.eri.sympy is S.Zero:
                 raise RuntimeError(f"The substitutions {sub} are not "
                                    f"sufficient to make {eris[other_i]} "
                                    f"equal to {eri}.")
