@@ -68,7 +68,7 @@ class eri_orbenergy:
         return self.__pref
 
     @property
-    def denom_brakets(self):  # list that contains the individual brakets
+    def denom_brakets(self) -> list[e.polynom] | list[e.expr]:
         return self.denom.terms[0].objects if len(self.denom) == 1 else \
             [self.denom]
 
@@ -158,11 +158,11 @@ class eri_orbenergy:
         ret = {}
         for perms, factor in self.eri.symmetry(**kwargs).items():
             perm_denom = self.denom.copy().permute(*perms)
-            if (self.denom - perm_denom).sympy is S.Zero:
+            if self.denom.sympy - perm_denom.sympy is S.Zero:
                 denom_factor = +1
-            elif (self.denom + perm_denom).sympy is S.Zero:
+            elif self.denom.sympy + perm_denom.sympy is S.Zero:
                 denom_factor = -1
-            else:
+            else:  # permutation changes the denominator
                 ret[perms] = None
                 continue
             ret[perms] = factor * denom_factor
@@ -200,9 +200,9 @@ class eri_orbenergy:
             for term in expr.terms:
                 idx = term.idx
                 if len(idx) != 1:
-                    raise RuntimeError("Expected a braket to consist of 1 "
-                                       " epsilon that holds a single index. "
-                                       f"Found: {term} in {expr}.")
+                    raise RuntimeError("Expected a braket to consist of "
+                                       "epsilons that each hold a single index"
+                                       f". Found: {term} in {expr}.")
                 ov = index_space(idx[0].name)[0]
                 if ov not in signs:
                     signs[ov] = []
@@ -241,7 +241,7 @@ class eri_orbenergy:
                     else:
                         exponent = braket.exponent
                         base = braket.extract_pow
-                    if exponent % 2 != 0:
+                    if exponent % 2:
                         self.__pref *= -1
                     braket = e.expr(Pow(-1*base, exponent),
                                     **braket.assumptions)
@@ -249,7 +249,7 @@ class eri_orbenergy:
             self.__denom = denom
         return self
 
-    def cancel_orb_energy_frac(self):
+    def cancel_orb_energy_frac(self) -> e.expr:
         """Try to cancel numerator and denominator."""
         from collections import Counter
         # - canonicalize the sign, i.e. all occ orbital energies are added and
@@ -292,16 +292,12 @@ class eri_orbenergy:
                 # construct new num by subtracting the braket that is canceled
                 new_num = num - to_subtract
                 # construct the new denominator:
-                #   exponent = 1 -> remove braket from denom
-                if exponent == 1:
-                    new_denom = [bk for j, bk in enumerate(denom) if j != i]
-                #   or lower the exponent of the braket by 1 in new_denom
-                else:
+                new_denom = denom[:i] + denom[i+1:]  # remove braket from denom
+                if exponent != 1:  # just lower the exponent by 1
                     new_braket = e.expr(
                         Pow(braket.extract_pow, braket.exponent - 1),
                         **braket.assumptions
                     )
-                    new_denom = denom.copy()
                     new_denom[i] = new_braket
                 # build the new denom also as expr (currently it's a list)
                 new_denom_expr = e.compatible_int(1)

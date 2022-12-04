@@ -14,7 +14,6 @@ def reduce_expr(expr):
 
     if not isinstance(expr, e.expr):
         raise Inputerror(f"Expr to reduce needs to be an instance of {e.expr}")
-    real = expr.real
     assumptions = expr.assumptions
     # 1) Insert the canonical orbital basis (only diagonal Fock matrix elements
     #    remain)
@@ -43,7 +42,7 @@ def reduce_expr(expr):
     #    contracted indices that allow to factor the eri remainder.
     print("Factoring ERI... ", end='')
     start = time.perf_counter()
-    expr = factor_eri(expr, real)
+    expr = factor_eri(expr)
     print(f"Found {len(expr)} different ERI structures. "
           f"Took {time.perf_counter()-start:.3f} seconds.")
 
@@ -53,10 +52,8 @@ def reduce_expr(expr):
     #    multiple terms in the numerator
     print("Factoring denominators... ", end='')
     start = time.perf_counter()
-    expr = [
-        factored.factor() for factored in
-        chain.from_iterable((factor_denom(sub_expr) for sub_expr in expr))
-    ]
+    expr = chain.from_iterable((factor_denom(sub_expr) for sub_expr in expr))
+    expr = [factored.factor() for factored in expr]
     if any(len(factored) != 1 for factored in expr):
         raise RuntimeError("Expected all subexpressions to be of length 1 "
                            "after factorization.")
@@ -83,139 +80,135 @@ def reduce_expr(expr):
     return reduced
 
 
-def factor_eri(expr, real=False):
+def factor_eri(expr: e.expr) -> list[e.expr]:
+    """Factors the eri's of an expression."""
+    from itertools import combinations
     from .simplify import find_compatible_terms
 
-    terms = [eri_orbenergy(term) for term in expr.terms]
-    eris = [term.eri for term in terms]
+    if len(expr) == 1:  # trivial case
+        return [expr]
+
+    terms: list[eri_orbenergy] = [eri_orbenergy(term) for term in expr.terms]
+    eris: list[e.term] = [term.eri for term in terms]
 
     # check for equal eri without permuting indices
-    equal_eri = {}
-    matched = set()
-    for i, eri in enumerate(eris):
-        if i in matched:
+    equal_eri: dict[int, list[int]] = {}
+    matched: set = set()
+    for (i, eri), (other_i, other_eri) in combinations(enumerate(eris), 2):
+        if i in matched or other_i in matched:
             continue
-        matched.add(i)
-        equal_eri[i] = []
-        for other_i, other_eri in enumerate(eris):
-            if other_i in matched:
-                continue
-            # if real is given, use make real to also cover <ab||ij> = <ij||ab>
-            if eri.sympy - other_eri.sympy is S.Zero:
-                matched.add(other_i)
-                equal_eri[i].append(other_i)
+        if i not in equal_eri:
+            equal_eri[i] = []
+        if eri.sympy - other_eri.sympy is S.Zero:  # eri are equal!
+            equal_eri[i].append(other_i)
+            matched.add(other_i)
 
-    # try to match more eri by applying index permutations (only contracted
-    # indices)
+    if len(equal_eri) == 1:  # trivial case: all eris are equal
+        i, matches = next(iter(equal_eri.items()))
+        ret = terms[i].expr
+        for match in matches:
+            ret += terms[match].expr
+        return [ret]
+
+    # try to match more eris by permuting contracted indices
     # only treat the unique eri structures (the keys in the equal eri dict)
-    # the keys should be automatically sorted, since the outer loop
-    # inserts them one after another in ascending order
-    unique_eri_idx = list(equal_eri.keys())
-    unique_eri = [eris[i] for i in unique_eri_idx]
-    matching_eri = find_compatible_terms(unique_eri)
+    unique_eri_idx: list[int] = list(equal_eri.keys())
+    unique_eri: list[e.term] = [eris[i] for i in unique_eri_idx]
+    compatible_eri = find_compatible_terms(unique_eri)
 
-    # add all terms up and substitute if necessary. Use exactly the same eri
-    # for all terms, because they might still differ by bra/ket permutations.
-    ret = []
+    # add all terms up and substitute if necessary.
+    ret: list[e.expr] = []
     matched = set()
-    for unique_i, compatible in matching_eri.items():
+    for unique_i, compatible in compatible_eri.items():
         i = unique_eri_idx[unique_i]
         matched.add(i)
         temp = terms[i].expr
-        eri = eris[i]
+        for matches in equal_eri[i]:  # add all terms with equal eri
+            temp += terms[matches].expr
+        del equal_eri[i]
+        # apply the found sub dicts to make more eri identical
         for other_unique_i, sub in compatible.items():
             other_i = unique_eri_idx[other_unique_i]
             matched.add(other_i)
-            term = eri_orbenergy(
-                terms[other_i].expr.subs(sub, simultaneous=True)
-            )
-            # double check that the current pattern is sufficient
-            if not eri.sympy - term.eri.sympy is S.Zero:
-                raise RuntimeError(f"The substitutions {sub} are not "
-                                   f"sufficient to make {eris[other_i]} "
-                                   f"equal to {eri}.")
-            # use the eri of the parent term to ensure that all terms
-            # have exactly the same eri
-            temp += term.num * term.pref / term.denom * eri
-            # also sub all other identical terms
-            for other_matches in equal_eri[other_i]:
-                term = eri_orbenergy(
-                    terms[other_matches].expr.subs(sub, simultaneous=True)
-                )
-                temp += term.num * term.pref / term.denom * eri
-        for matches in equal_eri[i]:
-            term = terms[matches]
-            temp += term.num * term.pref / term.denom * eri
+            temp += terms[other_i].expr.subs(sub, simultaneous=True)
+            for matches in equal_eri[other_i]:  # sub all terms with equal eri
+                temp += terms[matches].expr.subs(sub, simultaneous=True)
+            del equal_eri[other_i]
         ret.append(temp)
-    # add up and append terms for which no additional compatible terms could be
-    # found through index substitution
+    # add up and append terms with eris that could not be mapped onto another
+    # eris by applyig index permutations
     for i, equal in equal_eri.items():
-        if i in matched:
-            continue
         temp = terms[i].expr
-        eri = eris[i]
-        for other_i in equal:
-            term = terms[other_i]
-            temp += term.num * term.pref / term.denom * eri
+        for matches in equal:
+            temp += terms[matches].expr
         ret.append(temp)
     return ret
 
 
-def factor_denom(expr):
-    """Factor denominators."""
-    splitted = [eri_orbenergy(term) for term in expr.terms]
+def factor_denom(expr: e.expr) -> list[e.expr]:
+    """Factor the orbital energy denominators of an expr."""
+    from itertools import combinations
+
+    if len(expr) == 1:  # trivial case
+        return [expr]
+
+    terms: list[eri_orbenergy] = [eri_orbenergy(term) for term in expr.terms]
 
     # check which denoms are equal (should be exactly equal already)
     # denom signs should for doubles, singles etc equal in all terms, though
     # singles should have i-a, while doubles have a+b-i-j
-    equal = {}
-    matched = set()
-    for i, term in enumerate(splitted):
-        if i in matched:
+    equal_denom: dict[int, list[int]] = {}
+    matched: set = set()
+    for (i, term), (other_i, other_term) in combinations(enumerate(terms), 2):
+        if i in matched or other_i in matched:
             continue
-        matched.add(i)
-        equal[i] = []
-        for other_i, other_term in enumerate(splitted):
-            if other_i in matched:
-                continue
-            if term.denom == other_term.denom:
-                matched.add(other_i)
-                equal[i].append(other_i)
-    # now after finding all identical denoms -> try to find more by applying
-    # permutations that satisfy
-    # P_pq ERI = +- ERI AND NOT P_pq Denom = +- Denom
+        if i not in equal_denom:
+            equal_denom[i] = []
+        if term.denom == other_term.denom:
+            matched.add(other_i)
+            equal_denom[i].append(other_i)
+
+    if len(equal_denom) == 1:  # trivial case: all denoms are equal
+        i, matches = next(iter(equal_denom.items()))
+        ret = terms[i].expr
+        for match in matches:
+            ret += terms[match].expr
+        return [ret]
+
+    # try to find more equal denominators by applying permutations that satisfy
+    # P_pq ERI = +- ERI AND NOT (!) P_pq Denom = +- Denom
     permutations = {}
-    for unique_denom in equal:
-        term = splitted[unique_denom]
+    for unique_denom in equal_denom:
+        term = terms[unique_denom]
         permutations[unique_denom] = [
             perms for perms, factor in
             term.denom_eri_sym(only_contracted=True).items() if factor is None
         ]
 
-    ret = []
-    matched = set()
-    for unique_denom, matches in equal.items():
+    ret: list[e.expr] = []
+    matched: set = set()
+    for unique_denom, matches in equal_denom.items():
         if unique_denom in matched:
             continue
         matched.add(unique_denom)
-        term = splitted[unique_denom]
-        equal_denom = term.expr
+        term = terms[unique_denom]
+        temp = term.expr
         # add all matches
         for match in matches:
-            equal_denom += splitted[match].expr
+            temp += terms[match].expr
         # iterate over other unique denoms and apply the corresponding perms
-        for other_unique_denom, other_matches in equal.items():
+        for other_unique_denom, other_matches in equal_denom.items():
             if other_unique_denom in matched:
                 continue
-            other_term = splitted[other_unique_denom]
+            other_term = terms[other_unique_denom]
             # check if there is a permutation that makes both denoms equal
             for perms in permutations[other_unique_denom]:
                 if term.denom == other_term.denom.copy().permute(*perms):
                     matched.add(other_unique_denom)
                     # permute the whole term and also all matches
-                    equal_denom += other_term.expr.permute(*perms)
+                    temp += other_term.expr.permute(*perms)
                     for match in other_matches:
-                        equal_denom += splitted[match].expr.permute(*perms)
+                        temp += terms[match].expr.permute(*perms)
                     break
-        ret.append(equal_denom)
+        ret.append(temp)
     return ret

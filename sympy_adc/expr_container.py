@@ -570,6 +570,8 @@ class term(container):
         # list of permutations and their symmetry, +-1
         sym = {'o': {}, 'v': {}}
         for ov, ov_idx in idx.items():
+            if len(ov_idx) < 2:  # trivial case -> need at least two indices
+                continue
             max_n_perms = factorial(len(ov_idx))
             # represent the current indices as a string. All perms
             # will also be applied to the string, in order to
@@ -694,15 +696,19 @@ class term(container):
         objects = self.objects
         positions = [o.crude_pos(target=target) for o in objects]
         coupl = self.coupling(target=target, positions=positions)
-        ret = {'o': {}, 'v': {}}
+        pattern = {'o': {}, 'v': {}}
         for i, pos in enumerate(positions):
             c = f"_{'_'.join(sorted(coupl[i]))}" if i in coupl else None
             for s, ps in pos.items():
                 ov = index_space(s.name)[0]
-                if s not in ret[ov]:
-                    ret[ov][s] = []
-                ret[ov][s].extend([p + c if c else p for p in ps])
-        return ret
+                if s not in pattern[ov]:
+                    pattern[ov][s] = []
+                pattern[ov][s].extend([p + c if c else p for p in ps])
+        # sort pattern to allow for direct comparison
+        for ov, idx_pat in pattern.items():
+            for s, pat in idx_pat.items():
+                pattern[ov][s] = sorted(pat)
+        return pattern
 
     def coupling(self, target=None, positions=None,
                  target_idx_string=True, include_exponent=True):
