@@ -123,8 +123,9 @@ def find_compatible_terms(terms: list[e.term]):
         # - the target indices are places on the same objects
         if n in matched or other_n in matched or \
                 abs(len(terms[n]) - len(terms[other_n])) > 1 or \
-                len(pat['o']) != len(other_pat['o']) or \
-                len(pat['v']) != len(other_pat['v']) or \
+                pat.keys() != other_pat.keys() or \
+                any(len(idx_pat) < len(other_pat[sp])
+                    for sp, idx_pat in pat.items()) or \
                 target[n] != target[other_n] or \
                 tensors[n] != tensors[other_n] or \
                 deltas[n] != deltas[other_n] or \

@@ -538,14 +538,13 @@ class term(container):
 
     def symmetry(self, only_contracted=False, only_target=False):
         """Return a dict with all Symmetric and Antisymmetric Permutations of
-           the term. If only contracted is set to True, only permutations of
+           the term. If only contracted is set, only permutations of
            indices that are contracted in the term are considered. If
            only_target is set, only permutations of target indices are taken
            into account."""
-        from itertools import combinations, permutations, chain
+        from itertools import combinations, permutations, chain, product
         from math import factorial
         from .indices import split_idx_string
-        # TODO: generalize for general indices
 
         def permute_str(string, *perms):
             string = split_idx_string(string)
@@ -571,14 +570,14 @@ class term(container):
             indices = self.idx
 
         # sort indices according to their space. Use list for nice ordering
-        idx = {'o': [], 'v': []}
+        idx = {'o': [], 'v': [], 'g': []}
         for s in indices:
             # in self.idx contracted indices are listed multiple times
             ov = index_space(s.name)[0]
             if s not in idx[ov]:
                 idx[ov].append(s)
         # list of permutations and their symmetry, +-1
-        sym = {'o': {}, 'v': {}}
+        sym = {'o': {}, 'v': {}, 'g': {}}
         for ov, ov_idx in idx.items():
             if len(ov_idx) < 2:  # trivial case -> need at least two indices
                 continue
@@ -614,10 +613,16 @@ class term(container):
                 elif self.sympy - sub.sympy is S.Zero:
                     sym[ov][perms] = +1
         # multiply the occ and virt permutations
-        symmetry = sym['o'] | sym['v']
-        for o_perms, o_sym in sym['o'].items():
-            for v_perms, v_sym in sym['v'].items():
-                symmetry[o_perms + v_perms] = o_sym * v_sym
+        symmetry = sym['o'] | sym['v'] | sym['g']
+        sym = [syms.items() for syms in sym.values() if syms]
+        if len(sym) > 1:
+            for prod in product(*sym):
+                prod_perm = []
+                prod_factor = 1
+                for perms, factor in prod:
+                    prod_perm.extend(perms)
+                    prod_factor *= factor
+                symmetry[tuple(prod_perm)] = prod_factor
         return symmetry
 
     @property
@@ -700,17 +705,19 @@ class term(container):
 
     def pattern(self, target=None):
         """Returns the pattern of the indices in the term."""
-        # TODO: generalize for general indices
+
         if target is None:
             target = self.target
         objects = self.objects
         positions = [o.crude_pos(target=target) for o in objects]
         coupl = self.coupling(target=target, positions=positions)
-        pattern = {'o': {}, 'v': {}}
+        pattern = {}
         for i, pos in enumerate(positions):
             c = f"_{'_'.join(sorted(coupl[i]))}" if i in coupl else None
             for s, ps in pos.items():
                 ov = index_space(s.name)[0]
+                if ov not in pattern:
+                    pattern[ov] = {}
                 if s not in pattern[ov]:
                     pattern[ov][s] = []
                 pattern[ov][s].extend([p + c if c else p for p in ps])
