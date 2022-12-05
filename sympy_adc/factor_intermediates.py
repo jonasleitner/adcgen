@@ -148,9 +148,8 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
     # if we found the itmd and it is symmetric -> add to the sym_tensors set
     if factored_itmd and itmd_instance.symmetric:
         name = itmd_instance.tensor().terms[0].objects[0].name
-        if name not in factored_expr.sym_tensors:
-            sym_tensors = factored_expr.sym_tensors
-            sym_tensors.add(name)
+        if name not in (sym_tensors := factored_expr.sym_tensors):
+            sym_tensors = sym_tensors + (name,)
             factored_expr.set_sym_tensors(sym_tensors)
     return factored_expr
 
@@ -216,9 +215,8 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
     # if we found the itmd and it is symmetric -> add to the sym_tensors set
     if factored_itmd and itmd_instance.symmetric:
         name = itmd_instance.tensor().terms[0].objects[0].name
-        if name not in factored_expr.sym_tensors:
-            sym_tensors: set = factored_expr.sym_tensors
-            sym_tensors.add(name)
+        if name not in (sym_tensors := factored_expr.sym_tensors):
+            sym_tensors = sym_tensors + (name,)
             factored_expr.set_sym_tensors(sym_tensors)
     return factored_expr
 
@@ -285,8 +283,11 @@ def _assign_term_to_itmd(found_intermediates: dict, matching_itmd_terms: list,
     """Assign the term according to the provided data to an intermediate,
        i.e., either start constructing a new one or add to an already
        existing."""
+    rem = data['remainder']
+    idx = data['idx']
+    term_i = data['term']
     # 1) tranform the itmd target indices to string
-    indices = "".join([s.name for s in data['idx']])
+    indices = "".join([s.name for s in idx])
     if indices not in found_intermediates:
         found_intermediates[indices] = []  # create list to hold itmds
     # try to add the term to an existing intermediate
@@ -298,17 +299,15 @@ def _assign_term_to_itmd(found_intermediates: dict, matching_itmd_terms: list,
         #    already
         # also each term can only occur once in each itmd
         if any(found_itmd[i] for i in matching_itmd_terms) or \
-                any(data['term'] == d['term'] for d in found_itmd if d):
+                any(term_i == d['term'] for d in found_itmd if d):
             continue
         # check that all terms share a common remainder
         for d in found_itmd:
             if d:
-                factor = _compare_remainder(remainder=data['remainder'],
-                                            indices=data['idx'],
+                factor = _compare_remainder(remainder=rem, indices=idx,
                                             ref_remainder=d['remainder'])
                 if factor is None:  # remainder are not identical
                     continue
-                # print(f"{factor = }")
                 data['remainder'] = d['remainder']
                 data['pref'] *= factor
                 break
@@ -539,8 +538,7 @@ def _compare_remainder(remainder: eri_orbenergy, indices: list,
                                "applyig any permutations. "
                                "This should have been catched earlier.")
         # add the itmd target indices to the target indices of the remainder
-        target = list(remainder.eri.target)
-        target.extend(indices)
+        target = list(remainder.eri.target) + list(indices)
         # if any of the surviving pairs includes any of the target indices
         # -> not a valid substitution dict
         if any((old in target or new in target) for old, new in sub.items()):

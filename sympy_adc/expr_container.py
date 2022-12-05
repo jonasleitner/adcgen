@@ -17,14 +17,12 @@ class expr(container):
         if isinstance(e, container):
             e = e.sympy
         self.__expr = sympify(e)
-        self.__assumptions = {
-            'real': real,
-            'sym_tensors': set() if sym_tensors is None else set(sym_tensors),
-            'antisym_tensors': (
-                set() if antisym_tensors is None else set(antisym_tensors)
-            ),
-            'target_idx': None
-        }
+        self.__real: bool = real
+        self.__sym_tensors: set = (set() if sym_tensors is None
+                                   else set(sym_tensors))
+        self.__antisym_tensors: set = (set() if antisym_tensors is None
+                                       else set(antisym_tensors))
+        self.__target_idx: None | tuple[Dummy] = None
         if target_idx is not None:
             self.set_target_idx(target_idx)
         if real:  # also calls _apply_tensor_braket_sym()
@@ -48,23 +46,26 @@ class expr(container):
 
     @property
     def assumptions(self) -> dict:
-        return self.__assumptions
+        return {'real': self.real,
+                'sym_tensors': self.sym_tensors,
+                'antisym_tensors': self.antisym_tensors,
+                'target_idx': self.provided_target_idx}
 
     @property
     def real(self) -> bool:
-        return self.__assumptions['real']
+        return self.__real
 
     @property
-    def sym_tensors(self) -> set:
-        return self.__assumptions['sym_tensors']
+    def sym_tensors(self) -> tuple:
+        return tuple(self.__sym_tensors)
 
     @property
-    def antisym_tensors(self) -> set:
-        return self.__assumptions['antisym_tensors']
+    def antisym_tensors(self) -> tuple:
+        return tuple(self.__antisym_tensors)
 
     @property
-    def provided_target_idx(self) -> None | tuple:
-        return self.__assumptions['target_idx']
+    def provided_target_idx(self) -> None | tuple[Dummy]:
+        return self.__target_idx
 
     @property
     def sympy(self):
@@ -83,31 +84,31 @@ class expr(container):
     def terms(self):
         return [term(self, i) for i in range(len(self))]
 
-    def set_sym_tensors(self, sym_tensors):
+    def set_sym_tensors(self, sym_tensors: list[str]) -> None:
         if not all(isinstance(t, str) for t in sym_tensors):
             raise Inputerror("Symmetric tensors need to be provided as str.")
         sym_tensors = set(sym_tensors)
         if self.real:
             sym_tensors.update(['f', 'V'])
-        self.__assumptions['sym_tensors'] = sym_tensors
+        self.__sym_tensors = sym_tensors
         self._apply_tensor_braket_sym()
 
-    def set_antisym_tensors(self, antisym_tensors):
+    def set_antisym_tensors(self, antisym_tensors: list[str]) -> None:
         if not all(isinstance(t, str) for t in antisym_tensors):
             raise Inputerror("Tensors with antisymmetric bra ket symemtry need"
                              "to be provided as string.")
         antisym_tensors = set(antisym_tensors)
-        self.__assumptions['antisym_tensors'] = antisym_tensors
+        self.__antisym_tensors = antisym_tensors
         self._apply_tensor_braket_sym()
 
-    def set_target_idx(self, target_idx):
+    def set_target_idx(self, target_idx: None | list[str | Dummy]) -> None:
         from .indices import get_symbols
         if target_idx is None:
-            self.__assumptions['target_idx'] = None
+            self.__target_idx = None
         else:
-            target_idx = get_symbols(target_idx)
-            self.__assumptions['target_idx'] = tuple(
-                sorted(set(target_idx), key=lambda s:
+            target_idx = set(get_symbols(target_idx))
+            self.__target_idx = tuple(
+                sorted(target_idx, key=lambda s:
                        (int(s.name[1:]) if s.name[1:] else 0, s.name[0]))
             )
 
@@ -119,10 +120,10 @@ class expr(container):
         # need to have the option return_sympy at lower levels, because
         # this function may be called upon instantiation
 
-        self.__assumptions['real'] = True
-        sym_tensors = self.__assumptions['sym_tensors']
+        self.__real = True
+        sym_tensors = self.__sym_tensors
         if 'f' not in sym_tensors or 'V' not in sym_tensors:
-            self.__assumptions['sym_tensors'].update(['f', 'V'])
+            self.__sym_tensors.update(['f', 'V'])
             self._apply_tensor_braket_sym()
         if self.sympy.is_number:
             return self
@@ -158,7 +159,7 @@ class expr(container):
         for term in self.terms:
             diag += term.diagonalize_fock()
         self.__expr = diag.sympy
-        self.__assumptions['target_idx'] = diag.provided_target_idx
+        self.__target_idx = diag.provided_target_idx
         return self
 
     def rename_tensor(self, current, new):
@@ -264,7 +265,8 @@ class expr(container):
     def __iadd__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         elif isinstance(other, Basic):
             other = expr(other, **self.assumptions).sympy
@@ -274,14 +276,16 @@ class expr(container):
     def __add__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy + other, **self.assumptions)
 
     def __isub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         elif isinstance(other, Basic):
             other = expr(other, **self.assumptions).sympy
@@ -291,14 +295,16 @@ class expr(container):
     def __sub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy - other, **self.assumptions)
 
     def __imul__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         elif isinstance(other, Basic):
             other = expr(other, **self.assumptions).sympy
@@ -308,14 +314,16 @@ class expr(container):
     def __mul__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy * other, **self.assumptions)
 
     def __itruediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         elif isinstance(other, Basic):
             other = expr(other, **self.assumptions).sympy
@@ -325,7 +333,8 @@ class expr(container):
     def __truediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy / other, **self.assumptions)
 
@@ -380,11 +389,11 @@ class term(container):
         return self.expr.real
 
     @property
-    def sym_tensors(self) -> set:
+    def sym_tensors(self) -> tuple:
         return self.expr.sym_tensors
 
     @property
-    def antisym_tensors(self) -> set:
+    def antisym_tensors(self) -> tuple:
         return self.expr.antisym_tensors
 
     @property
@@ -466,7 +475,7 @@ class term(container):
     def diagonalize_fock(self, target=None):
         """Transform the term in the canonical basis without loosing any
            information. It might not be possible to determine the
-           target inices in the result according to the einstein sum
+           target indices in the result according to the einstein sum
            convention."""
         if target is None:
             target = self.target
@@ -536,6 +545,7 @@ class term(container):
         from itertools import combinations, permutations, chain
         from math import factorial
         from .indices import split_idx_string
+        # TODO: generalize for general indices
 
         def permute_str(string, *perms):
             string = split_idx_string(string)
@@ -630,11 +640,10 @@ class term(container):
            have been provided to the parent expression, the Einstein sum
            convention will be applied."""
 
-        if self.provided_target_idx is not None:
+        if (target := self.provided_target_idx) is not None:
             return tuple(sorted(
-                [s for s in self.__idx_counter.keys()
-                 if s not in self.provided_target_idx], key=lambda s:
-                (int(s.name[1:]) if s.name[1:] else 0, s.name)
+                [s for s in self.__idx_counter.keys() if s not in target],
+                key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
             ))
         return tuple(sorted(
             [s for s, n in self.__idx_counter.items() if n],
@@ -647,8 +656,8 @@ class term(container):
            have been provided to the parent expression, the Einstein sum
            convention will be applied."""
 
-        if self.provided_target_idx is not None:
-            return self.provided_target_idx
+        if (target := self.provided_target_idx) is not None:
+            return target
         return tuple(sorted(
             [s for s, n in self.__idx_counter.items() if not n],
             key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
@@ -691,6 +700,7 @@ class term(container):
 
     def pattern(self, target=None):
         """Returns the pattern of the indices in the term."""
+        # TODO: generalize for general indices
         if target is None:
             target = self.target
         objects = self.objects
@@ -799,7 +809,8 @@ class term(container):
     def __iadd__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy + other, **self.assumptions)
 
@@ -809,7 +820,8 @@ class term(container):
     def __isub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy - other, **self.assumptions)
 
@@ -819,7 +831,8 @@ class term(container):
     def __imul__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy * other, **self.assumptions)
 
@@ -829,7 +842,8 @@ class term(container):
     def __itruediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy / other, **self.assumptions)
 
@@ -900,11 +914,11 @@ class obj(container):
         return self.expr.real
 
     @property
-    def sym_tensors(self) -> set:
+    def sym_tensors(self) -> tuple:
         return self.expr.sym_tensors
 
     @property
-    def antisym_tensors(self) -> set:
+    def antisym_tensors(self) -> tuple:
         return self.expr.antisym_tensors
 
     @property
@@ -916,7 +930,8 @@ class obj(container):
         return self.obj
 
     def make_real(self, return_sympy=False):
-        """Removes all 'c' in tensor names."""
+        """Removes all 'c' in the names of t-amplitudes."""
+
         if self.type == 'antisym_tensor':
             old = self.name
             new = old.replace('c', '')
@@ -1325,7 +1340,8 @@ class obj(container):
     def __iadd__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy + other, **self.assumptions)
 
@@ -1335,7 +1351,8 @@ class obj(container):
     def __isub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy - other, **self.assumptions)
 
@@ -1345,7 +1362,8 @@ class obj(container):
     def __imul__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy * other, **self.assumptions)
 
@@ -1355,7 +1373,8 @@ class obj(container):
     def __itruediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal.")
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy / other, **self.assumptions)
 
@@ -1384,10 +1403,6 @@ class normal_ordered(obj):
         else:
             return expr(t, real=real, sym_tensors=sym_tensors,
                         antisym_tensors=antisym_tensors, target_idx=target_idx)
-
-    def __init__(self, t, pos=None, real=False, sym_tensors=None,
-                 antisym_tensors=None, target_idx=None):
-        super().__init__(t, pos)
 
     def __len__(self):
         # a NO obj can only contain a Mul object.
@@ -1477,10 +1492,6 @@ class polynom(obj):
         else:
             return expr(t, real=real, sym_tensors=sym_tensors,
                         antisym_tensors=antisym_tensors, target_idx=target_idx)
-
-    def __init__(self, t, pos=None, real=False, sym_tensors=[],
-                 target_idx=None):
-        super().__init__(t, pos)
 
     def __len__(self):
         # has to at least contain 2 terms: a+b
@@ -1623,12 +1634,6 @@ class polynom(obj):
         for term in self.terms:
             renamed += term.rename_tensor(current, new).sympy
         return expr(Pow(renamed, self.exponent), **self.assumptions)
-
-    @property
-    def symmetric(self):
-        # what about the symmetry of a polynom (e.g. the symmetry of the
-        # orbital energy denominator)
-        raise NotImplementedError()
 
     def expand_intermediates(self, target=None):
         target = self.term.target if target is None else target

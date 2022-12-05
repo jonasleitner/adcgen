@@ -14,7 +14,7 @@ def reduce_expr(expr):
 
     if not isinstance(expr, e.expr):
         raise Inputerror(f"Expr to reduce needs to be an instance of {e.expr}")
-    assumptions = expr.assumptions
+
     # 1) Insert the canonical orbital basis (only diagonal Fock matrix elements
     #    remain)
     print("Inserting canonical orbital basis in expression of length "
@@ -60,6 +60,9 @@ def reduce_expr(expr):
     print(f"Found {len(expr)} different ERI/denominator combinations. "
           f"Took {time.perf_counter()-start:.3f} seconds.")
 
+    if not expr:  # ensure that always a expr is returned
+        return e.expr(0)
+
     # 5) permute the orbital energy numerator
     print("Permuting Numerators... ", end='')
     start = time.perf_counter()
@@ -71,7 +74,7 @@ def reduce_expr(expr):
     # 6) Cancel the orbital energy fraction
     print("Cancel denominators... ", end='')
     start = time.perf_counter()
-    reduced = e.expr(0, **assumptions)
+    reduced = e.compatible_int(0)
     for term in expr:
         term = eri_orbenergy(term)
         reduced += term.cancel_orb_energy_frac()

@@ -53,11 +53,10 @@ def by_tensor_block(expr, t_string, symmetric=False):
     if not isinstance(expr, e.expr):
         expr = e.expr(expr)
     # if the tensor is symmetric -> add to symmetric tensors of the expr
-    if symmetric and t_string not in expr.sym_tensors:
-        sym_tensors = expr.sym_tensors
-        sym_tensors.add(t_string)
+    if symmetric and t_string not in (sym_tensors := expr.sym_tensors):
+        sym_tensors = sym_tensors + (t_string,)
         expr.set_sym_tensors(sym_tensors)
-    elif not symmetric and t_string in expr.sym_tensors:
+    elif not symmetric and t_string in sym_tensors:
         raise Inputerror("Tensor is set as symmetric in the expression, "
                          "but symmetric is not set in the function.")
 
