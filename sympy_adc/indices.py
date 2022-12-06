@@ -254,6 +254,7 @@ def get_first_missing_index(idx_list, ov):
                 'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
                 'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}
     ordered_idx = idx_base[ov].copy()
+    # keep sorting in this function!!!
     idx_list = sorted(
         idx_list, key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])
     )

@@ -332,7 +332,6 @@ def _compare_obj(obj: e.obj, itmd_obj: e.obj, obj_coupl: list[str],
     """Compare the two provided objects and return the substitutions as dict
         that are required to transform the itmd_obj."""
     from collections import Counter
-    from .indices import index_space
 
     if obj_descr is None:
         obj_descr = obj.description(include_exponent=False)
@@ -353,26 +352,17 @@ def _compare_obj(obj: e.obj, itmd_obj: e.obj, obj_coupl: list[str],
         obj_idx = obj.idx
     if itmd_obj_idx is None:
         itmd_obj_idx = itmd_obj.idx
-    permute_base = [itmd_obj_idx]
     sub_list = [(dict(zip(itmd_obj_idx, obj_idx)), 1)]
-    # do we have a diagonal block of a symmetric tensor?
-    # (ijkl vs klij / iajb vs jbia)
-    if itmd_obj.bra_ket_sym is not S.Zero:
-        space = "".join(index_space(s.name)[0] for s in itmd_obj_idx)
-        n = len(space) // 2  # has to have an even amount of indices
-        if space[:n] == space[n:]:  # diagonal block
-            swapped_idx = itmd_obj_idx[n:] + itmd_obj_idx[:n]
-            permute_base.append(swapped_idx)
-            sub_list.append((dict(zip(swapped_idx, obj_idx)), 1))
     # account for the symmetry of the itmd_obj -> try all perms
+    # bra_ket symmetry is automaticall accounted for!
     if itmd_obj_sym is None:
         itmd_obj_sym = itmd_obj.symmetry()
     for perms, factor in itmd_obj_sym.items():
-        for base in permute_base:
-            for p, q in perms:  # permute the base indices
-                sub = {p: q, q: p}
-                base = [sub.get(s, s) for s in base]
-            sub_list.append((dict(zip(base, obj_idx)), factor))
+        perm_idx = itmd_obj_idx
+        for p, q in perms:  # permute the indices
+            sub = {p: q, q: p}
+            perm_idx = [sub.get(s, s) for s in perm_idx]
+        sub_list.append((dict(zip(perm_idx, obj_idx)), factor))
     return sub_list
 
 

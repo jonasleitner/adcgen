@@ -1,6 +1,7 @@
-from .indices import index_space, get_first_missing_index, indices
+from .indices import index_space, get_first_missing_index, get_symbols
 from .misc import Inputerror
-import sympy_adc.expr_container as e
+from . import sort_expr as sort
+from . import expr_container as e
 from sympy import Add
 import time
 
@@ -250,40 +251,45 @@ def simplify(expr, real=False):
     return res
 
 
-def extract_dm(expr, symmetric=False):
+def extract_dm(expr, bra_ket_sym: int = None):
     """Function that extracts the density matrix from the expectation
        value expression. Thereby, a dict is returned that contains the
        defintions of all canonical blocks of the density matrix."""
     from sympy.physics.secondquant import KroneckerDelta
     from sympy import Rational
-    import sympy_adc.sort_expr as sort
     from .sympy_objects import AntiSymmetricTensor
 
-    def minimize_d_indices(term, d_tensor):
-        # NOTE: this function only works if there are no target indices
-        #       in the original expression
-        used_d_idx = {'occ': [], 'virt': []}
-        for uplo, d_indices in d_tensor.items():
-            for i, d_idx in enumerate(d_indices):
-                sp = index_space(d_idx.name)
-                new_idx = get_first_missing_index(used_d_idx[sp], sp)
-                # is already the lowest idx -> nothing to do
-                if d_idx.name == new_idx:
-                    used_d_idx[sp].append(new_idx)
+    def minimize_d_indices(term: e.expr, d_tensor: dict,
+                           target: tuple) -> tuple[e.expr, dict]:
+        from collections import defaultdict
+
+        used_indices = defaultdict(list)
+        for s in target:  # add all target indices to used indices
+            ov = index_space(s.name)
+            if s not in used_indices[ov]:
+                used_indices[ov].append(s)
+        # start with upper
+        d_tensor = sorted(d_tensor.items(), key=lambda tpl: tpl[0],
+                          reverse=True)
+        for _, idx_list in d_tensor:
+            for idx in idx_list:
+                name = idx.name
+                sp = index_space(name)
+                if name in used_indices[sp]:  # skip target indices
+                    continue
+                new_idx = get_first_missing_index(used_indices[sp], sp)
+                used_indices[sp].append(new_idx)
+                if name == new_idx:  # is already the lowest idx
                     continue
                 # found a lower index -> permute indices in the term
-                new_idx = indices().get_indices(new_idx)[sp][0]
-                term = term.permute((d_idx, new_idx))
-                # and the d-tensor
-                # new_idx is not necessarily present on d
-                for other_uplo, other_d_indices in d_tensor.items():
-                    if new_idx in other_d_indices:
-                        other_i = other_d_indices.index(new_idx)
-                        d_tensor[other_uplo][other_i] = d_idx
-                d_tensor[uplo][i] = new_idx
-                # print("permuted: ", d_idx, new_idx, d_tensor)
-                return minimize_d_indices(term, d_tensor)
-        return term, d_tensor
+                new_idx = get_symbols(new_idx)[0]
+                sub = {idx: new_idx, new_idx: idx}
+                term = term.subs(sub, simultaneous=True)
+                # and the d-tensor (new_idx is not necessarily present on d)
+                for other_i, (uplo, other_idx_list) in enumerate(d_tensor):
+                    other_idx_list = [sub.get(s, s) for s in other_idx_list]
+                    d_tensor[other_i] = (uplo, other_idx_list)
+        return term, dict(d_tensor)
 
     def symmetrize_keep_pref(term, symmetry):
         symmetrized = term.copy()
@@ -291,9 +297,9 @@ def extract_dm(expr, symmetric=False):
             symmetrized += term.copy().permute(*perms) * factor
         return symmetrized
 
-    def sort_idx(idx):
-        return (int(idx.name[1:]) if idx.name[1:] else 0,
-                idx.name[0])
+    if bra_ket_sym not in [0, 1, -1]:
+        raise Inputerror(f"Invalid bra_ket symmetry {bra_ket_sym}. 0, 1 and -1"
+                         "are valid values.")
 
     # assume no polynoms are present in the term
     expr = expr.expand()
@@ -302,66 +308,63 @@ def extract_dm(expr, symmetric=False):
         expr = e.expr(expr)
 
     # sort the expression according to the blocks of the density matrix
-    blocks = sort.by_tensor_block(expr, 'd', symmetric)
+    blocks = sort.by_tensor_block(expr, 'd', bra_ket_sym)
 
     for block, block_expr in blocks.items():
         removed = e.compatible_int(0)
         # - remove d in each term
         for term in block_expr.terms:
-            new_term = e.compatible_int(1)
+            new_term = e.expr(1, **term.assumptions)
             d_tensor = None
             for t in term.objects:
                 # found the d tensor
                 if t.type == 'antisym_tensor' and t.name == 'd':
                     if d_tensor is not None:
-                        raise RuntimeError("Found two d tensors in the term "
-                                           f"{term}.")
+                        raise NotImplementedError("Found two d tensors in the "
+                                                  f"term {term}.")
                     d_tensor = t.extract_pow
-                    d_tensor = {'upper': d_tensor.upper,
-                                'lower': d_tensor.lower}
-                # anything else than the d tensor
-                else:
+                    current_bra_ket_sym = d_tensor.bra_ket_sym
+                    d_tensor: dict[str, list] = {'upper': list(d_tensor.upper),
+                                                 'lower': list(d_tensor.lower)}
+                else:  # anything else than the d tensor
                     new_term *= t
             if d_tensor is None:
                 raise RuntimeError("Could not find a d tensor in the term "
                                    f"{term}.")
-            # if indices repeat on the d tensor -> introduce a delta of the
-            # corresponding space. I think this should only be possible in
-            # the occ space, because it should originate from a p+ q
-            # contraction
+            # if indices repeat on the d tensor -> introduce a delta.
+            # I think this should only be possible in the occ space, because it
+            # should originate from a p+ q contraction
             repeated_idx = [idx for idx in d_tensor['upper']
                             if idx in d_tensor['lower']]
+            if repeated_idx:  # extract the indices of new_term
+                term_idx: dict[str, set] = {}
+                for s in new_term.idx:
+                    if (ov := index_space(s.name)) not in term_idx:
+                        term_idx[ov] = set()
+                    term_idx[ov].add(s.name)
             for idx in repeated_idx:
                 # indices that are currently present in the term that belong
                 # to the same space as the repeated index
                 sp = index_space(idx.name)
-                current_idx = {s.name for s in d_tensor.values() if
-                               index_space(s.name) == sp}
-                current_idx.union({s.name for s in new_term.idx if
-                                   index_space(s.name) == sp})
-                current_idx = sorted(current_idx, key=sort_idx)
+                current_idx = {s.name for idx_list in d_tensor.values()
+                               for s in idx_list if index_space(s.name) == sp}
+                current_idx.update(term_idx[sp])
                 # generate a second index of the same space for the delta, e.g.
                 # X_ij d^ki_kj -> X_ij delta_kl
-                new_idx = indices().get_indices(
-                    get_first_missing_index(current_idx, sp)
-                )[sp][0]
+                new_idx = get_symbols(get_first_missing_index(current_idx, sp))[0]  # noqa E501
                 new_term *= KroneckerDelta(idx, new_idx)
                 # also replace the idx in the d_tensor. Does not matter if in
                 # upper or lower -> just arbitrarily use lower
                 # the index can only appear once in lower. Otherwise the tensor
                 # has to be 0 according to the antisymmetry.
                 d_tensor['lower'][d_tensor['lower'].index(idx)] = new_idx
-            # print("\nBLOCK: ", block)
-            # print("ORIGINAL: ", term)
-            # print("BEFORE SUB: ", new_term)
 
             # Now minimize the indices on the d_tensor - the target indices of
             # the term after the d tensor is removed.
             # This ensures that all terms that contribute to the ovov block,
             # for instance, have the same target indices iajb.
-            # print("d-tensor before sub: ", d_tensor)
-            new_term, d_tensor = minimize_d_indices(new_term, d_tensor)
-            # print("AFTER SUB: ", new_term, d_tensor)
+            new_term, d_tensor = minimize_d_indices(new_term, d_tensor,
+                                                    term.target)
             # now symmetrize the term.
             # Here only Permutations P_ij / P_ab are taken into account,
             # because permutations P_ia will produce a term that contributes to
@@ -369,7 +372,7 @@ def extract_dm(expr, symmetric=False):
             # P_ka d_ijka -> d_ijak, while P_ij d_ijab -> d_jiab is still part
             # of the canonical oovv block.
             # As a result, this function only returns terms that contribute
-            # to one of the canonical blocks of the DM.
+            # to canonical blocks of the DM.
             # Therefore, when computing an expectation value, e.g., the
             # ovov block needs to be multiplied by a factor of 4, because it
             # also represents the voov, ovvo, vovo blocks, which are not
@@ -401,38 +404,18 @@ def extract_dm(expr, symmetric=False):
             #      gives a non-canonical block. But only if bra/ket are of the
             #      same length. Otherwise the operator can not be symmetric
             #      anyway.
-            diagonal_block = False
-            if symmetric and len(d_tensor['upper']) == len(d_tensor['lower']):
-                space_u = "".join(
-                    [index_space(s.name)[0] for s in d_tensor['upper']]
-                )
-                space_l = "".join(
-                    [index_space(s.name)[0] for s in d_tensor['lower']]
-                )
+            #   -> diagonal blocks also need to be multiplied by 1/2, because
+            #      here we additionally have to account for the
+            #      bra_ket symmetry!
+            if current_bra_ket_sym:  # possible values: +-1 (or 0)
                 new_term *= Rational(1, 2)
-                if space_u == space_l:
-                    # print("Found diagonal block of symmetric DM -> Also "
-                    #       "apply 0.5 * (1 + P_bra/ket)")
-                    diagonal_block = True
-                    permute_braket = [
-                        (upper, lower) for upper, lower in
-                        zip(d_tensor['upper'], d_tensor['lower'])
-                    ]
-                    # print("bra/ket permutations: ", permute_braket)
-                # else:
-                    # print("Found non-canonical block that is included in "
-                    #       f"block {block} -> multiply terms with 1/2.")
-            d_tensor = e.expr(
-                AntiSymmetricTensor('d', d_tensor['upper'], d_tensor['lower'])
-            )
-            sym = d_tensor.terms[0].symmetry(only_contracted=False)
-            # print("found symmetry: ", sym)
+            # bra_ket symmetry is automaticall accounted for!
+            d_tensor = e.expr(AntiSymmetricTensor('d', d_tensor['upper'],
+                                                  d_tensor['lower'],
+                                                  current_bra_ket_sym))
+            sym = d_tensor.terms[0].symmetry()
             symmetrized = symmetrize_keep_pref(new_term, sym)
-            if diagonal_block:
-                swapped_braket = new_term.copy().permute(*permute_braket)
-                symmetrized += symmetrize_keep_pref(swapped_braket, sym)
-            symmetrized = simplify(symmetrized, True)
-            # print("WITH SYMMETRY: ", symmetrized)
+            symmetrized = simplify(symmetrized)
             removed += symmetrized
         blocks[block] = removed
     return blocks

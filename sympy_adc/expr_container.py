@@ -57,11 +57,11 @@ class expr(container):
 
     @property
     def sym_tensors(self) -> tuple:
-        return tuple(self.__sym_tensors)
+        return tuple(sorted(self.__sym_tensors))
 
     @property
     def antisym_tensors(self) -> tuple:
-        return tuple(self.__antisym_tensors)
+        return tuple(sorted(self.__antisym_tensors))
 
     @property
     def provided_target_idx(self) -> None | tuple[Dummy]:
@@ -536,24 +536,24 @@ class term(container):
         assumptions['target_idx'] = target
         return expr(expanded, **assumptions)
 
-    def symmetry(self, only_contracted=False, only_target=False):
-        """Return a dict with all Symmetric and Antisymmetric Permutations of
-           the term. If only contracted is set, only permutations of
-           indices that are contracted in the term are considered. If
-           only_target is set, only permutations of target indices are taken
-           into account."""
-        from itertools import combinations, permutations, chain, product
+    def symmetry(self, only_contracted: bool = False,
+                 only_target: bool = False) -> dict[tuple, int]:
+        """Determines the symmetry of the term with respect to index
+           permutations, also taking bra_ket symmetry into account.
+           By default all indices of the term are considered.
+           However, by setting either only_contracted or only_target the
+           indices may be restricted to the respective subspace."""
+        from itertools import combinations, permutations, chain
         from math import factorial
+        from collections import defaultdict
         from .indices import split_idx_string
 
         def permute_str(string, *perms):
             string = split_idx_string(string)
             for perm in perms:
                 p, q = [s.name for s in perm]
-                idx1 = string.index(p)
-                idx2 = string.index(q)
-                string[idx1] = q
-                string[idx2] = p
+                sub = {p: q, q: p}
+                string = [sub.get(s, s) for s in string]
             return "".join(string)
 
         if only_contracted and only_target:
@@ -569,60 +569,40 @@ class term(container):
         else:
             indices = self.idx
 
-        # sort indices according to their space. Use list for nice ordering
-        idx = {'o': [], 'v': [], 'g': []}
+        if len(indices) < 2:
+            return {}
+        max_n_perms = factorial(len(indices))
+        # generate a string to avoid redundant permutations
+        idx_string = "".join([s.name for s in indices])
+        permuted_strings = [idx_string]
+        # split in occ and virt indices (only generate P_oo, P_vv and P_gg)
+        sorted_idx = defaultdict(list)
         for s in indices:
-            # in self.idx contracted indices are listed multiple times
-            ov = index_space(s.name)[0]
-            if s not in idx[ov]:
-                idx[ov].append(s)
-        # list of permutations and their symmetry, +-1
-        sym = {'o': {}, 'v': {}, 'g': {}}
-        for ov, ov_idx in idx.items():
-            if len(ov_idx) < 2:  # trivial case -> need at least two indices
+            sorted_idx[index_space(s.name)[0]].append(s)
+        pairs = list(chain.from_iterable(
+            combinations(idx_list, 2) for idx_list in sorted_idx.values()
+        ))
+        # generate all relevant combinations of pairs (up to length N-1 for N
+        # indices) -> indices=ijab -> P_ij, P_ab, P_ij*P_ab
+        combs = chain.from_iterable(
+            [permutations(pairs, n) for n in range(1, len(indices))]
+        )
+        symmetry: dict[tuple, int] = {}
+        for perms in combs:
+            # did we find all permutations?
+            if len(permuted_strings) == max_n_perms:
+                break
+            # permute the idx_string to avoid redundant permutations
+            perm_string = permute_str(idx_string, *perms)
+            if perm_string in permuted_strings:
                 continue
-            max_n_perms = factorial(len(ov_idx))
-            # represent the current indices as a string. All perms
-            # will also be applied to the string, in order to
-            # check whether the current perm is redundant
-            idx_string = "".join([s.name for s in ov_idx])
-            permuted_strings = [idx_string]
-            # create all index pairs that may be permuted
-            pairs = list(combinations(ov_idx, 2))
-            # this creates more permutations than necessary
-            # e.g. the cyclic permutation ijk -> kij can be defined
-            # as P_jk P_ij // P_ij P_ik // P_ik P_jk
-            combs = chain.from_iterable(
-                [permutations(pairs, r) for r in range(1, len(ov_idx))]
-            )
-            for perms in combs:
-                # we only need to find n! permutations (including
-                # the identity)
-                if len(permuted_strings) == max_n_perms:
-                    break
-                # apply the perm to the string and check whether
-                # the resulting permuted string has already been
-                # created by another permutation
-                perm_string = permute_str(idx_string, *perms)
-                if perm_string in permuted_strings:
-                    continue
-                permuted_strings.append(perm_string)
-                sub = self.permute(*perms)
-                if self.sympy + sub.sympy is S.Zero:
-                    sym[ov][perms] = -1
-                elif self.sympy - sub.sympy is S.Zero:
-                    sym[ov][perms] = +1
-        # multiply the occ and virt permutations
-        symmetry = sym['o'] | sym['v'] | sym['g']
-        sym = [syms.items() for syms in sym.values() if syms]
-        if len(sym) > 1:
-            for prod in product(*sym):
-                prod_perm = []
-                prod_factor = 1
-                for perms, factor in prod:
-                    prod_perm.extend(perms)
-                    prod_factor *= factor
-                symmetry[tuple(prod_perm)] = prod_factor
+            permuted_strings.append(perm_string)
+            # apply the permutation to the term and check for symmetry
+            permuted = self.permute(*perms)
+            if self.sympy + permuted.sympy is S.Zero:
+                symmetry[perms] = -1
+            elif self.sympy - permuted.sympy is S.Zero:
+                symmetry[perms] = +1
         return symmetry
 
     @property

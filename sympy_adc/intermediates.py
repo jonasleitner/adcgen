@@ -258,11 +258,10 @@ class registered_intermediate:
             if name in used[ov]:  # its a target index
                 continue
             new_idx = get_first_missing_index(used[ov], ov)
+            used[ov].append(new_idx)
             if name == new_idx:  # already have the lowest index
-                used[ov].append(new_idx)
                 continue
             # found a lower index -> permute indices in remainder and itmd idx
-            used[ov].append(new_idx)
             new_idx = get_symbols(new_idx)[0]
             remainder = remainder.permute((idx, new_idx))
             sub = {idx: new_idx, new_idx: idx}
