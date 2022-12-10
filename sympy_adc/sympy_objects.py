@@ -69,7 +69,7 @@ class AntiSymmetricTensor(TensorSymbol):
                     idx.name[0],
                     hash(idx))
         else:  # necessary for subs to work correctly with simultaneous=True
-            return ('', hash(idx), str(idx), 0)
+            return ('', 0, str(idx), hash(idx))
 
     def _latex(self, printer) -> str:
         return "{%s^{%s}_{%s}}" % (
@@ -137,3 +137,85 @@ class NonSymmetricTensor(TensorSymbol):
 
     def __str__(self):
         return "%s%s" % self.args
+
+
+class SingleSymmetryTensor(TensorSymbol):
+    def __new__(cls, symbol: str, indices: tuple[Dummy],
+                perms: list[tuple[int]], factor: int) -> TensorSymbol:
+        from itertools import chain
+
+        # ensure that we have no intersecting permutations, i.e., each
+        # index occurs only once
+        idx = list(chain.from_iterable(perms))
+        if len(idx) != len(set(idx)):
+            raise NotImplementedError("SpecialSymTensor not implemented for"
+                                      f"intersecting permutations {perms}.")
+        factor = sympify(factor)
+        if factor not in [S.One, S.NegativeOne]:
+            raise Inputerror(f"Invalid factor {factor}. Valid are 1 and -1.")
+
+        # each permutation can be applied independently of the others
+        permuted = list(indices)
+        apply = []
+        min_apply = None
+        min_not_apply = None
+        for perm in perms:
+            i, j = sorted(perm)
+            p, q = indices[i], indices[j]  # p occurs before q
+            if factor is S.NegativeOne and p == q:
+                return S.Zero
+            p_val, q_val = cls._sort_canonical(p), cls._sort_canonical(q)
+            if q_val < p_val:
+                apply.append(True)
+                if min_apply is None or q_val < min_apply:
+                    min_apply = q_val
+            else:
+                if min_not_apply is None or q_val < min_not_apply:
+                    min_not_apply = p_val
+            permuted[i], permuted[j] = q, p
+        attach_minus = False
+        if len(apply) == len(perms):
+            indices = permuted
+            attach_minus = factor is S.NegativeOne
+        elif len(apply) >= len(perms) / 2 and min_apply < min_not_apply:
+            indices = permuted
+            attach_minus = factor is S.NegativeOne
+
+        symbol = sympify(symbol)
+        indices = Tuple(*indices)
+        perms = Tuple(*perms)
+
+        if attach_minus:
+            return - TensorSymbol.__new__(cls, symbol, indices, perms, factor)
+        else:
+            return TensorSymbol.__new__(cls, symbol, indices, perms, factor)
+
+    @classmethod
+    def _sort_canonical(cls, idx):
+        if isinstance(idx, Dummy):
+            # also add the hash here for wicks, where multiple i are around
+            return (index_space(idx.name)[0],
+                    int(idx.name[1:]) if idx.name[1:] else 0,
+                    idx.name[0],
+                    hash(idx))
+        else:  # necessary for subs to work correctly with simultaneous=True
+            return ('', 0, str(idx), hash(idx))
+
+    def _latex(self, printer) -> str:
+        return "{%s_{%s}}" % (self.symbol,
+                              "".join([i.name for i in self.indices]))
+
+    @property
+    def symbol(self) -> Symbol:
+        return self.args[0]
+
+    @property
+    def indices(self) -> Tuple:
+        return self.args[1]
+
+    @property
+    def sym(self) -> Tuple:
+        return Tuple(*self.args[2:])
+
+    def __str__(self):
+        return "%s%s" % self.args[:2]

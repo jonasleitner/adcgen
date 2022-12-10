@@ -201,13 +201,28 @@ class expr(container):
     def permute(self, *perms):
         from .indices import get_symbols
 
-        for perm in perms:
-            if len(perm) != 2:
-                raise Inputerror(f"Permutation {perm} needs to be of length 2")
+        if not perms:
+            return self
+        if any(len(perm) != 2 for perm in perms):
+            raise Inputerror("All permutations need to be of length 2. Got: "
+                             f"{perms}")
+
+        p, q = get_symbols(perms[0])
+        sub = {p: q, q: p}
+        for perm in perms[1:]:
             p, q = get_symbols(perm)
-            sub = {p: q, q: p}
-            self.subs(sub, simultaneous=True)
-        return self
+            addition = {p: q, q: p}
+            for old, new in sub.items():
+                if new == p:
+                    sub[old] = q
+                    del addition[p]
+                elif new == q:
+                    sub[old] = p
+                    del addition[q]
+            if addition:
+                sub.update(addition)
+        sub = {old: new for old, new in sub.items() if old != new}
+        return self.subs(sub, simultaneous=True)
 
     def expand_intermediates(self):
         """Insert all defined intermediates in the expression."""
@@ -518,15 +533,28 @@ class term(container):
            Permutations need to be provided as e.g. tuples (a,b), (i,j), ...
            Indices may be provided as sympy Dummy symbols or strings."""
         from .indices import get_symbols
-        temp = self
-        for perm in perms:
-            if len(perm) != 2:
-                raise Inputerror(f"Permutation {perm} needs to be of length 2")
+
+        if not perms:  # no perms to apply -> return self
+            return expr(self.sympy, **self.assumptions)
+        if any(len(perm) != 2 for perm in perms):
+            raise Inputerror("All permutations need to be of length 2. Got: "
+                             f"{perms}")
+        p, q = get_symbols(perms[0])
+        sub = {p: q, q: p}
+        for perm in perms[1:]:
             p, q = get_symbols(perm)
-            sub = {p: q, q: p}
-            temp = temp.subs(sub, simultaneous=True)
-        return temp if isinstance(temp, expr) else \
-            expr(temp, **self.assumptions)
+            addition = {p: q, q: p}
+            for old, new in sub.items():
+                if new == p:
+                    sub[old] = q
+                    del addition[p]
+                elif new == q:
+                    sub[old] = p
+                    del addition[q]
+            if addition:
+                sub.update(addition)
+        sub = {old: new for old, new in sub.items() if old != new}
+        return self.subs(sub, simultaneous=True)
 
     def expand_intermediates(self, target=None):
         target = self.target if target is None else target
@@ -543,7 +571,7 @@ class term(container):
            By default all indices of the term are considered.
            However, by setting either only_contracted or only_target the
            indices may be restricted to the respective subspace."""
-        from itertools import combinations, permutations, chain
+        from itertools import combinations, permutations, chain, product
         from math import factorial
         from collections import defaultdict
         from .indices import split_idx_string
@@ -555,6 +583,13 @@ class term(container):
                 sub = {p: q, q: p}
                 string = [sub.get(s, s) for s in string]
             return "".join(string)
+
+        def get_perms(*space_perms):
+            for perms in chain.from_iterable(space_perms):
+                yield perms
+            if len(space_perms) > 1:  # form the product
+                for perm_tpl in product(*space_perms):
+                    yield tuple(perm for perms in perm_tpl for perm in perms)
 
         if only_contracted and only_target:
             raise Inputerror("Can not set only_contracted and only_target "
@@ -569,35 +604,43 @@ class term(container):
         else:
             indices = self.idx
 
-        if len(indices) < 2:
+        if len(indices) < 2:  # not enough indices for any permutations
             return {}
-        max_n_perms = factorial(len(indices))
-        # generate a string to avoid redundant permutations
-        idx_string = "".join([s.name for s in indices])
-        permuted_strings = [idx_string]
+
         # split in occ and virt indices (only generate P_oo, P_vv and P_gg)
         sorted_idx = defaultdict(list)
         for s in indices:
             sorted_idx[index_space(s.name)[0]].append(s)
-        pairs = list(chain.from_iterable(
-            combinations(idx_list, 2) for idx_list in sorted_idx.values()
-        ))
-        # generate all relevant combinations of pairs (up to length N-1 for N
-        # indices) -> indices=ijab -> P_ij, P_ab, P_ij*P_ab
-        combs = chain.from_iterable(
-            [permutations(pairs, n) for n in range(1, len(indices))]
-        )
-        symmetry: dict[tuple, int] = {}
-        for perms in combs:
-            # did we find all permutations?
-            if len(permuted_strings) == max_n_perms:
-                break
-            # permute the idx_string to avoid redundant permutations
-            perm_string = permute_str(idx_string, *perms)
-            if perm_string in permuted_strings:
+
+        space_perms: list[list] = []  # find all permutations within a space
+        for idx_list in sorted_idx.values():
+            if len(idx_list) < 2:
                 continue
-            permuted_strings.append(perm_string)
-            # apply the permutation to the term and check for symmetry
+            max_n_perms = factorial(len(idx_list))
+            # generate idx string that will also be permuted to avoid
+            # redundant permutations
+            idx_string = "".join([s.name for s in idx_list])
+            permuted_str = [idx_string]
+            # form all index pairs - all permutations operators
+            pairs = list(combinations(idx_list, 2))
+            # form all combinations of permutation operators
+            combs = chain.from_iterable(
+                permutations(pairs, n) for n in range(1, len(idx_list))
+            )
+            # remove redundant combinations
+            temp = []
+            for perms in combs:
+                if len(permuted_str) == max_n_perms:
+                    break  # did find enough permutations
+                perm_str = permute_str(idx_string, *perms)
+                if perm_str in permuted_str:  # is the perm redundant?
+                    continue
+                permuted_str.append(perm_str)
+                temp.append(perms)
+            space_perms.append(temp)
+        # now apply all found perms to the term and determine the symmetry
+        symmetry: dict[tuple, int] = {}
+        for perms in get_perms(*space_perms):
             permuted = self.permute(*perms)
             if self.sympy + permuted.sympy is S.Zero:
                 symmetry[perms] = -1
@@ -714,7 +757,7 @@ class term(container):
            coupling of non unique objects is returned, i.e., the coupling
            of e.g. a t2_1 amplitude is only returned if there is another one in
            the same term."""
-        from collections import Counter
+        from collections import Counter, defaultdict
         # 1) collect all the couplings (e.g. if a index s occurs at two tensors
         #    t and V: the crude_pos of s at t will be extended by the crude_pos
         #    of s at V. And vice versa for V.)
@@ -728,25 +771,25 @@ class term(container):
                                      target_idx_string=target_idx_string,
                                      include_exponent=include_exponent)
                          for i, o in enumerate(objects)]
-        coupling = {}
+        coupling = defaultdict(list)
         for i, descr in enumerate(descriptions):
             # if the tensor is unique in the term -> no coupling necessary
-            if descr_counter[descr] == 1:
+            if descr_counter[descr] < 2:
                 continue
-            if i not in coupling:
-                coupling[i] = []
             idx_pos = positions[i]
             for other_i, other_idx_pos in enumerate(positions):
                 if i == other_i:
                     continue
                 matches = [idx for idx in idx_pos if idx in other_idx_pos]
+                if not matches:
+                    continue
                 coupling[i].extend(
                     [p for s in matches for p in other_idx_pos[s]]
                 )
         # at some point it might be necessary to also add a counter to the
         # coupling if also the coupling is identical. However, so far I found
         # no example where this is necessary.
-        return coupling
+        return dict(coupling)
 
     def split_orb_energy(self):
         """Splits the term in a orbital energy fraction and a remainder, e.g.
@@ -916,7 +959,7 @@ class obj(container):
     def sympy(self):
         return self.obj
 
-    def make_real(self, return_sympy=False):
+    def make_real(self, return_sympy: bool = False):
         """Removes all 'c' in the names of t-amplitudes."""
 
         if self.type == 'antisym_tensor':
@@ -938,7 +981,7 @@ class obj(container):
         assumptions['real'] = True
         return expr(real_obj, **assumptions)
 
-    def _apply_tensor_braket_sym(self, return_sympy):
+    def _apply_tensor_braket_sym(self, return_sympy: bool = False):
         if self.type == 'antisym_tensor':
             tensor = self.extract_pow
             bra_ket_sym = None
@@ -1001,7 +1044,7 @@ class obj(container):
             return expr(diag, **assumptions), sub
         return expr(self.sympy, **self.assumptions), sub
 
-    def rename_tensor(self, current, new):
+    def rename_tensor(self, current: str, new: str):
         """Renames a tensor object."""
         if 'tensor' in (type := self.type) and self.name == current:
             base = self.extract_pow
@@ -1105,7 +1148,8 @@ class obj(container):
         if self.type == 'antisym_tensor':
             return self.extract_pow.bra_ket_sym
 
-    def symmetry(self, only_contracted=False, only_target=False):
+    def symmetry(self, only_contracted: bool = False,
+                 only_target: bool = False) -> dict[tuple, int]:
         """Determines the symmetry of the obj."""
         if only_contracted and only_target:
             raise Inputerror("only_contracted and only_target can not be set "
@@ -1127,7 +1171,7 @@ class obj(container):
         return sym
 
     @property
-    def idx(self):
+    def idx(self) -> tuple:
         """Return the indices of the canonical ordered object."""
         get_idx = {
             'antisym_tensor': lambda o: (
@@ -1148,12 +1192,12 @@ class obj(container):
                 raise KeyError(f'Unknown obj type {self.type} for obj {self}')
 
     @property
-    def space(self):
+    def space(self) -> str:
         """Returns the canonical space of tensors and other objects."""
         return "".join([index_space(s.name)[0] for s in self.idx])
 
-    def crude_pos(self, target=None, target_idx_string=True,
-                  include_exponent=True):
+    def crude_pos(self, target=None, target_idx_string: bool = True,
+                  include_exponent: bool = True) -> dict:
         """Returns the 'crude' position of the indices in the object.
            (e.g. only if they are located in bra/ket, not the exact position)
            """

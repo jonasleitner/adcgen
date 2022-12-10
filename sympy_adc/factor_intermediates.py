@@ -2,11 +2,13 @@ import sympy_adc.expr_container as e
 from .misc import Inputerror
 from .eri_orbenergy import eri_orbenergy
 from sympy import S
-from collections import Counter
+from collections import Counter, defaultdict
 
 
 def factor_intermediates(expr):
     from .intermediates import intermediates
+    from time import perf_counter
+
     if not isinstance(expr, e.expr):
         raise Inputerror("The expression to factor needs to be provided "
                          f"as {e.expr} instance.")
@@ -16,10 +18,12 @@ def factor_intermediates(expr):
     #        2. factor densities and other intermediates
     available = intermediates().available
     for name, itmd_instance in available.items():
+        start = perf_counter()
         print(f"Factoring {name}... ", end="")
         expr = itmd_instance.factor_itmd(expr, factored)
         factored.append(name)
-        print(f"Done. {len(expr)} terms remaining.")
+        print(f"Done. {len(expr)} terms remaining. Took ",
+              perf_counter()-start)
         # for i, term in enumerate(expr.terms):
         #     term = eri_orbenergy(term)
         #     print(f"Term {i}:\n{term.pref = }\neri = {term.eri}\nnum = "
@@ -31,71 +35,63 @@ def factor_intermediates(expr):
 
 def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                               itmd_data: list[dict],
-                              itmd_term_map: dict,
-                              unmapped_itmd_terms: list[int],
+                              itmd_term_map: defaultdict,
                               itmd_instance) -> e.expr:
     """Function for factoring a long intermediate, i.e., a intermediate that
        consists of more than one term."""
-    from collections import Counter
     from sympy import Add
 
     if expr.sympy.is_number:
         return expr
 
+    itmd_expr: list[e.expr] = [term.expr for term in itmd]
+
     terms = expr.terms
     found_intermediates = {}
     for term_i, term in enumerate(terms):
         term = eri_orbenergy(term).canonicalize_sign()
-        if term.eri.order < itmd_instance.order:
-            continue
         pattern = term.eri_pattern(include_exponent=False,
                                    target_idx_string=False)
         indices = [o.idx for o in term.eri.objects]
         term_data = {'pattern': pattern, 'indices': indices}
-        tensors = Counter(
-            [t.name for t in term.eri.tensors for _ in range(t.exponent)]
-        )
         for itmd_term_i, (itmd_term_data, itmd_term) in \
                 enumerate(zip(itmd_data, itmd)):
-            # do the tensors in both terms match?
-            itmd_tensors = itmd_term_data['itmd_tensors']
-            if any(tensors[t] < count for t, count in itmd_tensors.items()):
-                continue
             combinations = _compare_terms(term, itmd_term,
                                           term_data=term_data,
                                           itmd_term_data=itmd_term_data)
-            found_remainders = {}  # collect all found remainders
+            # collect all remainders to avoid finding multiple identical
+            # intermediates that only differ by sign
+            found_remainders = defaultdict(list)
             for term_data in combinations:
                 # extract the remainder that remains after factoring the itmd
                 # excluding the prefactor that has to be added manually
                 remainder: e.expr = _remainder(term, term_data['obj_i'],
                                                term_data['denom_i'])
                 # determine the minimal target indices of the itmd to factor
-                minimized = itmd_instance._minimal_itmd_indices(
-                    remainder, term_data['sub'], itmd_term_map
+                remainder, idx, factor = itmd_instance._minimal_itmd_indices(
+                    remainder, term_data['sub']
                 )
-                remainder, idx, factor, translated_term_map = minimized
                 remainder = eri_orbenergy(remainder)
                 # check if the remainder has already been found
                 # no need to try to build multiple identical (up to the sign)
                 # intermediates
                 idx_str = "".join([s.name for s in idx])
-                if idx_str not in found_remainders:  # new target indices
-                    found_remainders[idx_str] = [remainder]
-                else:  # already found some term for this target indices
-                    if any(_compare_remainder(remainder, idx, ref) is not None
-                           for ref in found_remainders[idx_str]):
-                        # already found some identical remainder
-                        continue
+                if any(_compare_remainder(remainder, idx, ref) is not None
+                        for ref in found_remainders[idx_str]):
+                    continue
+                else:
                     found_remainders[idx_str].append(remainder)
                 factor *= term_data['factor']
                 pref = _determine_prefactor(term, itmd_term, factor)
-                if itmd_term_i in unmapped_itmd_terms:
-                    matching_itmd_terms = [itmd_term_i]
-                else:
-                    matching_itmd_terms, pref = _map_on_other_terms(
-                        itmd_term_i, remainder, idx, pref, translated_term_map
+                # check if the current term can be mapped onto other terms
+                # according to the symmetry of the remainder, i.e., if
+                # (X - P_pq X) * remainder = 2X * remainder
+                matching_itmd_terms, pref = _map_on_other_terms(
+                    itmd_term_i, remainder, idx, pref, itmd_expr,
+                    itmd_term_map, itmd_instance
                     )
+                if matching_itmd_terms is None:
+                    continue
                 # print(f"\nMAPPED {term} onto {itmd_term}\n")
                 # print(f"{term_i = } {idx = }")
                 # print(f"{matching_itmd_terms = } {pref = }")
@@ -167,17 +163,6 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
     factored_itmd = False
     for term in terms:
         term = eri_orbenergy(term).canonicalize_sign()
-        if term.eri.order < itmd_instance.order:
-            factored_expr += term.expr
-            continue
-        # check that all required tensors are included in the term
-        tensors = Counter(
-            [t.name for t in term.eri.tensors for _ in range(t.exponent)]
-        )
-        itmd_tensors = itmd_data['itmd_tensors']
-        if any(tensors[t] < count for t, count in itmd_tensors.items()):
-            factored_expr += term.expr
-            continue
         # compare the term and the itmd term
         combs = _compare_terms(term, itmd, itmd_term_data=itmd_data)
         if not combs:
@@ -199,8 +184,8 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
         # extract the remainder
         remainder: e.expr = _remainder(term, obj_i, denom_i)
         # determine the minimal target indices of the itmd to factor
-        remainder, idx, factor, _ = itmd_instance._minimal_itmd_indices(
-            remainder, term_data['sub'], {}
+        remainder, idx, factor = itmd_instance._minimal_itmd_indices(
+            remainder, term_data['sub']
         )
         pref = _determine_prefactor(term, itmd, factor*term_data['factor'])
         # print(f"\nFacoring {term} to ", end='')
@@ -245,35 +230,69 @@ def _determine_prefactor(term: eri_orbenergy, itmd_term: eri_orbenergy,
     return term.pref * factor / itmd_term.pref
 
 
-def _map_on_other_terms(term_i: int, remainder: e.expr, idx: list, pref,
-                        term_map: dict):
+def _map_on_other_terms(itmd_term_i: int, remainder: e.expr, idx: list, pref,
+                        itmd_expr: list[e.expr], itmd_term_map: dict,
+                        itmd_instance):
     """Checks on which other terms the current term can be mapped if
        taking the symmetry of the remainder into account. A set of all
        terms, the current term contributes to is returned."""
     from sympy import Rational
+    from .indices import get_symbols
+
     # 1) determine the symmetry of the remainder, only considering
     #    itmd indices that are no target indices of the overall term
+    #    -> only permutations of itmd target indices allowed
     rem_target = remainder.eri.target
     idx_to_permute = {s for s in idx if s not in rem_target}
     rem_expr = remainder.expr
     rem_expr.set_target_idx(idx_to_permute)
     rem_sym = rem_expr.terms[0].symmetry(only_target=True)
+    # create a map to translate the permutations to the default indices and
+    # the default permutations to the minimized permutations
+    default_idx = get_symbols(itmd_instance.default_idx)
+    minimal_to_default = dict(zip(idx, default_idx))
     # now iterate over the permutations and see if the current term
     # can be mapped onto anothers using the given permutations.
-    matching_itmd_terms = [term_i]
-    for perms, factor in rem_sym.items():
-        if perms not in term_map or term_i not in term_map[perms]:
+    matching_itmd_terms = [itmd_term_i]
+    for perms, perm_factor in rem_sym.items():
+        # check if we already evaluated the current permutation for the
+        # current intermediate term.
+        default_perms = tuple(
+            tuple(minimal_to_default.get(s, s) for s in perm) for perm in perms
+        )
+        if default_perms not in itmd_term_map:
+            itmd_term_map[default_perms] = {}
+        perm_map: dict[int, list[int]] = itmd_term_map[default_perms]
+        if itmd_term_i in perm_map:
+            for other_term_i, term_factor in perm_map[itmd_term_i]:
+                if perm_factor != term_factor:
+                    return None, pref
+                matching_itmd_terms.append(other_term_i)
             continue
-        term_list = term_map[perms][term_i]
-        for other_term_i, other_factor in term_list:
-            if factor != other_factor:
-                raise RuntimeError(
-                    f"Found symmetry {perms} with {factor = } in the "
-                    f"remainder, while the term_map seems to "
-                    f"have the opposite symmetry {factor = }. In this "
-                    "case the terms should have canceled I think."
-                )
+        # new perm and/or itmd_term -> determine the mapping introduced
+        # by the current permutations
+        perm_map[itmd_term_i] = []
+        perm_term = itmd_expr[itmd_term_i].copy().permute(*default_perms)
+        for other_term_i, other_term in enumerate(itmd_expr):
+            if other_term_i == itmd_term_i:
+                continue
+            if perm_term.sympy + other_term.sympy is S.Zero:
+                # P_pq X + (- P_pq X) = 0
+                term_factor = -1
+            elif perm_term.sympy - other_term.sympy is S.Zero:
+                # P_pq X - (+ P_pq X) = 0
+                term_factor = +1
+            else:
+                continue
+            # the factors have to be equal. If not the terms should have
+            # cancelled to 0.
+            # (X - P_pq X) * remainder = 0 if remainder = + P_pq remainder
+            #                          = 2X if remainder = - P_pq remainder
+            # only the second case should occur in the equations
+            if perm_factor != term_factor:
+                return None, pref
             matching_itmd_terms.append(other_term_i)
+            perm_map[itmd_term_i].append((other_term_i, term_factor))
     pref = pref * Rational(1, len(matching_itmd_terms))
     return matching_itmd_terms, pref
 
@@ -373,6 +392,7 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
            that are necessary to transform the itmd_eri."""
     from sympy import Mul
     from itertools import product
+
     # the eri part of the term to factor has to be at least as long as the
     # eri part of the itmd (prefactors are separated!)
     if len(itmd_term.eri) > len(term.eri):
@@ -397,6 +417,7 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
         itmd_indices = [o.idx for o in itmd_objects]
     if (itmd_obj_sym := itmd_term_data.get('itmd_obj_sym')) is None:
         itmd_obj_sym = [o.symmetry() for o in itmd_objects]
+
     # compare the objects in both terms and collect the necessary
     # substitutions to map the objects onto each other
     matches = {}
@@ -420,6 +441,7 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
     # did not find a match for all objects of the intermediate term
     if len(matches) != len(itmd_objects):
         return []
+
     # more than one combination might be possible -> need to find all
     # possible combinations
     matches = sorted(matches.items(), key=lambda tpl: tpl[0])
@@ -444,13 +466,23 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
                 factor = factor * additional_factor
                 temp.append((idx_list, sub, factor))
         combs = temp
+
     # check which of the found combinations is valid
     valid = []
+    itmd_coupl = sorted([sorted(c) for _, c in itmd_pattern.values()
+                         if c is not None])
     for obj_indices, sub, factor in combs:
         # obj indices might occur multiple times!
         if len(set(obj_indices)) != len(itmd_objects):
             continue
+        # we need to have the same coupling between the objects!
         relevant_obj = Mul(*(objects[i].sympy for i in set(obj_indices)))
+        relevant_obj = e.expr(relevant_obj, **term.eri.assumptions).terms[0]
+        coupl = relevant_obj.coupling(target_idx_string=False,
+                                      include_exponent=False)
+        if sorted([sorted(c) for c in coupl.values()]) != itmd_coupl:
+            continue
+
         sub_itmd = itmd_term.eri.subs(sub, simultaneous=True)
         if sub_itmd.sympy.is_number:
             continue
@@ -458,7 +490,7 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
         # substitutions). Only the prefactor arising from the permutations
         # (introduced above) is relevant.
         sub_itmd *= sub_itmd.terms[0].prefactor
-        if relevant_obj-sub_itmd.sympy is S.Zero:
+        if relevant_obj.sympy - sub_itmd.sympy is S.Zero:
             valid.append((obj_indices, sub, sub_itmd.terms[0], factor))
     return valid
 
@@ -471,14 +503,17 @@ def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
         eri part and the denominator that match the intermediate's objects
         are returned."""
     from itertools import chain
+
     # if the itmd term has a denom -> the term also needs to have one
     if not itmd_term.denom.sympy.is_number and term.denom.sympy.is_number:
         return []
     eri_combs = _compare_eri_parts(term, itmd_term, term_data=term_data,
                                    itmd_term_data=itmd_term_data)
+
     # was not possible to map the eri parts onto each other
     if not eri_combs:
         return []
+
     # if the itmd does not have a denom -> only need to map eri
     if itmd_term.denom.sympy.is_number:
         return [
@@ -486,6 +521,7 @@ def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
              'sub_itmd_eri': sub_itmd_eri}
             for obj_indices, sub, sub_itmd_eri, factor in eri_combs
         ]
+
     # itmd_term and term have to have a denominator at this point
     valid_combs = []
     itmd_denom_brakets = itmd_term.denom_brakets

@@ -252,8 +252,10 @@ def get_first_missing_index(idx_list, ov):
 
     idx_base = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
                 'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
-                'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}
-    ordered_idx = idx_base[ov].copy()
+                'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}[ov]
+    ordered_idx = idx_base.copy()
+    if not idx_list:
+        return ordered_idx[0]
     # keep sorting in this function!!!
     idx_list = sorted(
         idx_list, key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])
@@ -263,10 +265,8 @@ def get_first_missing_index(idx_list, ov):
             return ordered_idx[i]
         if idx[0] in ['o', 'h', 'w']:
             n = int(idx[1:]) + 1 if idx[1:] else 1
-            ordered_idx.extend([b[0] + str(n) for b in ordered_idx])
+            ordered_idx.extend([b + str(n) for b in idx_base])
         new = ordered_idx[i+1]
-    if not idx_list:
-        new = ordered_idx[0]
     return new
 
 

@@ -108,106 +108,92 @@ class registered_intermediate:
         raise NotImplementedError("Method for symbolic representation of "
                                   f"{self.name} not implemented.")
 
-    def itmd_term_map(self, itmd: e.expr = None, real: bool = False) \
-            -> tuple[dict[tuple[str], dict[int, list[int]]], list[int]]:
+    def tensor_symmetry(self, real: bool = False) -> dict:
+        """Determines the symmetry of the itmd tensor objects, e.g.,
+           triples symmetry for t3_2."""
+
+        # try to load from cache
+        if hasattr(self, '_tensor_symmetry') and real in self._tensor_symmetry:
+            return self._tensor_symmetry[real]
+        # determine the symmetry
+        tensor = self.tensor()
+        if real:
+            tensor.make_real()
+        tensor_sym = tensor.terms[0].symmetry()
+        if not hasattr(self, '_tensor_symmetry'):
+            self._tensor_symmetry = {}
+        self._tensor_symmetry[real] = tensor_sym
+        return tensor_sym
+
+    def itmd_term_map(self, factored_itmds: list[str] = None,
+                      real: bool = False) -> dict[tuple, dict]:
         """Determines which permutations of the itmd target indices transform
            a certain itmd_term into another one, e.g.,
            ... + (1 - P_ij) * (1 - P_ab) * x for the t2_2 amplitudes.
            The target indices of the provided itmd expr need to be set
            to the target indices of the itmd."""
-        from math import factorial
-        from itertools import combinations, permutations, chain, product
-        from .indices import split_idx_string
+        from collections import defaultdict
 
-        def permute_str(string: str, *perms: tuple[Dummy]) -> str:
-            string: list = split_idx_string(string)
-            for perm in perms:
-                p, q = [s.name for s in perm]
-                i1 = string.index(p)
-                i2 = string.index(q)
-                string[i1] = q
-                string[i2] = p
-            return "".join(string)
+        if factored_itmds is None:
+            factored_itmds = tuple()
+        else:
+            factored_itmds = tuple(factored_itmds)
 
-        if itmd is None:  # use the default expanded definition in this case
-            itmd: e.expr = self.expand_itmd().expand()
-            if real:
-                itmd.make_real()
-        if not isinstance(itmd, e.expr):
-            raise Inputerror(f"Itmd needs to be an instance of {e.expr}.")
-        # the target indices of the itmd expression should be set to the
-        # the target indices of the itmd at this point.
-        idx = {'o': [], 'v': []}
-        for s in itmd.provided_target_idx:  # each index can only occur once
-            idx[index_space(s.name)[0]].append(s)
-        sym = {'o': [], 'v': []}
-        for ov, ov_idx in idx.items():
-            max_n_perms = factorial(len(ov_idx))
-            # represent the indices as string that is permuted to keep
-            # track which permutations give a new, unique result
-            idx_string = "".join([s.name for s in ov_idx])
-            permuted_str = [idx_string]
-            # all symbol pairs
-            pairs = list(combinations(ov_idx, 2))
-            # all combinations of pairs -> more permutations than needed
-            # smaller permutations are obtained first, i.e., those of length 1
-            combs = chain.from_iterable(
-                [permutations(pairs, r) for r in range(1, len(ov_idx))]
-            )
-            for perms in combs:
-                # did we already find enough permutations?
-                if len(permuted_str) == max_n_perms:
-                    break
-                # permute the string and check if the permutation is redundant
-                perm_str = permute_str(idx_string, *perms)
-                if perm_str in permuted_str:
-                    continue
-                # found a new relevant permutation
-                permuted_str.append(perm_str)
-                sym[ov].append(perms)
-        # multiply the occ and virt permutations
-        symmetry = sym['o'] + sym['v']
-        symmetry.extend(
-            o_perm + v_perm for o_perm, v_perm in product(sym['o'], sym['v'])
-        )
-        del sym
-        # now that we have found all relevant permutations: apply them to
-        # each term and check if the result gives another term
+        # try to load the term map from the cache
+        if not hasattr(self, '_term_map_cache'):
+            # {real: {factored_itmds: {perms: {i: []}}}}
+            self._term_map_cache = {True: defaultdict(dict),
+                                    False: defaultdict(dict)}
+        cache = self._term_map_cache[real]
+        if factored_itmds in cache:
+            return cache[factored_itmds]
+
+        # compute the term map
+        itmd = self._prepare_itmd(factored_itmds=factored_itmds, real=real)
+        itmd_symmetry = self.tensor_symmetry(real)
+
         itmd_terms = itmd.terms
-        unmapped_terms = [i for i in range(len(itmd_terms))]
-        itmd_term_indices = unmapped_terms.copy()
-        term_map = {}
-        for perms in symmetry:
-            for i, other_i in combinations(itmd_term_indices, 2):
-                perm_term = itmd_terms[i].permute(*perms)
-                other_term = itmd_terms[other_i]
-                factor = None
-                if perm_term.sympy + other_term.sympy is S.Zero:
-                    # P_pq X + (- P_pq X) = 0
-                    factor = -1
-                elif perm_term.sympy - other_term.sympy is S.Zero:
-                    # P_pq X - (+ P_pq X) = 0
-                    factor = 1
-                else:
-                    continue
-                if perms not in term_map:
-                    term_map[perms] = {}
-                if i not in term_map[perms]:
-                    term_map[perms][i] = []
-                if other_i not in term_map[perms]:
-                    term_map[perms][other_i] = []
-                term_map[perms][i].append((other_i, factor))
-                term_map[perms][other_i].append((i, factor))
-                if i in unmapped_terms:
-                    unmapped_terms.remove(i)
-                if other_i in unmapped_terms:
-                    unmapped_terms.remove(other_i)
-        return term_map, unmapped_terms
+        term_map = defaultdict(lambda: defaultdict(list))
+        for i, term in enumerate(itmd_terms):
+            # only apply permutations to a term that are not already
+            # inherent to the term!
+            term_sym = term.symmetry(only_target=True)
+            to_check = dict(itmd_symmetry.items() ^ term_sym.items())  # XOR
+            for perms, factor in to_check.items():
+                perm_term = term.permute(*perms)
+                for other_i, other_term in enumerate(itmd_terms[i+1:]):
+                    if perm_term.sympy + other_term.sympy is S.Zero:
+                        # P_pq X + (- P_pq X) = 0
+                        factor = -1
+                    elif perm_term.sympy - other_term.sympy is S.Zero:
+                        # P_pq X - (+ P_pq X) = 0
+                        factor = +1
+                    else:
+                        continue
+                    other_i += i + 1  # recover the total index
+                    term_map[perms][i].append((other_i, factor))
+                    term_map[perms][other_i].append((i, factor))
+        term_map = dict(term_map)
+        for key, default_d in term_map.items():
+            term_map[key] = dict(default_d)
+        cache[factored_itmds] = term_map
+        return term_map
 
     def _prepare_itmd(self, factored_itmds: list[str] = None,
                       real: bool = False) -> e.expr:
         """"Factor all previously factorized in intermediates in the current
             intermediate."""
+
+        if factored_itmds is None:
+            factored_itmds = tuple()
+        else:
+            factored_itmds = tuple(factored_itmds)
+
+        # did we already factore the itmd previously?
+        factored_variants = self._factored_variants[real]
+        if (itmd := factored_variants.get(factored_itmds)) is not None:
+            return itmd
+
         itmd: e.expr = self.expand_itmd().expand()
         if real:
             itmd.make_real()
@@ -215,43 +201,41 @@ class registered_intermediate:
             available = intermediates().available
             factored = []
             for it in factored_itmds:
-                itmd = available[it].factor_itmd(
-                    itmd, factored_itmds=factored, max_order=self.order
-                )
+                cache_key = tuple([*factored, it])
+                try:
+                    itmd = factored_variants[cache_key]
+                except KeyError:
+                    itmd = available[it].factor_itmd(
+                        itmd, factored_itmds=factored, max_order=self.order
+                    )
+                    factored_variants[cache_key] = itmd
                 factored.append(it)
         return itmd
 
-    def _determine_target_idx(self, sub: dict, itmd_term_map: dict = None) \
-            -> list | tuple[list, dict]:
+    def _determine_target_idx(self, sub: dict) -> list:
         """Returns the target indices of the itmd if the provided
-           substitutions are applied to the default intermediate. Also
-           the permutations in the itmd_term_map are translated as well."""
-        target = [sub.get(idx, idx) for idx in get_symbols(self.default_idx)]
-        if itmd_term_map is None:
-            return target
-        translated_term_map = {}
-        for perms, perm_map in itmd_term_map.items():
-            perms = tuple(
-                tuple(sub.get(s, s) for s in perm) for perm in perms
-            )
-            translated_term_map[perms] = perm_map
-        return target, translated_term_map
+           substitutions are applied to the default intermediate."""
+        return [sub.get(idx, idx) for idx in get_symbols(self.default_idx)]
 
-    def _minimal_itmd_indices(self, remainder: e.expr, sub: dict,
-                              itmd_term_map: dict):
+    def _minimal_itmd_indices(self, remainder: e.expr, sub: dict):
         """Minimize the target indices of the intermediate to factor."""
         from .indices import get_first_missing_index, get_symbols, index_space
+        from collections import defaultdict
 
         if not isinstance(remainder, e.expr) or len(remainder) != 1:
-            raise Inputerror("Expected a expr of length 1 as input.")
-        itmd_indices, translated_term_map = \
-            self._determine_target_idx(sub, itmd_term_map)
+            raise Inputerror("Expected an expr of length 1 as remainder.")
+
+        # determine the intermediate target indices if sub is applied
+        itmd_indices = self._determine_target_idx(sub)
+
         # find all target indices that can not be changed
         # the remainder has to have the the target indices explicitly set!
-        used = {'occ': [], 'virt': []}
+        # an index can only occur once in provided_target_idx
+        used = defaultdict(list)
         for s in remainder.provided_target_idx:
             used[index_space(s.name)].append(s.name)
         # iterate over all itmd_indices and see if we can find a lower index
+        minimization_sub = {}
         for idx in itmd_indices:
             name = idx.name
             ov = index_space(name)
@@ -261,75 +245,113 @@ class registered_intermediate:
             used[ov].append(new_idx)
             if name == new_idx:  # already have the lowest index
                 continue
-            # found a lower index -> permute indices in remainder and itmd idx
+            # found a lower index -> build a substitution dictionary that
+            # leads to a minimization of the itmd indices if applied
             new_idx = get_symbols(new_idx)[0]
-            remainder = remainder.permute((idx, new_idx))
-            sub = {idx: new_idx, new_idx: idx}
-            for i, other_idx in enumerate(itmd_indices):
-                itmd_indices[i] = sub.get(other_idx, other_idx)
-            # and in the itmd_term map
-            new_term_map = {}
-            for perms, perm_map in translated_term_map.items():
-                perms = tuple(
-                    tuple(sub.get(s, s) for s in perm) for perm in perms
-                )
-                new_term_map[perms] = perm_map
-            translated_term_map = new_term_map
-        remainder = eri_orbenergy(remainder)
-        pref = remainder.pref  # possible that the substitutions introduce a -1
-        remainder = remainder.num * remainder.eri / remainder.denom
-        return remainder, itmd_indices, pref, translated_term_map
+            # build a new substitution dict that minimizes the itmd indices
+            additional_sub = {idx: new_idx, new_idx: idx}
+            if not minimization_sub:
+                minimization_sub = additional_sub
+            else:
+                for old, new in minimization_sub.items():
+                    if new == new_idx:
+                        minimization_sub[old] = idx
+                        del additional_sub[new_idx]
+                    elif new == idx:
+                        minimization_sub[old] = new_idx
+                        del additional_sub[idx]
+                if additional_sub:
+                    minimization_sub.update(additional_sub)
+        # permute/minimize the itmd target indices
+        itmd_indices = [minimization_sub.get(s, s) for s in itmd_indices]
+
+        # permute/minimize the remainder
+        # the input remainder has to have a prefactor of +1!
+        remainder = remainder.subs(minimization_sub, simultaneous=True)
+        pref = remainder.terms[0].prefactor  # possibly a -1!
+        remainder *= pref
+        return remainder, itmd_indices, pref
 
     def factor_itmd(self, expr: e.expr, factored_itmds: list[str] = None,
                     max_order: int = None) -> e.expr:
         from .factor_intermediates import (_factor_long_intermediate,
                                            _factor_short_intermediate)
-        from collections import Counter
+        from collections import Counter, defaultdict
+
         if not isinstance(expr, e.expr):
             raise Inputerror("Expr to factor needs to be an instance of "
                              f"{e.expr}.")
         if expr.sympy.is_number or \
                 factored_itmds and self.name in factored_itmds:
             return expr
+
         expr = expr.expand()
-        if max_order is None:
-            # order not implemented for polynoms
-            max_order = max((term.order for term in expr.terms))
-        if max_order < self.order:  # the order of the itmd is to high
+        if max_order is not None and max_order < self.order:
             return expr
+
         # try to reduce the number of terms that can be factored
         to_factor = e.expr(0, **expr.assumptions)
         remainder = e.expr(0, **expr.assumptions)
-        if self.itmd_type == 't_amplitude':
-            # only necessary to consider terms with an denominator
-            for term in expr.terms:
+        max_found_order = 0
+        for term in expr.terms:
+            order = term.order
+            max_found_order = max(max_found_order, order)
+            if order < self.order:  # order high enough?
+                remainder += term
+            # amplitudes need (except t4_2) need to have some denominator
+            elif self.itmd_type == 't_amplitude' and self.name != 't4_2':
                 if any(o.exponent < 0 and o.contains_only_orb_energies
-                       for o in term.objects):  # do we have a denominator?
+                       for o in term.objects):
                     to_factor += term
                 else:
                     remainder += term
-        else:  # TODO: add some additional prescreening?
-            to_factor = expr
+            else:
+                to_factor += term
         if to_factor.sympy is S.Zero:  # don't have anything to factor
             return expr
+
+        if factored_itmds is None:  # transform to tuple -> use as dict key
+            factored_itmds = tuple()
+        else:
+            factored_itmds = tuple(factored_itmds)
+
         # prepare the intermediate before factorization
         itmd_expr = self._prepare_itmd(factored_itmds=factored_itmds,
                                        real=expr.real)
+        if len(to_factor) < len(itmd_expr):  # enough valid terms?
+            return expr
+
         # extract data from the intermediate
         itmd: list[eri_orbenergy] = [eri_orbenergy(term).canonicalize_sign()
                                      for term in itmd_expr.terms]
         itmd_data: list[dict] = []
+        itmd_tensors: list[Counter] = []
         for term in itmd:
             itmd_pattern = term.eri_pattern(include_exponent=False,
                                             target_idx_string=False)
-            itmd_tensors = Counter([t.name for t in term.eri.tensors
-                                    for _ in range(t.exponent)])
             itmd_indices = [o.idx for o in term.eri.objects]
             itmd_obj_sym = [o.symmetry() for o in term.eri.objects]
             itmd_data.append({'itmd_pattern': itmd_pattern,
-                              'itmd_tensors': itmd_tensors,
                               'itmd_indices': itmd_indices,
                               'itmd_obj_sym': itmd_obj_sym})
+            itmd_tensors.append(Counter([t.name for t in term.eri.tensors
+                                         for _ in range(t.exponent)]))
+
+        # filter further terms
+        temp = e.expr(0, **to_factor.assumptions)
+        for term in to_factor.terms:
+            # does the term contain all necessary tensors?
+            tensors = Counter([t.name for t in term.tensors
+                               for _ in range(t.exponent)])
+            if any(all(tensors[t] >= n for t, n in itmd_term_tensors.items())
+                   for itmd_term_tensors in itmd_tensors):
+                temp += term
+            else:
+                remainder += term
+        to_factor = temp
+        if to_factor.sympy is S.Zero or len(to_factor) < len(itmd_expr):
+            return expr  # enough valid terms?
+
         # actually factor the expression
         if len(itmd) == 1:  # short intermediate -> only a single term
             itmd: eri_orbenergy = itmd[0]
@@ -339,13 +361,14 @@ class registered_intermediate:
             expr = _factor_short_intermediate(to_factor, itmd, itmd_data, self)
             expr += remainder.sympy
         else:  # long intermediate -> multiple terms
-            # create a map that connects terms that can be mapped onto
-            # each other through specific index permutations
-            itmd_term_map, unmapped_itmd_terms = self.itmd_term_map(itmd_expr)
-            for _ in range(max_order // self.order):
+            if not hasattr(self, '_term_map_cache'):
+                # {real: {factored_itmds: {perms: {i: []}}}}
+                self._term_map_cache = {True: defaultdict(dict),
+                                        False: defaultdict(dict)}
+            itmd_term_map = self._term_map_cache[expr.real][factored_itmds]
+            for _ in range(max_found_order // self.order):
                 to_factor = _factor_long_intermediate(
-                    to_factor, itmd, itmd_data, itmd_term_map,
-                    unmapped_itmd_terms, self
+                    to_factor, itmd, itmd_data, itmd_term_map, self
                 )
             expr = to_factor + remainder.sympy
         return expr
@@ -362,6 +385,7 @@ class t2_1(registered_intermediate):
         self._order: int = 1
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
         self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
@@ -398,13 +422,12 @@ class t2_1(registered_intermediate):
         if expr.sympy.is_number or \
                 factored_itmds and self.name in factored_itmds:
             return expr
+        expr = expr.expand()
         if max_order is None:
             terms = (eri_orbenergy(term) for term in expr.terms)
             max_order = max((term.eri.order for term in terms))
         if max_order < self.order:  # the order of the itmd is too high
             return expr
-
-        expr = expr.expand()
         # prepare the itmd and extract information
         t2 = self.expand_itmd()
         if expr.real:
@@ -466,6 +489,7 @@ class t1_2(registered_intermediate):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'a')
         self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
@@ -510,6 +534,7 @@ class t2_2(registered_intermediate):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
         self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
@@ -525,19 +550,21 @@ class t2_2(registered_intermediate):
         k, l = contracted['occ']  # noqa: E741
         c, d = contracted['virt']
         # t2_1 class instance for generating t2_1 amplitudes
-        t2_1: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2_ampl: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the t2_2 amplitude
         denom = (orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j))
         # - 0.5 t2eri_3
         term1 = (- Rational(1, 2) *
-                 t2_1.expand_itmd(lower=(k, l), upper=(a, b)).sympy *
+                 t2_ampl.expand_itmd(lower=(k, l), upper=(a, b)).sympy *
                  eri((i, j, k, l)))
         # - 0.5 t2eri_5
         term2 = (- Rational(1, 2) *
-                 t2_1.expand_itmd(lower=(i, j), upper=(c, d)).sympy *
+                 t2_ampl.expand_itmd(lower=(i, j), upper=(c, d)).sympy *
                  eri((a, b, c, d)))
         # + (1 - P_ij) (1 - P_ab) P_ij t2eri_4
-        base = t2_1.expand_itmd(lower=(i, k), upper=(a, c)) * eri((k, b, j, c))
+        base = (
+            t2_ampl.expand_itmd(lower=(i, k), upper=(a, c)) * eri((k, b, j, c))
+        )
         term3 = (base.sympy - base.copy().permute((i, j)).sympy
                  - base.copy().permute((a, b)).sympy
                  + base.copy().permute((i, j), (a, b)).sympy)
@@ -553,13 +580,121 @@ class t2_2(registered_intermediate):
         return e.expr(t2)
 
 
+class t3_2(registered_intermediate):
+    """Second order MP triples amplitude."""
+    _itmd_type: str = 't_amplitude'
+
+    def __init__(self):
+        self._order: int = 2
+        self._default_idx: tuple[str] = ('i', 'j', 'k', 'a', 'b', 'c')
+        self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self.__cache: dict = {}
+
+    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
+        from .indices import indices as idx_cls
+
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        if (itmd := self.__cache.get(idx, None)) is not None:
+            return itmd
+        i, j, k, a, b, c = idx
+        # generate additional contracted indices (1o / 1v)
+        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
+        l, d = contracted['occ'][0], contracted['virt'][0]
+        # t2_1 class instance for generating t2_1 amplitudes
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        # build the t3_2 amplitude
+        denom = (orb_energy(i) + orb_energy(j) + orb_energy(k)
+                 - orb_energy(a) - orb_energy(b) - orb_energy(c))
+        # (1 - P_ik - P_jk) (1 - P_ab - P_ac) <kd||bc> t_ij^ad
+        base = t2.expand_itmd(indices=(i, j, a, d)) * eri((k, d, b, c))
+        term1 = (base.sympy - base.copy().permute((i, k)).sympy
+                 - base.copy().permute((j, k)).sympy
+                 - base.copy().permute((a, b)).sympy
+                 - base.copy().permute((a, c)).sympy
+                 + base.copy().permute((i, k), (a, b)).sympy
+                 + base.copy().permute((i, k), (a, c)).sympy
+                 + base.copy().permute((j, k), (a, b)).sympy
+                 + base.copy().permute((j, k), (a, c)).sympy)
+        # (1 - P_ij - P_ik) (1 - P_ac - P_bc) <jk||lc> t_il^ab
+        base = t2.expand_itmd(indices=(i, l, a, b)) * eri((j, k, l, c))
+        term2 = (base.sympy - base.copy().permute((i, j)).sympy
+                 - base.copy().permute((i, k)).sympy
+                 - base.copy().permute((a, c)).sympy
+                 - base.copy().permute((b, c)).sympy
+                 + base.copy().permute((i, j), (a, c)).sympy
+                 + base.copy().permute((i, j), (b, c)).sympy
+                 + base.copy().permute((i, k), (a, c)).sympy
+                 + base.copy().permute((i, k), (b, c)).sympy)
+        t3 = e.expr(term1/denom + term2/denom, target_idx=(i, j, k, a, b, c))
+        self.__cache[idx] = t3
+        return t3
+
+    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        lower = idx[:3]
+        upper = idx[3:]
+        t2 = AntiSymmetricTensor('t2', upper, lower)
+        return e.expr(t2)
+
+
+class t4_2(registered_intermediate):
+    """Second order MP quadruple amplitudes in a factorized form that avoids
+       the construction of the quadruples denominator."""
+    _itmd_type: str = 't_amplitude'
+
+    def __init__(self):
+        self._order: int = 2
+        self._default_idx: tuple[str] = ('i', 'j', 'k', 'l',
+                                         'a', 'b', 'c', 'd')
+        self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self.__cache: dict = {}
+
+    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
+        from itertools import product
+
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        if (itmd := self.__cache.get(idx, None)) is not None:
+            return itmd
+        i, j, k, l, a, b, c, d = idx
+        # t2_1 class instance
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        # build the t4_2 amplitude
+        # (1 - P_ac - P_ad - P_bc - P_bd + P_ac P_bd) (1 - P_jk - P_jl)
+        #  t_ij^ab t_kl^cd
+        base: e.expr = (t2.expand_itmd(indices=(i, j, a, b)) *
+                        t2.expand_itmd(indices=(k, l, c, d)).sympy)
+        v_permutations = {tuple(tuple()): 1, ((a, c),): -1, ((a, d),): -1,
+                          ((b, c),): -1, ((b, d),): -1, ((a, c), (b, d)): +1}
+        o_permutations = {tuple(tuple()): 1, ((j, k),): -1, ((j, l),): -1}
+        t4 = 0
+        for (o_perms, o_factor), (v_perms, v_factor) in \
+                product(o_permutations.items(), v_permutations.items()):
+            perms = o_perms + v_perms
+            t4 += o_factor * v_factor * base.copy().permute(*perms).sympy
+        t4 = e.expr(t4, target_idx=(i, j, k, l, a, b, c, d))
+        self.__cache[idx] = t4
+        return t4
+
+    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        lower = idx[:4]
+        upper = idx[4:]
+        t2 = AntiSymmetricTensor('t2', upper, lower)
+        return e.expr(t2)
+
+
 class p0_2_oo(registered_intermediate):
+    """Occupied Occupied block of the 2nd order contribution of the MP density
+    """
     _itmd_type: str = 'mp_density'
 
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j')
         self._symmetric: bool = True
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
@@ -592,12 +727,14 @@ class p0_2_oo(registered_intermediate):
 
 
 class p0_2_vv(registered_intermediate):
+    """Virtual Virtual block of the 2nd order contribution of the MP density"""
     _itmd_type: str = 'mp_density'
 
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('a', 'b')
         self._symmetric: bool = True
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
@@ -628,13 +765,86 @@ class p0_2_vv(registered_intermediate):
         return e.expr(p0, sym_tensors=["p2"])
 
 
+class t2eri_1(registered_intermediate):
+    """t2eri1 in adcc / pi1 in libadcc."""
+    _itmd_type: str = 'misc'
+
+    def __init__(self):
+        self._order: int = 2
+        self._default_idx: tuple[str] = ('i', 'j', 'k', 'a')
+        self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self.__cache: dict = {}
+
+    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
+        from .indices import indices as idx_cls
+
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        if (itmd := self.__cache.get(idx, None)) is not None:
+            return itmd
+        i, j, k, a = idx
+        # generate additional contracted indices (2v)
+        b, c = idx_cls().get_generic_indices(n_v=2)['virt']
+        # t2_1 class instance for generating t2_1 amplitudes
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        # build the intermediate
+        t2eri = t2.expand_itmd(indices=(i, j, b, c)) * eri((k, a, b, c))
+        t2eri = e.expr(t2eri, target_idx=(i, j, k, a))
+        self.__cache[idx] = t2eri
+        return t2eri
+
+    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        upper = idx[:2]
+        lower = idx[2:]
+        t2eri = AntiSymmetricTensor('t2eri1', upper, lower)
+        return e.expr(t2eri)
+
+
+class t2eri_2(registered_intermediate):
+    """t2eri2 in adcc / pi2 in libadcc."""
+    _itmd_type: str = 'misc'
+
+    def __init__(self):
+        self._order: int = 2
+        self._default_idx: tuple[str] = ('i', 'j', 'k', 'a')
+        self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self.__cache: dict = {}
+
+    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
+        from .indices import indices as idx_cls
+
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        if (itmd := self.__cache.get(idx, None)) is not None:
+            return itmd
+        i, j, k, a = idx
+        # generate additional contracted indices (1o / 1v)
+        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
+        b, l = contracted['virt'][0], contracted['occ'][0]  # noqa E741
+        # t2_1 class instance for generating t2_1 amplitudes
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        # build the intermediate
+        t2eri = t2.expand_itmd(indices=(i, l, a, b)) * eri((l, k, j, b))
+        t2eri = e.expr(t2eri, target_idx=(i, j, k, a))
+        self.__cache[idx] = t2eri
+        return t2eri
+
+    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        t2eri = NonSymmetricTensor('t2eri2', idx)
+        return e.expr(t2eri)
+
+
 class t2eri_3(registered_intermediate):
+    """t2eri3 in adcc / pi3 in libadcc."""
     _itmd_type: str = 'misc'
 
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
         self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
@@ -663,12 +873,14 @@ class t2eri_3(registered_intermediate):
 
 
 class t2eri_4(registered_intermediate):
+    """t2eri4 in adcc / pi4 in libadcc."""
     _itmd_type: str = 'misc'
 
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
         self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
@@ -680,8 +892,7 @@ class t2eri_4(registered_intermediate):
         i, j, a, b = idx
         # generate additional contracted indices (1o / 1v)
         contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
-        k = contracted['occ'][0]
-        c = contracted['virt'][0]
+        k, c = contracted['occ'][0], contracted['virt'][0]
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
@@ -697,12 +908,14 @@ class t2eri_4(registered_intermediate):
 
 
 class t2eri_5(registered_intermediate):
+    """t2eri5 in adcc / pi5 in libadcc."""
     _itmd_type: str = 'misc'
 
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
         self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
@@ -730,13 +943,86 @@ class t2eri_5(registered_intermediate):
         return e.expr(t2eri)
 
 
+class t2eri_6(registered_intermediate):
+    """t2eri6 in adcc / pi6 in libadcc."""
+    _itmd_type: str = 'misc'
+
+    def __init__(self):
+        self._order: int = 2
+        self._default_idx: tuple[str] = ('i', 'a', 'b', 'c')
+        self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self.__cache: dict = {}
+
+    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
+        from .indices import indices as idx_cls
+
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        if (itmd := self.__cache.get(idx, None)) is not None:
+            return itmd
+        i, a, b, c = idx
+        # generate additional contracted indices (2o)
+        j, k = idx_cls().get_generic_indices(n_o=2)['occ']
+        # t2_1 class instance for generating t2_1 amplitudes
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        # build the intermediate
+        t2eri = t2.expand_itmd(indices=(j, k, b, c)).sympy * eri((j, k, i, a))
+        t2eri = e.expr(t2eri, target_idx=(i, a, b, c))
+        self.__cache[idx] = t2eri
+        return t2eri
+
+    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        upper = idx[:2]
+        lower = idx[2:]
+        t2eri = AntiSymmetricTensor('t2eri6', upper, lower)
+        return e.expr(t2eri)
+
+
+class t2eri_7(registered_intermediate):
+    """t2eri7 in adcc / pi7 in libadcc."""
+    _itmd_type: str = 'misc'
+
+    def __init__(self):
+        self._order: int = 2
+        self._default_idx: tuple[str] = ('i', 'a', 'b', 'c')
+        self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self.__cache: dict = {}
+
+    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
+        from .indices import indices as idx_cls
+
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        if (itmd := self.__cache.get(idx, None)) is not None:
+            return itmd
+        i, a, b, c = idx
+        # generate additional contracted indices (1o / 1v)
+        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
+        j, d = contracted['occ'][0], contracted['virt'][0]
+        # t2_1 class instance for generating t2_1 amplitudes
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        # build the intermediate
+        t2eri = t2.expand_itmd(indices=(i, j, b, d)).sympy * eri((j, c, a, d))
+        t2eri = e.expr(t2eri, target_idx=(i, a, b, c))
+        self.__cache[idx] = t2eri
+        return t2eri
+
+    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        t2eri = NonSymmetricTensor('t2eri7', idx)
+        return e.expr(t2eri)
+
+
 class t2sq(registered_intermediate):
+    """t2sq intermediate from adcc and libadc."""
     _itmd_type: str = 'misc'
 
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'a', 'j', 'b')
         self._symmetric: bool = False
+        self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
@@ -761,7 +1047,9 @@ class t2sq(registered_intermediate):
 
     def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        itmd = NonSymmetricTensor('t2sq', idx)
+        upper = idx[:2]
+        lower = idx[2:]
+        itmd = AntiSymmetricTensor('t2sq', upper, lower, 1)
         return e.expr(itmd)
 
 
@@ -769,9 +1057,9 @@ def eri(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:
     """Builds an electron repulsion integral using the provided indices.
        Indices may be provided as list of sympy symbols or as string."""
 
+    idx = get_symbols(idx)
     if len(idx) != 4:
         raise Inputerror(f'4 indices required to build a ERI. Got: {idx}.')
-    idx = get_symbols(idx)
     return AntiSymmetricTensor('V', idx[:2], idx[2:])
 
 
