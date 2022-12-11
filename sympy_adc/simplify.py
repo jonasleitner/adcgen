@@ -297,7 +297,7 @@ def extract_dm(expr, bra_ket_sym: int = None):
             symmetrized += term.copy().permute(*perms) * factor
         return symmetrized
 
-    if bra_ket_sym not in [0, 1, -1]:
+    if bra_ket_sym is not None and bra_ket_sym not in [0, 1, -1]:
         raise Inputerror(f"Invalid bra_ket symmetry {bra_ket_sym}. 0, 1 and -1"
                          "are valid values.")
 
@@ -311,6 +311,9 @@ def extract_dm(expr, bra_ket_sym: int = None):
     blocks = sort.by_tensor_block(expr, 'd', bra_ket_sym)
 
     for block, block_expr in blocks.items():
+        if block_expr.sympy.is_number:
+            continue
+
         removed = e.compatible_int(0)
         # - remove d in each term
         for term in block_expr.terms:
@@ -348,7 +351,8 @@ def extract_dm(expr, bra_ket_sym: int = None):
                 sp = index_space(idx.name)
                 current_idx = {s.name for idx_list in d_tensor.values()
                                for s in idx_list if index_space(s.name) == sp}
-                current_idx.update(term_idx[sp])
+                if sp in term_idx:
+                    current_idx.update(term_idx[sp])
                 # generate a second index of the same space for the delta, e.g.
                 # X_ij d^ki_kj -> X_ij delta_kl
                 new_idx = get_symbols(get_first_missing_index(current_idx, sp))[0]  # noqa E501

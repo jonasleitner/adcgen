@@ -131,7 +131,7 @@ class indices(metaclass=Singleton):
            'earlier' indices. The function essentially uses all indices
            in [i,j,k,l,m,n,o,i1...] from the beginning that are no target
            indices."""
-        import sympy_adc.expr_container as e
+        from . import expr_container as e
         # option 1: leave all target indices untouched -> use container to
         #           find them
         # option 2: leave all indices that are for sure not specific untouched
@@ -167,7 +167,7 @@ class indices(metaclass=Singleton):
 
     def substitute_with_generic(self, expr):
         """Substitute all contracted indices with new, generic indices."""
-        import sympy_adc.expr_container as e
+        from . import expr_container as e
 
         def substitute_contracted(term):
             contracted = sorted(

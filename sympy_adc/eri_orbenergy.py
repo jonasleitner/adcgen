@@ -1,5 +1,5 @@
 from .misc import Inputerror
-import sympy_adc.expr_container as e
+from . import expr_container as e
 from sympy import Pow, S
 
 

@@ -1,4 +1,4 @@
-import sympy_adc.expr_container as e
+from . import expr_container as e
 from .eri_orbenergy import eri_orbenergy
 from .misc import Inputerror
 from sympy import S

@@ -1,5 +1,5 @@
 from sympy import S
-import sympy_adc.expr_container as e
+from . import expr_container as e
 from .misc import Inputerror
 from .indices import index_space
 

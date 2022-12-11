@@ -1,10 +1,12 @@
 from .indices import get_symbols, index_space
 from .misc import Inputerror, Singleton
-import sympy_adc.expr_container as e
+from . import expr_container as e
 from .eri_orbenergy import eri_orbenergy
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
 
 from sympy import S, Dummy
+
+from collections import defaultdict
 
 
 class intermediates(metaclass=Singleton):
@@ -132,7 +134,6 @@ class registered_intermediate:
            ... + (1 - P_ij) * (1 - P_ab) * x for the t2_2 amplitudes.
            The target indices of the provided itmd expr need to be set
            to the target indices of the itmd."""
-        from collections import defaultdict
 
         if factored_itmds is None:
             factored_itmds = tuple()
@@ -140,11 +141,7 @@ class registered_intermediate:
             factored_itmds = tuple(factored_itmds)
 
         # try to load the term map from the cache
-        if not hasattr(self, '_term_map_cache'):
-            # {real: {factored_itmds: {perms: {i: []}}}}
-            self._term_map_cache = {True: defaultdict(dict),
-                                    False: defaultdict(dict)}
-        cache = self._term_map_cache[real]
+        cache: defaultdict[tuple, dict] = self._term_map_cache[real]
         if factored_itmds in cache:
             return cache[factored_itmds]
 
@@ -158,7 +155,7 @@ class registered_intermediate:
             # only apply permutations to a term that are not already
             # inherent to the term!
             term_sym = term.symmetry(only_target=True)
-            to_check = dict(itmd_symmetry.items() ^ term_sym.items())  # XOR
+            to_check = dict(itmd_symmetry.items() - term_sym.items())
             for perms, factor in to_check.items():
                 perm_term = term.permute(*perms)
                 for other_i, other_term in enumerate(itmd_terms[i+1:]):
@@ -220,7 +217,6 @@ class registered_intermediate:
     def _minimal_itmd_indices(self, remainder: e.expr, sub: dict):
         """Minimize the target indices of the intermediate to factor."""
         from .indices import get_first_missing_index, get_symbols, index_space
-        from collections import defaultdict
 
         if not isinstance(remainder, e.expr) or len(remainder) != 1:
             raise Inputerror("Expected an expr of length 1 as remainder.")
@@ -276,7 +272,7 @@ class registered_intermediate:
                     max_order: int = None) -> e.expr:
         from .factor_intermediates import (_factor_long_intermediate,
                                            _factor_short_intermediate)
-        from collections import Counter, defaultdict
+        from collections import Counter
 
         if not isinstance(expr, e.expr):
             raise Inputerror("Expr to factor needs to be an instance of "
@@ -361,10 +357,6 @@ class registered_intermediate:
             expr = _factor_short_intermediate(to_factor, itmd, itmd_data, self)
             expr += remainder.sympy
         else:  # long intermediate -> multiple terms
-            if not hasattr(self, '_term_map_cache'):
-                # {real: {factored_itmds: {perms: {i: []}}}}
-                self._term_map_cache = {True: defaultdict(dict),
-                                        False: defaultdict(dict)}
             itmd_term_map = self._term_map_cache[expr.real][factored_itmds]
             for _ in range(max_found_order // self.order):
                 to_factor = _factor_long_intermediate(
@@ -490,6 +482,8 @@ class t1_2(registered_intermediate):
         self._default_idx: tuple[str] = ('i', 'a')
         self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self._term_map_cache = {True: defaultdict(dict),
+                                False: defaultdict(dict)}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
@@ -535,6 +529,8 @@ class t2_2(registered_intermediate):
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
         self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self._term_map_cache = {True: defaultdict(dict),
+                                False: defaultdict(dict)}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
@@ -589,6 +585,8 @@ class t3_2(registered_intermediate):
         self._default_idx: tuple[str] = ('i', 'j', 'k', 'a', 'b', 'c')
         self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self._term_map_cache = {True: defaultdict(dict),
+                                False: defaultdict(dict)}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
@@ -649,6 +647,8 @@ class t4_2(registered_intermediate):
                                          'a', 'b', 'c', 'd')
         self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
+        self._term_map_cache = {True: defaultdict(dict),
+                                False: defaultdict(dict)}
         self.__cache: dict = {}
 
     def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:

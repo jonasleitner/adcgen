@@ -1,4 +1,4 @@
-import sympy_adc.expr_container as e
+from . import expr_container as e
 from .misc import Inputerror
 from .eri_orbenergy import eri_orbenergy
 from sympy import S
@@ -255,14 +255,15 @@ def _map_on_other_terms(itmd_term_i: int, remainder: e.expr, idx: list, pref,
     # can be mapped onto anothers using the given permutations.
     matching_itmd_terms = [itmd_term_i]
     for perms, perm_factor in rem_sym.items():
-        # check if we already evaluated the current permutation for the
-        # current intermediate term.
-        default_perms = tuple(
+        # translate the permutations
+        perms = tuple(
             tuple(minimal_to_default.get(s, s) for s in perm) for perm in perms
         )
-        if default_perms not in itmd_term_map:
-            itmd_term_map[default_perms] = {}
-        perm_map: dict[int, list[int]] = itmd_term_map[default_perms]
+        # check if we already evaluated the current permutation for the
+        # current intermediate term.
+        if perms not in itmd_term_map:
+            itmd_term_map[perms] = {}
+        perm_map: dict[int, list[int]] = itmd_term_map[perms]
         if itmd_term_i in perm_map:
             for other_term_i, term_factor in perm_map[itmd_term_i]:
                 if perm_factor != term_factor:
@@ -272,7 +273,7 @@ def _map_on_other_terms(itmd_term_i: int, remainder: e.expr, idx: list, pref,
         # new perm and/or itmd_term -> determine the mapping introduced
         # by the current permutations
         perm_map[itmd_term_i] = []
-        perm_term = itmd_expr[itmd_term_i].copy().permute(*default_perms)
+        perm_term = itmd_expr[itmd_term_i].copy().permute(*perms)
         for other_term_i, other_term in enumerate(itmd_expr):
             if other_term_i == itmd_term_i:
                 continue
