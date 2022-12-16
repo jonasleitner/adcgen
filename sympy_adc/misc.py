@@ -184,3 +184,111 @@ class Singleton(type):
                 super(Singleton, cls).__call__(*args, **kwargs)
             )
         return cls._instances[cls]
+
+
+def import_from_sympy_latex(expr_string: str):
+    """Function that reads an expression that can be spread over multiple
+       from the specified file and builds the corresponding sympy objects
+       and returns them in a expr container."""
+    import re
+    from sympy import Rational
+    from . import expr_container as e
+
+    def import_obj(obj_str: str):
+        from sympy.physics.secondquant import KroneckerDelta
+        from sympy import Pow
+        from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
+        from .indices import get_symbols
+
+        if obj_str.isnumeric():  # prefactor
+            return int(obj_str)
+        elif "delta" in obj_str:  # KroneckerDelta
+            idx = obj_str.replace("\\delta_{", "").rstrip("}").split()
+            idx = get_symbols(idx)
+            if len(idx) != 2:
+                raise RuntimeError(f"Invalid indices for delta: {idx}.")
+            return KroneckerDelta(*idx)
+        elif "\\left" in obj_str:  # braket
+            obj_str = obj_str.replace("\\left(", "").replace("\\right)", "")
+            return import_from_sympy_latex(obj_str).sympy
+        else:  # tensor
+            obj = []
+            exponent = None
+            for component in re.split('\\^|_', obj_str):
+                component = component.lstrip("{").rstrip("}")
+                if component.isnumeric():
+                    if exponent is not None:
+                        raise RuntimeError("Found more than one exponent in "
+                                           f"{obj_str}.")
+                    exponent = int(component)
+                else:
+                    obj.append(component)
+            name, idx = obj[0], obj[1:]
+            if len(idx) == 1:  # NonSymmetricTensor
+                idx = get_symbols(*idx)
+                base = NonSymmetricTensor(name, idx)
+            elif len(idx) == 2:  # AntiSymmetricTensor
+                upper, lower = get_symbols(idx[0]), get_symbols(idx[1])
+                base = AntiSymmetricTensor(name, upper, lower)
+            else:
+                raise NotImplementedError("Found tensor with 3 index spaces:"
+                                          f" {obj_str}.")
+            if exponent is not None:
+                return Pow(base, exponent)
+            else:
+                return base
+
+    def split_terms(expr_string: str) -> list[str]:
+        stack: list[str] = []
+        terms: list[str] = []
+
+        term_start_idx = 0
+        for i, char in enumerate(expr_string):
+            if char in ['{', '(']:
+                stack.append(char)
+            elif char == '}':
+                assert stack.pop() == '{'
+            elif char == ')':
+                assert stack.pop() == '('
+            elif char in ['+', '-'] and not stack and i != term_start_idx:
+                terms.append(expr_string[term_start_idx:i])
+                term_start_idx = i
+        else:
+            terms.append(expr_string[term_start_idx:])
+        return terms
+
+    expr_string = expr_string.strip()
+    if not expr_string:
+        return e.expr(0)
+
+    terms = split_terms(expr_string)
+    if terms[0][0] not in ['+', '-']:
+        terms[0] = '+ ' + terms[0]
+
+    sympy_expr = 0
+    for term in terms:
+        sign = term[0]  # extract the sign of the term
+        if sign not in ['+', '-']:
+            raise ValueError(f"Found invalid sign {sign} in term {term}")
+        term = term[1:].strip()
+
+        sympy_term = -1 if sign == '-' else +1
+
+        if term.startswith("\\frac"):  # fraction
+            num, denom = term.replace("\\frac{", "").rstrip("}").split("}{")
+        else:  # no denominator
+            num, denom = term, None
+
+        # split at space if char before is in [}, ), 0-9] and char after
+        # is in [{, \]
+        for obj in re.split('(?<=[\\}\\)0-9]) (?=[\\{\\\\])', num):
+            sympy_term *= import_obj(obj)
+        if denom is not None:
+            for obj in re.split('(?<=[\\}\\)0-9]) (?=[\\{\\\\])', denom):
+                obj = import_obj(obj)
+                if isinstance(obj, int):
+                    sympy_term *= Rational(1, obj)
+                else:
+                    sympy_term /= obj
+        sympy_expr += sympy_term
+    return e.expr(sympy_expr)

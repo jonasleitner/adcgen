@@ -1,0 +1,25 @@
+{
+    "0": {
+        "expec_val": "{d^{i}_{i}}",
+        "real_sym_expec_val": "{d^{i}_{i}}",
+        "real_sym_dm": {
+            "oo": "\\delta_{i j}"
+        }
+    },
+    "1": {
+        "expec_val": "0",
+        "real_sym_expec_val": "0",
+        "real_sym_dm": {
+            "none": "0"
+        }
+    },
+    "2": {
+        "expec_val": "- \\frac{{d^{a}_{c}} {t1^{bc}_{ij}} {t1cc^{ab}_{ij}}}{2} + {d^{a}_{i}} {t2cc^{a}_{i}} + {d^{i}_{a}} {t2^{a}_{i}} - \\frac{{d^{k}_{j}} {t1^{ab}_{ik}} {t1cc^{ab}_{ij}}}{2}",
+        "real_sym_expec_val": "- \\frac{{d^{a}_{c}} {t1^{ab}_{ij}} {t1^{bc}_{ij}}}{2} + 2 {d^{i}_{a}} {t2^{a}_{i}} - \\frac{{d^{j}_{k}} {t1^{ab}_{ij}} {t1^{ab}_{ik}}}{2}",
+        "real_sym_dm": {
+            "oo": "- \\frac{{t1^{ab}_{ik}} {t1^{ab}_{jk}}}{2}",
+            "ov": "{t2^{a}_{i}}",
+            "vv": "\\frac{{t1^{ac}_{ij}} {t1^{bc}_{ij}}}{2}"
+        }
+    }
+}
