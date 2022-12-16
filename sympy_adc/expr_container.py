@@ -1305,7 +1305,7 @@ class obj(container):
         assumptions['target_idx'] = target
         return expr(expanded, **assumptions)
 
-    def description(self, include_exponent=True):
+    def description(self, include_exponent: bool = True) -> str:
         """A string that describes the object."""
         descr = self.type
         if descr == 'antisym_tensor':
@@ -1442,12 +1442,12 @@ class normal_ordered(obj):
             return expr(t, real=real, sym_tensors=sym_tensors,
                         antisym_tensors=antisym_tensors, target_idx=target_idx)
 
-    def __len__(self):
+    def __len__(self) -> int:
         # a NO obj can only contain a Mul object.
         return len(self.extract_no.args)
 
     @property
-    def args(self):
+    def args(self) -> tuple:
         return self.extract_no.args
 
     @property
@@ -1482,31 +1482,47 @@ class normal_ordered(obj):
         ret = tuple(s for o in objects for s in o.idx for _ in range(exp))
         if len(objects) != len(ret):
             raise NotImplementedError('Expected a NO object only to contain'
-                                      f"second quantized operators. {self}")
+                                      "second quantized operators with an "
+                                      f"exponent of 1. {self}")
         return ret
 
-    def crude_pos(self, target=None, target_idx_string=True,
-                  include_exponent=True):
-        # if target_idx_string and target is None:
-        #     target = self.term.target
-        # descr = self.description(include_exponent)
-        # ret = {}
-        # for o in self.objects:
-        #     for s, pos in o.crude_pos(target, target_idx_string,
-        #                               include_exponent).items():
-        #         if s not in ret:
-        #             ret[s] = []
-        #         ret[s].extend([f"{descr}_" + p for p in pos])
-        # return ret
-        raise NotImplementedError("Need to rethink this.")
+    def crude_pos(self, target=None, target_idx_string: bool = True,
+                  include_exponent: bool = True):
+        objects = self.objects
+        if target_idx_string:
+            if target is None:
+                target = self.term.target
+            target_in_no = [s for s in self.idx if s in target]
+
+        descr = self.description(include_exponent)
+        ret = {}
+        for o in objects:
+            o_descr = o.description(include_exponent)
+            for s in o.idx:
+                if s not in ret:
+                    ret[s] = []
+                pos = f"{descr}_{o_descr}"
+                if target_idx_string:
+                    other_target = "".join([i.name for i in target_in_no
+                                            if i is not s])
+                    if other_target:
+                        pos += f"_{other_target}"
+                ret[s].append(pos)
+        return ret
 
     def description(self, include_exponent=True):
-        # normal_ordered_#create_#annihilate
-        # objects = self.objects
-        # n_create = len([o for o in objects if o.type == 'create'])
-        # n_annihilate = len([o for o in objects if o.type == 'annihilate'])
-        # return f"{self.type}_{n_annihilate}_{n_create}"
-        raise NotImplementedError("Need to rethink this.")
+        descr = f"{self.type}_"
+        exponent = self.exponent if include_exponent else 1
+        for o in self.objects:
+            if (type := o.type) == 'create':
+                sp = f"{index_space(o.idx[0].name)[0]}+"
+            elif type == 'annihilate':
+                sp = index_space(o.idx[0].name)[0]
+            else:
+                raise TypeError("Unexpected content for NormalOrdered "
+                                f"container: {o}, {type(o)}.")
+            descr += "".join((sp for _ in range(exponent)))
+        return descr
 
     def print_latex(self, only_pull_out_pref=False):
         # no prefs possible in NO
@@ -1531,7 +1547,7 @@ class polynom(obj):
             return expr(t, real=real, sym_tensors=sym_tensors,
                         antisym_tensors=antisym_tensors, target_idx=target_idx)
 
-    def __len__(self):
+    def __len__(self) -> int:
         # has to at least contain 2 terms: a+b
         return len(self.extract_pow.args)
 
@@ -1540,17 +1556,13 @@ class polynom(obj):
         return self.extract_pow.args
 
     @property
-    def terms(self):
+    def terms(self) -> list[term]:
         # overwriting args allows to pass self to the term instances
         return [term(self, i) for i in range(len(self))]
 
     @property
     def type(self):
         return 'polynom'
-
-    @property
-    def order(self):
-        raise NotImplementedError("Order not implemented for polynoms.")
 
     @property
     def idx(self):
@@ -1561,38 +1573,7 @@ class polynom(obj):
             idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
         ))
 
-    def crude_pos(self, target=None, target_idx_string=True,
-                  include_exponent=True):
-        # I think this does not rly work correctly
-        # if target is None:
-        #     target = self.term.target
-        # ret = {}
-        # descr = self.description(include_exponent)
-        # for term in self.terms:
-        #     sign = term.sign
-        #     for o in term.objects:
-        #         for s, pos in o.crude_pos(target, target_idx_string).items():
-        #             if s not in ret:
-        #                 ret[s] = []
-        #             ret[s].extend([f"{descr}_{sign[0]}_" + p for p in pos])
-        # return ret
-        raise NotImplementedError("Need to rethink this.")
-
-    def description(self, include_exponent=True):
-        # content = []
-        # for term in self.terms:
-        #     # differentiate prefactors
-        #     descr = "".join(sorted(
-        #         [o.description() for o in term.objects
-        #          if o.sympy not in [1, -1]]
-        #     ))
-        #     content.append(f"_{term.sign[0]}_{descr}")
-        # content = sorted(content)
-        # return "".join([f"{self.type}_{len(self)}", *content,
-        #                f"_{str(self.exponent)}"])
-        raise NotImplementedError("Need to rethink this.")
-
-    def make_real(self, return_sympy=False):
+    def make_real(self, return_sympy: bool = False) -> expr:
         real = Add(*[t.make_real(return_sympy=True) for t in self.terms])
         real = Pow(real, self.exponent)
         if return_sympy:
@@ -1601,7 +1582,7 @@ class polynom(obj):
         assumptions['real'] = True
         return expr(real, **assumptions)
 
-    def _apply_tensor_braket_sym(self, return_sympy=False):
+    def _apply_tensor_braket_sym(self, return_sympy: bool = False) -> expr:
         with_sym = Add(*[t._apply_tensor_braket_sym(return_sympy=True)
                          for t in self.terms])
         with_sym = Pow(with_sym, self.exponent)
@@ -1614,72 +1595,35 @@ class polynom(obj):
         return expr(Pow(bl_diag, self.exponent), **self.assumptions)
 
     def diagonalize_fock(self, target=None):
-        # block diagonalize first. There is not much to think about here and
-        # the number of terms may be reduced
-        bl_diag = self.block_diagonalize_fock()
-        # block diagonalized polynom may be no longer a polynom
-        # exponent 1 may also give just a tensor/delta/...
-        if not isinstance(bl_diag.sympy, Pow) or \
-                isinstance(bl_diag.sympy, Pow) and \
-                not isinstance(bl_diag.sympy.args[0], Add):
-            if target is not None:
-                bl_diag.set_target_idx(target)
-            return bl_diag.diagonalize_fock()
-        # we are still having a (now block diagonal) polynom
-        if len(bl_diag) != 1 or len(bl_diag.terms[0]) != 1:
-            raise RuntimeError("Obtained an unexpected block diagonalized "
-                               f"result {bl_diag}, starting with the polynom "
-                               f"{self}.")
-        bl_diag = bl_diag.terms[0].objects[0]
-        if target is None:
-            target = self.term.target
-        # 1) old and new are not allowed to repeat in any other term within
-        #    the same polynom
-        # 2) old and new are not allowed to repeat in any other polynom that is
-        #    also contained in the parent term, e.g. (a+b)/(c+d) * X
-        terms = bl_diag.terms
-        diag = 0
-        sub = {}
-        # idx of all terms in the polynom [(i,),]
-        idx = [t.idx for t in terms]
-        # idx of other polynoms are biased with off diagonal fock indices.
-        if [pol for pol in self.term.polynoms if pol != self]:
-            raise NotImplementedError("Fock diagonalization not implemented "
-                                      "for multiple polynoms in a term: ",
-                                      self)
-        for i, term in enumerate(terms):
-            # copy, delete self from idx and flatten
-            other_idx = idx[:]
-            del other_idx[i]
-            other_idx = set([s for stpl in other_idx for s in stpl])
-            # diagonalize the term and obtain the sub dictionary
-            diag_term, sub_term = term.diagonalize_fock(target)
-            # if any index that is involved in the substitution (old or new)
-            # occurs in another term of the same polynom
-            # -> dont diagonalize the fock matrix
-            if any(s in other_idx for s in
-                    [sym for kv in sub_term.items() for sym in kv]):
-                diag_term = term
-                sub_term = {}
-            diag += diag_term.sympy
-            sub.update(sub_term)
-        assumptions = self.assumptions
-        assumptions['target_idx'] = target
-        return expr(Pow(diag, self.exponent), **assumptions), sub
+        raise NotImplementedError("Fock matrix diagonalization not implemented"
+                                  " for polynoms")
 
-    def rename_tensor(self, current, new):
+    def rename_tensor(self, current: str, new: str) -> expr:
         renamed = 0
         for term in self.terms:
             renamed += term.rename_tensor(current, new).sympy
         return expr(Pow(renamed, self.exponent), **self.assumptions)
 
-    def expand_intermediates(self, target=None):
-        target = self.term.target if target is None else target
+    @property
+    def order(self):
+        raise NotImplementedError("Order not implemented for polynoms.")
+
+    def crude_pos(self, target=None, target_idx_string: bool = True,
+                  include_exponent: bool = True) -> dict:
+        raise NotImplementedError("crude_pos for determining index positions "
+                                  "not implemented for polynoms.")
+
+    def expand_intermediates(self, target=None) -> expr:
+        if target is None:
+            target = self.term.target
         expanded = Add(*[t.expand_intermediates(target).sympy
                          for t in self.terms])
         assumptions = self.assumptions
         assumptions['target_idx'] = target
         return expr(Pow(expanded, self.exponent), **assumptions)
+
+    def description(self, include_exponent=True):
+        raise NotImplementedError("description not implemented for polynoms.")
 
     @property
     def contains_only_orb_energies(self):
