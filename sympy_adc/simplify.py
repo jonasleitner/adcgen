@@ -70,7 +70,7 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
 
 
 def find_compatible_terms(terms: list[e.term]):
-    from itertools import product, combinations
+    from itertools import product
 
     if not all(isinstance(term, e.term) for term in terms):
         raise Inputerror("Expected terms as a list of term Containers.")
@@ -81,20 +81,20 @@ def find_compatible_terms(terms: list[e.term]):
     #       can be treated correctly.
 
     # extract the target indices
-    target: list[tuple] = [term.target for term in terms]
-    pattern: list[dict] = []
-    tensors: list[list[str]] = []
-    deltas: list[list[str]] = []
-    target_obj: list[list[tuple]] = []
-    for term, target_idx in zip(terms, target):
+    term_target: list[tuple] = [term.target for term in terms]
+    term_pattern: list[dict] = []
+    term_tensors: list[list[str]] = []
+    term_deltas: list[list[str]] = []
+    term_target_obj: list[list[tuple]] = []
+    for term, target_idx in zip(terms, term_target):
         # extract the pattern
-        pattern.append(term.pattern(target=target_idx))
+        term_pattern.append(term.pattern(target=target_idx))
         # extract tensors
-        tensors.append(sorted(
+        term_tensors.append(sorted(
             [o.name for o in term.tensors for _ in range(o.exponent)]
         ))
         # extract deltas
-        deltas.append(sorted(
+        term_deltas.append(sorted(
             [o.space for o in term.deltas for _ in range(o.exponent)]
         ))
         # extract objects that hold the target indices and also how many occ
@@ -109,101 +109,107 @@ def find_compatible_terms(terms: list[e.term]):
                 (o.description(), obj_target_sp.count('o'), obj_target_sp.count('v'))  # noqa E501
                 for _ in range(o.exponent)
             ])
-        target_obj.append(sorted(temp))
+        term_target_obj.append(sorted(temp))
         del temp
 
     # collect terms that are equal according to their pattern
     equal_terms: dict[int, dict[int, dict]] = {}
     matched: set = set()
-    for (n, pat), (other_n, other_pat) in combinations(enumerate(pattern), 2):
-        # check if the terms are compatible:
-        # - have the same length (number of objects) up to a prefactor
-        # - the same number of occ and virt indices
-        # - the same target indices
-        # - the same tensors and deltas
-        # - the target indices are places on the same objects
-        if n in matched or other_n in matched or \
-                abs(len(terms[n]) - len(terms[other_n])) > 1 or \
-                pat.keys() != other_pat.keys() or \
-                any(len(idx_pat) < len(other_pat[sp])
-                    for sp, idx_pat in pat.items()) or \
-                target[n] != target[other_n] or \
-                tensors[n] != tensors[other_n] or \
-                deltas[n] != deltas[other_n] or \
-                target_obj[n] != target_obj[other_n]:
+    for i, pattern in enumerate(term_pattern):
+        if i in matched:
             continue
-        # try to map the indices onto each other according to the pattern.
-        # if all indices can be mapped, it should be possible to reduce the
-        # number of terms by applying the index permutations
-        # it was arbitrarily chosen to apply them to other_term
-        tar = target[n]
-        other_tar = target[other_n]
-        match: bool = True
-        sub_list: list[dict] = []
-        for ov, idx_pat in pat.items():  # handle o/v space separately
-            other_idx_pat = other_pat[ov]
-            ov_maps = []  # collect more than one map!!
-            for idx, p in idx_pat.items():
-                # collect all possible matches for idx
-                # check whether the current index is a target index
-                # -> only map onto other target indices
-                is_target = [idx in tar, False]
-                matching_idx = []
-                for other_idx, other_p in other_idx_pat.items():
-                    # check if both or none are target indices
-                    is_target[1] = other_idx in other_tar
-                    if is_target[0] != is_target[1]:
-                        continue
-                    if p == other_p:  # map if patterns are equal
-                        if all(is_target) and idx != other_idx:
-                            continue  # can't substitute target indices!
-                        matching_idx.append(other_idx)
-                if not matching_idx:
-                    break  # was not possible to find match for an idx
-                if not ov_maps:
-                    # fix the number of sub dicts for the current space
-                    ov_maps.extend([{s: idx} for s in matching_idx])
-                else:  # already created all sub dicts -> add where possible
-                    for sub, other_idx in product(ov_maps, matching_idx):
-                        if other_idx in sub or idx in sub.values():
-                            continue
-                        sub[other_idx] = idx
-            # remove incomplete subdicts and remove redundant substitutions
-            valid = []
-            for sub in ov_maps:
-                if sub.keys() != other_idx_pat.keys():
-                    continue
-                valid.append(
-                    {old: new for old, new in sub.items() if old != new}
-                )
-            if not valid:  # no valid sub dict -> terms can not match
-                match = False
-                break
-            if not sub_list:  # fix the number of final sub_dicts
-                sub_list.extend(valid)
-            else:  # already createy all sub_dicts
-                # spaces can't overlap!
-                # -> add all occ dicts to all virt dicts or vice versa
-                #    (depending on the order, but not important)
-                temp = []
-                for found_sub, sub in product(sub_list, valid):
-                    temp.append(found_sub | sub)
-                sub_list = temp
-        if not match:  # could not map the terms onto each other
-            continue
-        term, other_term = terms[n], terms[other_n]
-        for sub in sub_list:
-            if not sub:  # sub can be empty if terms only differ by target idx
+        term = terms[i]
+        target = term_target[i]
+        tensors = term_tensors[i]
+        deltas = term_deltas[i]
+        target_obj = term_target_obj[i]
+        for other_i in range(i+1, len(term_pattern)):
+            other_term = terms[other_i]
+            other_pattern = term_pattern[other_i]
+            other_target = term_target[other_i]
+            # check if the terms are compatible:
+            # - have the same length (number of objects) up to a prefactor
+            # - the same number and type of indices
+            # - the same target indices
+            # - the same tensors and deltas
+            # - the target indices are placed on the same objects
+            if other_i in matched or abs(len(term) - len(other_term)) > 1 or \
+                    pattern.keys() != other_pattern.keys() or \
+                    any(len(idx_pat) != len(other_pattern[sp])
+                        for sp, idx_pat in pattern.items()) or \
+                    target != other_target or \
+                    tensors != term_tensors[other_i] or \
+                    deltas != term_deltas[other_i] or \
+                    target_obj != term_target_obj[other_i]:
                 continue
-            # test the sub dict
-            sub_other = other_term.subs(sub, simultaneous=True)
-            # they can either cancel to 0 or add up to a single term
-            if len(term - sub_other) == 1:
-                if n not in equal_terms:
-                    equal_terms[n] = {}
-                equal_terms[n][other_n] = sub
-                matched.add(other_n)
-                break
+
+            # try to map the indices onto each other according to the pattern
+            # if a match for all indices can be found, it should be possible
+            # to combine both terms into a single term (or cancel them to 0)
+            # by applying index permutations of contracted indices
+            match: bool = True
+            sub_list: list[dict] = []
+            for ov, idx_pat in pattern.items():
+                other_idx_pat = other_pattern[ov]
+                ov_maps: list[dict] = []
+                for idx, pat in idx_pat.items():
+                    # find all possible matches for the given index
+                    # if its a target index -> can only map onto other
+                    # target indices
+                    is_target = idx in target
+                    matching_idx = []  # list to collect all possible matches
+                    for other_idx, other_pat in other_idx_pat.items():
+                        other_is_target = other_idx in other_target
+                        if is_target != other_is_target:
+                            continue  # only one of them is a target idx
+                        # pattern is sorted list of strings -> directly compare
+                        if pat == other_pat:
+                            if is_target and other_is_target and \
+                                    idx is not other_idx:
+                                continue  # can't substitute target indices
+                            matching_idx.append(other_idx)
+                    if not matching_idx:
+                        break  # could not find a match for the idx
+                    if not ov_maps:
+                        # initialize all sub dicts
+                        ov_maps.extend([{s: idx} for s in matching_idx])
+                    else:  # sub dicts already initialized -> add when possible
+                        for sub, other_idx in product(ov_maps, matching_idx):
+                            if other_idx in sub or idx in sub.values():
+                                continue
+                            sub[other_idx] = idx
+
+                # filter incomplete sub dicts and remove redundant entries
+                valid: list[dict] = []
+                for sub in ov_maps:
+                    if sub.keys() != other_idx_pat.keys():
+                        continue  # did not find a match for all idx
+                    valid.append({old: new for old, new in sub.items()
+                                  if old is not new})
+                if not valid:
+                    match = False
+                    break
+                if not sub_list:
+                    # initialize all final sub dicts
+                    sub_list.extend(valid)
+                else:  # all sub dicts already initialized
+                    # spaces can not overlap -> just combine the dicts
+                    sub_list = [other_sp_sub | sub for other_sp_sub, sub
+                                in product(sub_list, valid)]
+            if not match:  # could not map the terms onto each other
+                continue
+
+            for sub in sub_list:
+                if not sub:  # can a sub dict be empty?
+                    continue
+                # test the sub_dict: terms should add up or cancel to 0
+                sub_other = other_term.subs(sub, simultaneous=True)
+                if len(term - sub_other) == 1:
+                    if i not in equal_terms:
+                        equal_terms[i] = {}
+                    equal_terms[i][other_i] = sub
+                    matched.add(other_i)
+                    break
     return equal_terms
 
 

@@ -14,7 +14,7 @@ def factor_intermediates(expr):
                          f"as {e.expr} instance.")
     expr = expr.expand()
     factored = []
-    # later: 1. factor all t-amplitudes, t2_1 last
+    # later: 1. factor all t-amplitudes
     #        2. factor densities and other intermediates
     available = intermediates().available
     for name, itmd_instance in available.items():
@@ -141,12 +141,19 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
             #     print(f"{terms[term_i]}\ncorrepsponds to\n{itmd[i]}\n\n")
     factored_expr += Add(*(t.sympy for i, t in enumerate(terms)
                            if i not in factored_terms))
-    # if we found the itmd and it is symmetric -> add to the sym_tensors set
-    if factored_itmd and itmd_instance.symmetric:
-        name = itmd_instance.tensor().terms[0].objects[0].name
-        if name not in (sym_tensors := factored_expr.sym_tensors):
+    # if we found the itmd and it is symmetric or antisymmetric
+    #  -> add to the sym_tensors / antisym_tensors set
+    if factored_itmd:
+        tensor = itmd_instance.tensor().terms[0].objects[0]
+        name = tensor.name
+        if (bk_sym := tensor.bra_ket_sym) is S.One and \
+                name not in (sym_tensors := factored_expr.sym_tensors):
             sym_tensors = sym_tensors + (name,)
             factored_expr.set_sym_tensors(sym_tensors)
+        elif bk_sym is S.NegativeOne and \
+                name not in (antisym_t := factored_expr.antisym_tensors):
+            antisym_t = antisym_t + (name,)
+            factored_expr.set_antisym_tensors(antisym_t)
     return factored_expr
 
 
@@ -197,12 +204,19 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
             term = _factor_short_intermediate(term, itmd, itmd_data,
                                               itmd_instance).sympy
         factored_expr += term
-    # if we found the itmd and it is symmetric -> add to the sym_tensors set
-    if factored_itmd and itmd_instance.symmetric:
-        name = itmd_instance.tensor().terms[0].objects[0].name
-        if name not in (sym_tensors := factored_expr.sym_tensors):
+    # if we found the itmd and it is symmetric or antisymmetric
+    #  -> add to the sym_tensors / antisym_tensors set
+    if factored_itmd:
+        tensor = itmd_instance.tensor().terms[0].objects[0]
+        name = tensor.name
+        if (bk_sym := tensor.bra_ket_sym) is S.One and \
+                name not in (sym_tensors := factored_expr.sym_tensors):
             sym_tensors = sym_tensors + (name,)
             factored_expr.set_sym_tensors(sym_tensors)
+        elif bk_sym is S.NegativeOne and \
+                name not in (antisym_t := factored_expr.antisym_tensors):
+            antisym_t = antisym_t + (name,)
+            factored_expr.set_antisym_tensors(antisym_t)
     return factored_expr
 
 
@@ -348,7 +362,7 @@ def _compare_obj(obj: e.obj, itmd_obj: e.obj, obj_coupl: list[str],
                  itmd_obj_coupl: list[str], obj_descr: str = None,
                  itmd_obj_descr: str = None, obj_idx: tuple = None,
                  itmd_obj_idx: tuple = None,
-                 itmd_obj_sym: dict = None) -> list[dict]:
+                 itmd_obj_sym: dict = None) -> list[tuple[dict, int]]:
     """Compare the two provided objects and return the substitutions as dict
         that are required to transform the itmd_obj."""
     from collections import Counter
@@ -459,7 +473,7 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
             obj_i_list, additional_sub, additional_factor = variant
             # for instance, 0 / 1 -> 0,2 / 0,3 / 1,2 / 1,3
             if obj_i_list[0] not in idx_list and not any(
-                    old in sub and sub[old] != new
+                    old in sub and sub[old] is not new
                     for old, new in additional_sub.items()
                     ):
                 idx_list = idx_list + obj_i_list
@@ -559,7 +573,7 @@ def _compare_remainder(remainder: eri_orbenergy, indices: list,
     combs = _compare_terms(term=ref_remainder, itmd_term=remainder)
     mapped_with_sign_change = False
     for comb in combs:
-        sub = {old: new for old, new in comb['sub'].items() if old != new}
+        sub = {old: new for old, new in comb['sub'].items() if old is not new}
         if not sub:
             raise RuntimeError("Remainder and seem to be identical without "
                                "applyig any permutations. "

@@ -149,18 +149,25 @@ class indices(metaclass=Singleton):
             # missing index that may replace the contracted index
             sub = {}
             for s in term.contracted:
-                ov = index_space(s.name)
+                name = s.name
+                ov = index_space(name)
                 new_str = get_first_missing_index(used[ov], ov)
-                new = self.get_indices(new_str)[ov][0]
-                sub[s] = new
                 used[ov].append(new_str)
-            return term.subs(sub, simultaneous=True)
+                # need to get the symbol, because of i's introduced by wicks
+                new = self.get_indices(new_str)[ov][0]
+                if new is s:
+                    continue
+                sub[s] = new
+            if not sub:
+                return term
+            sub = term.subs(sub, simultaneous=True)
+            return sub
 
         expr = expr.expand()
         if not isinstance(expr, e.expr):
             expr = e.expr(expr)
         # iterate over terms and substitute all contracted indices
-        substituted = e.compatible_int(0)
+        substituted = e.expr(0, **expr.assumptions)
         for term in expr.terms:
             substituted += substitute_contracted(term)
         return substituted
@@ -170,17 +177,17 @@ class indices(metaclass=Singleton):
         from . import expr_container as e
 
         def substitute_contracted(term):
-            contracted = sorted(
-                term.contracted, key=lambda s:
-                (int(s.name[1:]) if s.name[1:] else 0, s.name[0])
-            )
             # count how many indices need to be replaced and get new indices
             old = {}
-            for s in contracted:
+            for s in term.contracted:
                 ov = index_space(s.name)
                 if ov not in old:
                     old[ov] = []
                 old[ov].append(s)
+
+            if not old:
+                return term
+
             n_ov = {'occ': 'n_o', 'virt': 'n_v', 'general': 'n_g'}
             kwargs = {n_ov[ov]: len(sym_list) for ov, sym_list in old.items()}
             new = self.get_generic_indices(**kwargs)
@@ -191,14 +198,13 @@ class indices(metaclass=Singleton):
                 if len(sym_list) != len(new[ov]):
                     raise RuntimeError(f"{len(sym_list)} {ov} indices needed "
                                        f"but got {len(new[ov])} new indices.")
-                for i, s in enumerate(sym_list):
-                    sub[s] = new[ov][i]
+                sub.update({s: new_s for s, new_s in zip(sym_list, new[ov])})
             return term.subs(sub, simultaneous=True)
 
         expr = expr.expand()
         if not isinstance(expr, e.expr):
             expr = e.expr(expr)
-        substituted = e.compatible_int(0)
+        substituted = e.expr(0, **expr.assumptions)
         for term in expr.terms:
             substituted += substitute_contracted(term)
         return substituted

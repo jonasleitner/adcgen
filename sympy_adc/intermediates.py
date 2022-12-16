@@ -64,12 +64,6 @@ class registered_intermediate:
             raise AttributeError(f"No itmd_type defined for {self.name}.")
         return itmd_type
 
-    @property
-    def symmetric(self) -> bool:
-        if (symmetric := getattr(self, '_symmetric', None)) is None:
-            raise AttributeError(f"Symmetric not defined for {self.name}")
-        return symmetric
-
     def validate_indices(self, **kwargs) -> tuple[Dummy]:
         indices = kwargs.pop('indices', None)
         default = self.default_idx
@@ -250,10 +244,10 @@ class registered_intermediate:
                 minimization_sub = additional_sub
             else:
                 for old, new in minimization_sub.items():
-                    if new == new_idx:
+                    if new is new_idx:
                         minimization_sub[old] = idx
                         del additional_sub[new_idx]
-                    elif new == idx:
+                    elif new is idx:
                         minimization_sub[old] = new_idx
                         del additional_sub[idx]
                 if additional_sub:
@@ -278,7 +272,8 @@ class registered_intermediate:
             raise Inputerror("Expr to factor needs to be an instance of "
                              f"{e.expr}.")
         if expr.sympy.is_number or \
-                factored_itmds and self.name in factored_itmds:
+                (factored_itmds and self.name in factored_itmds) or \
+                self.name == 't4_2':
             return expr
 
         expr = expr.expand()
@@ -376,7 +371,6 @@ class t2_1(registered_intermediate):
     def __init__(self):
         self._order: int = 1
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -414,18 +408,18 @@ class t2_1(registered_intermediate):
         if expr.sympy.is_number or \
                 factored_itmds and self.name in factored_itmds:
             return expr
+
         expr = expr.expand()
         if max_order is None:
-            terms = (eri_orbenergy(term) for term in expr.terms)
-            max_order = max((term.eri.order for term in terms))
+            max_order = max((term.order for term in expr.terms))
         if max_order < self.order:  # the order of the itmd is too high
             return expr
+
         # prepare the itmd and extract information
         t2 = self.expand_itmd()
         if expr.real:
             t2.make_real()
-        t2 = eri_orbenergy(t2)
-        t2.canonicalize_sign()
+        t2 = eri_orbenergy(t2).canonicalize_sign()
         t2_eri = t2.eri.objects[0]
         t2_eri_descr = t2_eri.description(include_exponent=False)
         t2_eri_idx = t2_eri.idx
@@ -434,7 +428,7 @@ class t2_1(registered_intermediate):
         substituted_expr = e.expr(0, **expr.assumptions)
         for term in expr.terms:
             term = eri_orbenergy(term).canonicalize_sign()
-            # print(f"term = {term}")
+            # print(f"\nterm = {term}")
             if term.denom.sympy.is_number:  # term needs to have a denominator
                 substituted_expr += term.expr
                 continue
@@ -450,7 +444,7 @@ class t2_1(registered_intermediate):
                                         itmd_obj_sym=t2_eri_sym)):
                     # no need to consider the symmetry here! just use the first
                     # sub dictionary... all should be valid!
-                    sub = sub[0][0]
+                    sub, factor = sub[0]
                     t2_sub_denom = t2.denom.copy().subs(sub, simultaneous=True)
                     if (denom_idx := term.find_matching_braket(t2_sub_denom)):
                         if len(denom_idx) != 1:
@@ -462,13 +456,14 @@ class t2_1(registered_intermediate):
                         # construct the t2 ampltude and multiply to the result
                         itmd = self.tensor(indices=target).sympy
                         # adjust the final pref (sign) for factoring the itmd
-                        pref /= t2.pref
+                        pref /= t2.pref * factor
                         substituted_term *= itmd
             # remove the matched eri
             denom = term.cancel_denom_brakets(denom_indices)
             eri = term.cancel_eri_objects(eri_indices)
             # substituted everything in the term
             substituted_term *= eri * term.num * pref / denom
+            # print(f"substituted_term = {substituted_term}")
             substituted_expr += substituted_term
         return substituted_expr
 
@@ -480,7 +475,6 @@ class t1_2(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'a')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self._term_map_cache = {True: defaultdict(dict),
                                 False: defaultdict(dict)}
@@ -527,7 +521,6 @@ class t2_2(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self._term_map_cache = {True: defaultdict(dict),
                                 False: defaultdict(dict)}
@@ -583,7 +576,6 @@ class t3_2(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'k', 'a', 'b', 'c')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self._term_map_cache = {True: defaultdict(dict),
                                 False: defaultdict(dict)}
@@ -645,7 +637,6 @@ class t4_2(registered_intermediate):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'k', 'l',
                                          'a', 'b', 'c', 'd')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self._term_map_cache = {True: defaultdict(dict),
                                 False: defaultdict(dict)}
@@ -693,7 +684,6 @@ class p0_2_oo(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j')
-        self._symmetric: bool = True
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -733,7 +723,6 @@ class p0_2_vv(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('a', 'b')
-        self._symmetric: bool = True
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -772,7 +761,6 @@ class t2eri_1(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'k', 'a')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -808,7 +796,6 @@ class t2eri_2(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'k', 'a')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -843,7 +830,6 @@ class t2eri_3(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -879,7 +865,6 @@ class t2eri_4(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -914,7 +899,6 @@ class t2eri_5(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -950,7 +934,6 @@ class t2eri_6(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'a', 'b', 'c')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -986,7 +969,6 @@ class t2eri_7(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'a', 'b', 'c')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 
@@ -1021,7 +1003,6 @@ class t2sq(registered_intermediate):
     def __init__(self):
         self._order: int = 2
         self._default_idx: tuple[str] = ('i', 'a', 'j', 'b')
-        self._symmetric: bool = False
         self._factored_variants: dict[bool, dict] = {True: {}, False: {}}
         self.__cache: dict = {}
 

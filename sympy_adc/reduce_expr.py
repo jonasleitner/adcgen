@@ -85,7 +85,6 @@ def reduce_expr(expr):
 
 def factor_eri(expr: e.expr) -> list[e.expr]:
     """Factors the eri's of an expression."""
-    from itertools import combinations
     from .simplify import find_compatible_terms
 
     if len(expr) == 1:  # trivial case
@@ -97,14 +96,17 @@ def factor_eri(expr: e.expr) -> list[e.expr]:
     # check for equal eri without permuting indices
     equal_eri: dict[int, list[int]] = {}
     matched: set = set()
-    for (i, eri), (other_i, other_eri) in combinations(enumerate(eris), 2):
-        if i in matched or other_i in matched:
+    for i, eri in enumerate(eris):
+        if i in matched:
             continue
         if i not in equal_eri:
             equal_eri[i] = []
-        if eri.sympy - other_eri.sympy is S.Zero:  # eri are equal!
-            equal_eri[i].append(other_i)
-            matched.add(other_i)
+        for other_i in range(i+1, len(eris)):
+            if other_i in matched:
+                continue
+            if eri.sympy - eris[other_i].sympy is S.Zero:  # eri are equal
+                equal_eri[i].append(other_i)
+                matched.add(other_i)
 
     if len(equal_eri) == 1:  # trivial case: all eris are equal
         i, matches = next(iter(equal_eri.items()))
@@ -121,10 +123,8 @@ def factor_eri(expr: e.expr) -> list[e.expr]:
 
     # add all terms up and substitute if necessary.
     ret: list[e.expr] = []
-    matched = set()
     for unique_i, compatible in compatible_eri.items():
         i = unique_eri_idx[unique_i]
-        matched.add(i)
         temp = terms[i].expr
         for matches in equal_eri[i]:  # add all terms with equal eri
             temp += terms[matches].expr
@@ -132,7 +132,6 @@ def factor_eri(expr: e.expr) -> list[e.expr]:
         # apply the found sub dicts to make more eri identical
         for other_unique_i, sub in compatible.items():
             other_i = unique_eri_idx[other_unique_i]
-            matched.add(other_i)
             temp += terms[other_i].expr.subs(sub, simultaneous=True)
             for matches in equal_eri[other_i]:  # sub all terms with equal eri
                 temp += terms[matches].expr.subs(sub, simultaneous=True)
@@ -150,7 +149,6 @@ def factor_eri(expr: e.expr) -> list[e.expr]:
 
 def factor_denom(expr: e.expr) -> list[e.expr]:
     """Factor the orbital energy denominators of an expr."""
-    from itertools import combinations
 
     if len(expr) == 1:  # trivial case
         return [expr]
@@ -162,14 +160,17 @@ def factor_denom(expr: e.expr) -> list[e.expr]:
     # singles should have i-a, while doubles have a+b-i-j
     equal_denom: dict[int, list[int]] = {}
     matched: set = set()
-    for (i, term), (other_i, other_term) in combinations(enumerate(terms), 2):
-        if i in matched or other_i in matched:
+    for i, term in enumerate(terms):
+        if i in matched:
             continue
         if i not in equal_denom:
             equal_denom[i] = []
-        if term.denom == other_term.denom:
-            matched.add(other_i)
-            equal_denom[i].append(other_i)
+        for other_i in range(i+1, len(terms)):
+            if other_i in matched:
+                continue
+            if term.denom == terms[other_i].denom:  # denoms are equal
+                equal_denom[i].append(other_i)
+                matched.add(other_i)
 
     if len(equal_denom) == 1:  # trivial case: all denoms are equal
         i, matches = next(iter(equal_denom.items()))

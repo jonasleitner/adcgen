@@ -30,12 +30,7 @@ def evaluate_deltas(expr):
     target = expr.target
     for d in expr.deltas:
         # idx for deltas are sorted as: (preferred, killable)
-        # but need to resort, because I need another criterion
-        # 0 is still preferred and 1 is still killable
-        idx = tuple(sorted(
-            [s for s in d.idx],
-            key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
-        ))
+        idx = d.idx
         # try to kill killable
         if idx[1] not in target:
             expr = expr.subs({idx[1]: idx[0]})

@@ -17,7 +17,7 @@ class expr(container):
         if isinstance(e, container):
             e = e.sympy
         self.__expr = sympify(e)
-        self.__real: bool = real
+        self.__real: bool = False
         self.__sym_tensors: set = (set() if sym_tensors is None
                                    else set(sym_tensors))
         self.__antisym_tensors: set = (set() if antisym_tensors is None
@@ -27,6 +27,8 @@ class expr(container):
             self.set_target_idx(target_idx)
         if real:  # also calls _apply_tensor_braket_sym()
             self.make_real()
+        # only apply bra_ket sym if 'f' and 'V' have been set manually
+        # otherwise make_real applied the bra_ket sym already
         if (sym_tensors or antisym_tensors) and \
                 ('f' in sym_tensors and 'V' in sym_tensors):
             self._apply_tensor_braket_sym()
@@ -90,8 +92,9 @@ class expr(container):
         sym_tensors = set(sym_tensors)
         if self.real:
             sym_tensors.update(['f', 'V'])
-        self.__sym_tensors = sym_tensors
-        self._apply_tensor_braket_sym()
+        if sym_tensors != self.__sym_tensors:
+            self.__sym_tensors = sym_tensors
+            self._apply_tensor_braket_sym()
 
     def set_antisym_tensors(self, antisym_tensors: list[str]) -> None:
         if not all(isinstance(t, str) for t in antisym_tensors):
@@ -119,6 +122,9 @@ class expr(container):
            """
         # need to have the option return_sympy at lower levels, because
         # this function may be called upon instantiation
+
+        if self.__real:
+            return self
 
         self.__real = True
         sym_tensors = self.__sym_tensors
@@ -207,21 +213,20 @@ class expr(container):
             raise Inputerror("All permutations need to be of length 2. Got: "
                              f"{perms}")
 
-        p, q = get_symbols(perms[0])
-        sub = {p: q, q: p}
-        for perm in perms[1:]:
+        sub = {}
+        for perm in perms:
             p, q = get_symbols(perm)
             addition = {p: q, q: p}
             for old, new in sub.items():
-                if new == p:
+                if new is p:
                     sub[old] = q
                     del addition[p]
-                elif new == q:
+                elif new is q:
                     sub[old] = p
                     del addition[q]
             if addition:
                 sub.update(addition)
-        sub = {old: new for old, new in sub.items() if old != new}
+        sub = {old: new for old, new in sub.items() if old is not new}
         return self.subs(sub, simultaneous=True)
 
     def expand_intermediates(self):
@@ -539,21 +544,21 @@ class term(container):
         if any(len(perm) != 2 for perm in perms):
             raise Inputerror("All permutations need to be of length 2. Got: "
                              f"{perms}")
-        p, q = get_symbols(perms[0])
-        sub = {p: q, q: p}
-        for perm in perms[1:]:
+
+        sub = {}
+        for perm in perms:
             p, q = get_symbols(perm)
             addition = {p: q, q: p}
             for old, new in sub.items():
-                if new == p:
+                if new is p:
                     sub[old] = q
                     del addition[p]
-                elif new == q:
+                elif new is q:
                     sub[old] = p
                     del addition[q]
             if addition:
                 sub.update(addition)
-        sub = {old: new for old, new in sub.items() if old != new}
+        sub = {old: new for old, new in sub.items() if old is not new}
         return self.subs(sub, simultaneous=True)
 
     def expand_intermediates(self, target=None):
@@ -1028,7 +1033,7 @@ class obj(container):
             #    a contracted index by accident)
             #  - fock elements with both indices being target indices
             #    (for not loosing a target index in the term)
-            if idx[0] == idx[1] or all(s in target for s in idx):
+            if idx[0] is idx[1] or all(s in target for s in idx):
                 return expr(self.sympy, **self.assumptions), sub
             # killable is contracted -> kill
             if idx[1] not in target:
@@ -1178,9 +1183,11 @@ class obj(container):
                 o.lower + o.upper if self.is_amplitude else o.upper + o.lower
             ),
             # delta indices are sorted automatically
-            'delta': lambda o: (o.preferred_index, o.killable_index),
-            'annihilate': lambda o: (o.args[0], ),
-            'create': lambda o: (o.args[0], ),
+            'delta': lambda o: tuple(sorted(o.args, key=lambda s:
+                                     (int(s.name[1:]) if s.name[1:] else 0,
+                                      s.name[0]))),
+            'annihilate': lambda o: (o.args[0],),
+            'create': lambda o: (o.args[0],),
             'nonsym_tensor': lambda o: o.indices
         }
         try:
@@ -1224,14 +1231,14 @@ class obj(container):
                     # also attatch the space of the neighbours
                     # s can only occur once in the same space
                     neighbour_sp = [index_space(i.name)[0]
-                                    for i in idx_tpl if i != s]
+                                    for i in idx_tpl if i is not s]
                     if neighbour_sp:
                         pos += f"_{''.join(neighbour_sp)}"
                     # also need to include the explicit name of target indices
                     if target_idx_string:
                         # - target indices that are in the same braket
                         same_target = [i.name for i in uplo_target[uplo]
-                                       if i != s]
+                                       if i is not s]
                         if same_target:
                             pos += f"_{''.join(same_target)}"
                         # - target indices that are in the other space/braket
@@ -1268,7 +1275,7 @@ class obj(container):
                 pos = description
                 # also add the name of target indices on the same delta
                 if target_idx_string:
-                    other_target = [i.name for i in target if i != s]
+                    other_target = [i.name for i in target if i is not s]
                     if other_target:
                         pos += f"_{''.join(other_target)}"
                 ret[s].append(pos)
