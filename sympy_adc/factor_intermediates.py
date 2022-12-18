@@ -5,7 +5,7 @@ from sympy import S
 from collections import Counter, defaultdict
 
 
-def factor_intermediates(expr):
+def factor_intermediates(expr, max_order: int = None):
     from .intermediates import intermediates
     from time import perf_counter
 
@@ -20,7 +20,7 @@ def factor_intermediates(expr):
     for name, itmd_instance in available.items():
         start = perf_counter()
         print(f"Factoring {name}... ", end="")
-        expr = itmd_instance.factor_itmd(expr, factored)
+        expr = itmd_instance.factor_itmd(expr, factored, max_order)
         factored.append(name)
         print(f"Done. {len(expr)} terms remaining. Took ",
               perf_counter()-start)
@@ -35,7 +35,7 @@ def factor_intermediates(expr):
 
 def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                               itmd_data: list[dict],
-                              itmd_term_map: defaultdict,
+                              itmd_term_map: dict,
                               itmd_instance) -> e.expr:
     """Function for factoring a long intermediate, i.e., a intermediate that
        consists of more than one term."""
@@ -43,8 +43,6 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
 
     if expr.sympy.is_number:
         return expr
-
-    itmd_expr: list[e.expr] = [term.expr for term in itmd]
 
     terms = expr.terms
     found_intermediates = {}
@@ -77,7 +75,7 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                 # intermediates
                 idx_str = "".join([s.name for s in idx])
                 if any(_compare_remainder(remainder, idx, ref) is not None
-                        for ref in found_remainders[idx_str]):
+                       for ref in found_remainders[idx_str]):
                     continue
                 else:
                     found_remainders[idx_str].append(remainder)
@@ -87,7 +85,7 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                 # according to the symmetry of the remainder, i.e., if
                 # (X - P_pq X) * remainder = 2X * remainder
                 matching_itmd_terms, pref = _map_on_other_terms(
-                    itmd_term_i, remainder, idx, pref, itmd_expr,
+                    itmd_term_i, remainder, idx, pref,
                     itmd_term_map, itmd_instance
                     )
                 if matching_itmd_terms is None:
@@ -109,10 +107,13 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
             # did not find all terms of the itmd or some terms have already
             # been factored
             # TODO: allow to find itmd of only few terms are missing
+            # print()
+            # print(_, found_itmd.count(0))
             if found_itmd.count(0) != 0 or \
                     any(d["term"] in factored_terms for d in found_itmd):
                 continue
             prefs = [d['pref'] for d in found_itmd]
+            # print(prefs)
             # print(f"found {_} with prefs {prefs}")
             if not all(pref == prefs[0] for pref in prefs):
                 continue
@@ -245,8 +246,7 @@ def _determine_prefactor(term: eri_orbenergy, itmd_term: eri_orbenergy,
 
 
 def _map_on_other_terms(itmd_term_i: int, remainder: e.expr, idx: list, pref,
-                        itmd_expr: list[e.expr], itmd_term_map: dict,
-                        itmd_instance):
+                        itmd_term_map: dict, itmd_instance):
     """Checks on which other terms the current term can be mapped if
        taking the symmetry of the remainder into account. A set of all
        terms, the current term contributes to is returned."""
@@ -264,56 +264,32 @@ def _map_on_other_terms(itmd_term_i: int, remainder: e.expr, idx: list, pref,
     # create a map to translate the permutations to the default indices and
     # the default permutations to the minimized permutations
     default_idx = get_symbols(itmd_instance.default_idx)
-    minimal_to_default = dict(zip(idx, default_idx))
+    minimal_to_default = {old: new for old, new in zip(idx, default_idx)
+                          if old is not new}
     # now iterate over the permutations and see if the current term
     # can be mapped onto anothers using the given permutations.
-    matching_itmd_terms = [itmd_term_i]
+    matching_itmd_terms: set[int] = {itmd_term_i}
     for perms, perm_factor in rem_sym.items():
         # translate the permutations
         perms = tuple(
             tuple(minimal_to_default.get(s, s) for s in perm) for perm in perms
         )
-        # check if we already evaluated the current permutation for the
-        # current intermediate term.
         if perms not in itmd_term_map:
-            itmd_term_map[perms] = {}
-        perm_map: dict[int, list[int]] = itmd_term_map[perms]
-        if itmd_term_i in perm_map:
-            for other_term_i, term_factor in perm_map[itmd_term_i]:
-                if perm_factor != term_factor:
-                    return None, pref
-                matching_itmd_terms.append(other_term_i)
             continue
-        # new perm and/or itmd_term -> determine the mapping introduced
-        # by the current permutations
-        perm_map[itmd_term_i] = []
-        perm_term = itmd_expr[itmd_term_i].copy().permute(*perms)
-        for other_term_i, other_term in enumerate(itmd_expr):
-            if other_term_i == itmd_term_i:
-                continue
-            if perm_term.sympy + other_term.sympy is S.Zero:
-                # P_pq X + (- P_pq X) = 0
-                term_factor = -1
-            elif perm_term.sympy - other_term.sympy is S.Zero:
-                # P_pq X - (+ P_pq X) = 0
-                term_factor = +1
-            else:
-                continue
-            # the factors have to be equal. If not the terms should have
-            # cancelled to 0.
-            # (X - P_pq X) * remainder = 0 if remainder = + P_pq remainder
-            #                          = 2X if remainder = - P_pq remainder
-            # only the second case should occur in the equations
+        perm_map: dict[int, list[int]] = itmd_term_map[perms]
+        if itmd_term_i not in perm_map:
+            continue
+        for other_term_i, term_factor in perm_map[itmd_term_i]:
             if perm_factor != term_factor:
                 return None, pref
-            matching_itmd_terms.append(other_term_i)
-            perm_map[itmd_term_i].append((other_term_i, term_factor))
+            matching_itmd_terms.add(other_term_i)
     pref = pref * Rational(1, len(matching_itmd_terms))
     return matching_itmd_terms, pref
 
 
-def _assign_term_to_itmd(found_intermediates: dict, matching_itmd_terms: list,
-                         data: dict, itmd_length: int) -> dict:
+def _assign_term_to_itmd(found_intermediates: dict,
+                         matching_itmd_terms: set[int], data: dict,
+                         itmd_length: int) -> dict:
     """Assign the term according to the provided data to an intermediate,
        i.e., either start constructing a new one or add to an already
        existing."""

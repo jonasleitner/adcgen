@@ -187,14 +187,12 @@ class Singleton(type):
 
 
 def import_from_sympy_latex(expr_string: str):
-    """Function that reads an expression that can be spread over multiple
-       from the specified file and builds the corresponding sympy objects
-       and returns them in a expr container."""
-    import re
-    from sympy import Rational
+    """Function for importing an expression from sympy latex output string.
+       Returns an expression container - without any assumptions."""
     from . import expr_container as e
 
     def import_obj(obj_str: str):
+        import re
         from sympy.physics.secondquant import KroneckerDelta
         from sympy import Pow
         from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
@@ -253,9 +251,32 @@ def import_from_sympy_latex(expr_string: str):
             elif char in ['+', '-'] and not stack and i != term_start_idx:
                 terms.append(expr_string[term_start_idx:i])
                 term_start_idx = i
-        else:
-            terms.append(expr_string[term_start_idx:])
+        terms.append(expr_string[term_start_idx:])  # append last term
         return terms
+
+    def import_term(term_string: str) -> list[str]:
+        from sympy import Mul
+
+        stack: list[str] = []
+        objects: list[str] = []
+
+        obj_start_idx = 0
+        for i, char in enumerate(term_string):
+            if char in ['{', '(']:
+                stack.append(char)
+            elif char == '}':
+                assert stack.pop() == '{'
+            elif char == ')':
+                assert stack.pop() == '('
+            # in case we have a denom of the form:
+            # 2a+2b+4c and not 2 * (a+b+2c)
+            elif char in ['+', '-'] and not stack:
+                return import_from_sympy_latex(term_string).sympy
+            elif char == " " and not stack and i != obj_start_idx:
+                objects.append(term_string[obj_start_idx:i])
+                obj_start_idx = i + 1
+        objects.append(term_string[obj_start_idx:])  # last object
+        return Mul(*(import_obj(o) for o in objects))
 
     expr_string = expr_string.strip()
     if not expr_string:
@@ -275,20 +296,13 @@ def import_from_sympy_latex(expr_string: str):
         sympy_term = -1 if sign == '-' else +1
 
         if term.startswith("\\frac"):  # fraction
-            num, denom = term.replace("\\frac{", "").rstrip("}").split("}{")
+            # remove frac layout and split: \\frac{...}{...}
+            num, denom = term[:-1].replace("\\frac{", "").split("}{")
         else:  # no denominator
             num, denom = term, None
 
-        # split at space if char before is in [}, ), 0-9] and char after
-        # is in [{, \]
-        for obj in re.split('(?<=[\\}\\)0-9]) (?=[\\{\\\\])', num):
-            sympy_term *= import_obj(obj)
+        sympy_term *= import_term(num)
         if denom is not None:
-            for obj in re.split('(?<=[\\}\\)0-9]) (?=[\\{\\\\])', denom):
-                obj = import_obj(obj)
-                if isinstance(obj, int):
-                    sympy_term *= Rational(1, obj)
-                else:
-                    sympy_term /= obj
+            sympy_term /= import_term(denom)
         sympy_expr += sympy_term
     return e.expr(sympy_expr)

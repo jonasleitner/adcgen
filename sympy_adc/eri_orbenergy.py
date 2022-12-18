@@ -46,7 +46,8 @@ class eri_orbenergy:
         # numerator can essentially be anything: a or a+b
         # factor out prefactor from numerator
         self.__pref = min([t.prefactor for t in term['num'].terms], key=abs)
-        self.__num: e.expr = term['num'].factor(self.__pref) / self.__pref
+        self.__num: e.expr = \
+            (term['num'].factor(self.__pref) / self.__pref).doit()
 
     def __str__(self):
         return self.expr.__str__()
@@ -110,8 +111,8 @@ class eri_orbenergy:
            is lowered by 1, or the braket is completely removed if a exponent
            of 0 is reached. The new denominator is returned and the original
            object not changed."""
-        from sympy import Mul
         from collections import Counter
+
         denom = self.denom_brakets
         for idx, n in Counter(braket_idx_list).items():
             braket = denom[idx]
@@ -121,9 +122,16 @@ class eri_orbenergy:
             else:
                 exponent = braket.exponent
                 base = braket.extract_pow
-            denom[idx] = e.expr(Pow(base, exponent - n), **braket.assumptions)
+            if exponent - n == 0:
+                denom[idx] = None
+            else:
+                denom[idx] = e.expr(Pow(base, exponent - n),
+                                    **braket.assumptions)
         new_denom = e.expr(1, **self.denom.assumptions)
-        new_denom *= Mul(*(braket.sympy for braket in denom))
+        for remaining_braket in denom:
+            if remaining_braket is None:
+                continue
+            new_denom *= remaining_braket
         return new_denom
 
     def cancel_eri_objects(self, obj_idx_list):
@@ -131,16 +139,22 @@ class eri_orbenergy:
            lowered by 1 for each time the object index is provided. If a final
            exponent of 0 is reached, the object is removed entirely.
            The new eri are returned an the original object not changed."""
-        from sympy import Mul
         from collections import Counter
+
         objects = self.eri.objects
         for idx, n in Counter(obj_idx_list).items():
             obj = objects[idx]
-            objects[idx] = e.expr(
-                Pow(obj.extract_pow, obj.exponent - n), **obj.assumptions
-            )
+            if (exp := obj.exponent) - n == 0:
+                objects[idx] = None
+            else:
+                objects[idx] = e.expr(
+                    Pow(obj.extract_pow, exp - n), **obj.assumptions
+                )
         new_eri = e.expr(1, **self.eri.assumptions)
-        new_eri *= Mul(*(obj.sympy for obj in objects))
+        for remaining_obj in objects:
+            if remaining_obj is None:
+                continue
+            new_eri *= remaining_obj
         return new_eri
 
     def denom_eri_sym(self, **kwargs):

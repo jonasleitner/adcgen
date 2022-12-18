@@ -14,30 +14,22 @@ def reduce_expr(expr):
 
     if not isinstance(expr, e.expr):
         raise Inputerror(f"Expr to reduce needs to be an instance of {e.expr}")
+    if not expr.real:
+        raise NotImplementedError("Intermediates only implemented for a real "
+                                  "orbital basis.")
 
-    # 1) Insert the canonical orbital basis (only diagonal Fock matrix elements
-    #    remain)
-    print("Inserting canonical orbital basis in expression of length "
-          f"{len(expr)}... ", end='')
-    start = time.perf_counter()
-    expr = expr.diagonalize_fock()
-    print(f"{len(expr)} canonical terms remaining. Took "
-          f"{time.perf_counter()-start:.3f} seconds.")
-
-    # check if we are already done
-    if expr.sympy is S.Zero:
+    # check if we have anything to do
+    if expr.sympy.is_number:
         return expr
 
-    # 2) Insert the definitions of all defined intermediates in the expr
+    # 1) Insert the definitions of all defined intermediates in the expr
     print("Expanding intermediates... ", end='')
     start = time.perf_counter()
-    expr = expr.expand_intermediates()
-    expr = expr.expand()
-    expr = expr.substitute_contracted()
+    expr = expr.expand_intermediates().expand().substitute_contracted()
     print(f"Expanded in expression of length {len(expr)}. Took "
           f"{time.perf_counter()-start:.3f} seconds.")
 
-    # 3) Split the expression in a orbital energy fraction and a eri remainder.
+    # 2) Split the expression in a orbital energy fraction and a eri remainder.
     #    Compare the remainder pattern and try to find Permutations of
     #    contracted indices that allow to factor the eri remainder.
     print("Factoring ERI... ", end='')
@@ -46,7 +38,7 @@ def reduce_expr(expr):
     print(f"Found {len(expr)} different ERI structures. "
           f"Took {time.perf_counter()-start:.3f} seconds.")
 
-    # 4) Factor the denominators and call factor on the resulting
+    # 3) Factor the denominators and call factor on the resulting
     #    subexpressions, which should all contain exactly equal eri and
     #    denominators -> factor should create a term of length 1 with possibly
     #    multiple terms in the numerator
@@ -63,7 +55,7 @@ def reduce_expr(expr):
     if not expr:  # ensure that always a expr is returned
         return e.expr(0)
 
-    # 5) permute the orbital energy numerator
+    # 4) permute the orbital energy numerator
     print("Permuting Numerators... ", end='')
     start = time.perf_counter()
     for i, term in enumerate(expr):
@@ -71,7 +63,7 @@ def reduce_expr(expr):
         expr[i] = term.expr
     print(f"Done. Took {time.perf_counter()-start} seconds.")
 
-    # 6) Cancel the orbital energy fraction
+    # 5) Cancel the orbital energy fraction
     print("Cancel denominators... ", end='')
     start = time.perf_counter()
     reduced = e.compatible_int(0)

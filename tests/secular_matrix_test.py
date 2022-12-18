@@ -34,8 +34,8 @@ class TestSecularMatrix():
         # factor intermediates
         for delta_sp, sub_expr in sort.by_delta_types(m).items():
             print(delta_sp)
-            sub_expr = reduce_expr(sub_expr)
-            sub_expr = factor_intermediates(sub_expr)
+            sub_expr = reduce_expr(sub_expr.diagonalize_fock())
+            sub_expr = factor_intermediates(sub_expr, max_order=order-1)
             ref_m = ref["real_factored_m"]["_".join(delta_sp)]
             ref_m = expr(ref_m.sympy, **sub_expr.assumptions)
             assert simplify(sub_expr - ref_m).sympy is S.Zero
