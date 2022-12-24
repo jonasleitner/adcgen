@@ -30,12 +30,28 @@ class TestSecularMatrix():
         ref_m = ref['real_m'].make_real()
         assert simplify(m - ref_m).sympy is S.Zero
 
+        idx1, idx2 = indices.split(',')
         # sort the matrix block by delta space, reduce the terms and
         # factor intermediates
-        for delta_sp, sub_expr in sort.by_delta_types(m).items():
-            print(delta_sp)
-            sub_expr = reduce_expr(sub_expr.diagonalize_fock())
-            sub_expr = factor_intermediates(sub_expr, max_order=order-1)
-            ref_m = ref["real_factored_m"]["_".join(delta_sp)]
-            ref_m = expr(ref_m.sympy, **sub_expr.assumptions)
-            assert simplify(sub_expr - ref_m).sympy is S.Zero
+        for delta_sp, block_expr in sort.by_delta_types(m).items():
+            block_expr = reduce_expr(block_expr.diagonalize_fock())
+            block_expr = factor_intermediates(block_expr, max_order=order-1)
+            ref_block_expr = ref["real_factored_m"]["_".join(delta_sp)]
+            ref_block_expr = expr(ref_block_expr.sympy,
+                                  **block_expr.assumptions)
+            assert simplify(block_expr - ref_block_expr).sympy is S.Zero
+
+            # exploit permutational symmetry and test that the result is
+            # still identical
+            exploited_perm_sym = sort.exploit_perm_sym(
+                block_expr, target_upper=idx1, target_lower=idx2,
+                target_bra_ket_sym=1
+            )
+            re_expanded_block = expr(0, **block_expr.assumptions)
+            for perm_sym, sub_expr in exploited_perm_sym.items():
+                # ensure that we can reexpand to the original expr
+                re_expanded_block += sub_expr.copy()
+                for perms, factor in perm_sym:
+                    re_expanded_block += \
+                        sub_expr.copy().permute(*perms) * factor
+            assert simplify(re_expanded_block - block_expr).sympy is S.Zero
