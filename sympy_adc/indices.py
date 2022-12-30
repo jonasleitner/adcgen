@@ -285,7 +285,7 @@ def extract_names(syms):
     return [s.name for s in syms]
 
 
-def get_symbols(idx):
+def get_symbols(idx: str | list[str] | list[Dummy]) -> list[Dummy]:
     """Ensure that all provided indices are sympy symbols. If a string of
        indices is provided the corresponding sympy symbols are
        created automatically."""

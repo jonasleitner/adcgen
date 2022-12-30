@@ -3,7 +3,6 @@ from .misc import Inputerror
 from . import sort_expr as sort
 from . import expr_container as e
 from sympy import Add
-import time
 
 
 def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
@@ -226,7 +225,7 @@ def simplify(expr, real=False):
        the provided symmetric tensors.
        """
 
-    start = time.time()
+    # start = time.time()
 
     expr = expr.expand()
     # adjust symmetric tensors of the container
@@ -253,7 +252,7 @@ def simplify(expr, real=False):
     res += e.expr(Add(*[terms[n].sympy for n in range(len(terms))
                   if n not in matched]), **expr.assumptions)
     del terms  # not valid anymore (expr changed)
-    print(f"simplify took {time.time()- start} seconds")
+    # print(f"simplify took {time.time()- start} seconds")
     return res
 
 

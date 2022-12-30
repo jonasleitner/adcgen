@@ -848,6 +848,175 @@ class term(container):
         )
         return tex_str
 
+    def optimized_contractions(self, target_indices: str = None,
+                               max_tensor_dim: int = None):
+        """Determine the contraction scheme of the term with the lowest
+           computational scaling. The target indices can be provided as
+           string, e.g., 'ijab' for a Doubles amplitude or 'iajb' for the
+           p-h/p-h matrix block. If no target indices are provided the
+           target indices will be sorted canonical."""
+        from .generate_code import scaling, contraction_data
+        from .indices import get_symbols
+        from collections import Counter
+        from itertools import combinations
+
+        def sort_canonical(idx):
+            # duplicate of antisym tensor sort function. Hash was omitted
+            return (index_space(idx.name)[0],
+                    int(idx.name[1:]) if idx.name[1:] else 0,
+                    idx.name[0])
+
+        def extract_data(o):
+            if isinstance(o, obj):
+                return o.idx, o.pretty_name
+            elif isinstance(o, contraction_data):
+                return o.target, 'contraction'
+            else:
+                raise TypeError(f"Can not extract idx and name from {o}")
+
+        def contraction(ob: obj | contraction_data, i: int | tuple[int],
+                        other_ob: obj | contraction_data,
+                        other_i: int | tuple[int], target_indices: list,
+                        canonical_target: tuple, max_tensor_dim: int = None):
+            """Generate a contraction between two objects or contractions."""
+
+            # extract names and indices of the objects
+            indices, name = extract_data(ob)
+            other_indices, other_name = extract_data(other_ob)
+
+            # determine target and contracted indices
+            idx, other_idx = set(indices), set(other_indices)
+            contracted = idx.intersection(other_idx)
+            target = idx ^ other_idx  # bitwise XOR
+
+            # check that the result of the contraction does not violate
+            # the max_tensor_dim
+            if max_tensor_dim is not None and len(target) > max_tensor_dim:
+                return None
+
+            # determine the scaling of the contraction
+            target_sp = Counter([index_space(s.name)[0] for s in target])
+            contracted_sp = \
+                Counter([index_space(s.name)[0] for s in contracted])
+
+            occ = target_sp['o'] + contracted_sp['o']
+            virt = target_sp['v'] + contracted_sp['v']
+            general = target_sp['g'] + contracted_sp['g']
+
+            # sort contracted and target indices canonical and store as tuple
+            contracted = tuple(sorted(contracted, key=sort_canonical))
+            target = tuple(sorted(target, key=sort_canonical))
+
+            # it it the outermost contraction?
+            # rather use the provided target indices -> correct order
+            if canonical_target == target:
+                target = tuple(target_indices)
+
+            return contraction_data((i, other_i), (indices, other_indices),
+                                    (name, other_name), contracted, target,
+                                    scaling(occ, virt, general))
+
+        def term_contraction(objects: dict, target_indices, canonical_target,
+                             max_tensor_dim=None) -> list[list]:
+            """Evaluate all possible contraction variants for the term by
+               calling this function recursively."""
+
+            if len(objects) < 2:
+                raise ValueError("Need at least two objects to determine a "
+                                 "contration.")
+
+            ret = []
+            for (i, ob), (other_i, other_ob) in \
+                    combinations(objects.items(), 2):
+                c_data = contraction(ob, i, other_ob, other_i, target_indices,
+                                     canonical_target, max_tensor_dim)
+                if c_data is None:  # result violates max_tensor_dim
+                    continue
+
+                if len(objects) == 2:  # done after this contraction
+                    ret.append([c_data])
+                else:  # recurse to cover all possible variants
+                    # replace the 2 objects by the contraction
+                    remaining = {key: val for key, val in objects.items()
+                                 if key not in [i, other_i]}
+                    remaining[(i, other_i)] = c_data
+                    for variant in term_contraction(remaining, target_indices,
+                                                    canonical_target,
+                                                    max_tensor_dim):
+                        # add the current contraction to the list of
+                        # contractions found for the remaining objects
+                        variant.insert(0, c_data)
+                        ret.append(variant)
+            return ret
+
+        relevant_objects = {}
+        for i, o in enumerate(self.objects):
+            # nonsym_tensor / antisym_tensor / delta
+            if 'tensor' in (o_type := o.type) or o_type == 'delta':
+                relevant_objects[i] = o
+            elif o_type == 'prefactor':  # prefactor
+                continue
+            else:  # polynom / create / annihilate / NormalOrdered
+                raise NotImplementedError("Contractions not implemented for "
+                                          "polynoms, creation and annihilation"
+                                          f" operators: {self}.")
+
+        # use the canonical target indices of the term
+        if target_indices is None:
+            target_indices = sorted(self.target, key=sort_canonical)
+            canonical_target = tuple(target_indices)
+        else:  # or transform the provided target indices to sympy symbols
+            target_indices = get_symbols(target_indices)
+            canonical_target = tuple(sorted(target_indices,
+                                            key=sort_canonical))
+
+        if len(relevant_objects) == 0:
+            return []
+        elif len(relevant_objects) == 1:  # only a single object
+            i, o = next(iter(relevant_objects.items()))
+            indices = o.idx
+            target_sp = Counter(index_space(s.name)[0] for s in target_indices)
+            scal = scaling(target_sp['o'], target_sp['v'], target_sp['g'])
+            # no contraction, transpose might be possible
+            if set(indices) == set(target_indices):
+                contracted = tuple()
+            else:  # contraction -> trace is possible
+                contracted = tuple(s for s, n in Counter(indices).items()
+                                   if n > 1)
+            return [contraction_data((i,), (indices,), (o.pretty_name,),
+                                     contracted, target_indices, scal)]
+
+        if max_tensor_dim is not None:  # validate max tensor dim
+            if not isinstance(max_tensor_dim, int):
+                raise Inputerror(f"Invalid max_tensor_dim {max_tensor_dim}.")
+            elif target_indices is not None and \
+                    max_tensor_dim < len(target_indices):
+                raise Inputerror(f"max_tensor_dim {max_tensor_dim} is smaller "
+                                 f"than the target tensor {target_indices}.")
+
+        contraction_variants = term_contraction(relevant_objects,
+                                                target_indices,
+                                                canonical_target,
+                                                max_tensor_dim)
+        # find the variant with the lowest computational scaling
+        max_scalings = []
+        for variant in contraction_variants:
+            # the max_dim for intermediates leads to incomplete contraction
+            # variants (not all objects could be contracted successfully)
+            if len(variant) < len(relevant_objects) - 1:
+                continue
+            max_scalings.append(max([contr.scaling for contr in variant],
+                                key=lambda s: (sum(s), s.g, s.v, s.o)))
+        if not max_scalings:
+            raise RuntimeError("Could not find a valid contraction scheme for "
+                               f"{self} while restricting the maximum tensor "
+                               f"dimension to {max_tensor_dim}.")
+        variant, _ = min(
+            zip(contraction_variants, max_scalings), key=lambda tpl:
+            (sum(tpl[1]), tpl[1].g, tpl[1].v, tpl[1].o)
+        )
+        return variant
+
     def __iadd__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -1116,7 +1285,7 @@ class obj(container):
         name = self.name
         # ADC amplitude or t-amplitude
         return name in ['X', 'Y'] or \
-            (name[0] == 't' and name[1].replace('c', '').isnumeric())
+            (name[0] == 't' and name[1:].replace('c', '').isnumeric())
 
     @property
     def order(self):
@@ -1139,7 +1308,7 @@ class obj(container):
     @property
     def pretty_name(self):
         name = None
-        if 'tensor' in self.type:
+        if 'tensor' in (o_type := self.type):
             name = self.name
             # t-amplitudes
             if name[0] == 't' and name[1:].replace('c', '').isnumeric():
@@ -1147,6 +1316,16 @@ class obj(container):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for t-amplitude {self}.")
                 name = f"t{len(self.extract_pow.upper)}_{name[1:]}"
+            elif name in ['X', 'Y']:  # adc amplitudes
+                # need to determine the excitation space as int
+                space = self.space
+                n_o, n_v = space.count('o'), space.count('v')
+                if n_o == n_v:  # pp-ADC
+                    n = n_o  # p-h -> 1 // 2p-2h -> 2 etc.
+                else:  # ip-/ea-/dip-/dea-ADC
+                    n = min([n_o, n_v]) + 1  # h -> 1 / 2h -> 1 / p-2h -> 2...
+                lr = "l" if name == "X" else 'r'
+                name = f"u{lr}{n}"
             elif name[0] == 'p' and name[1:].isnumeric():  # mp densities
                 if len(self.extract_pow.upper) != len(self.extract_pow.lower):
                     raise RuntimeError("Number of upper and lower indices not "
@@ -1155,6 +1334,8 @@ class obj(container):
             elif name.startswith('t2eri'):  # t2eri
                 name = f"t2eri_{name[5:]}"
             # t2sq -> just return name
+        elif o_type == 'delta':  # deltas -> d_oo / d_vv
+            name = f"d_{self.space}"
         return name
 
     @property

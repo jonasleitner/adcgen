@@ -169,7 +169,7 @@ def exploit_perm_sym(expr: e.expr, target_upper: str = None,
         tensors = tuple(sorted((t.name, t.space) for t in term.tensors
                                for _ in range(t.exponent)))
         deltas = tuple(
-            sorted(t.space for t in term.deltas for _ in range(t.exponent))
+            sorted([d.space for d in term.deltas for _ in range(d.exponent)])
         )
         term_data.append((has_denom, tensors, deltas))
 
@@ -181,10 +181,10 @@ def exploit_perm_sym(expr: e.expr, target_upper: str = None,
     if target_lower or target_upper:
         upper = tuple() if target_upper is None else get_symbols(target_upper)
         lower = tuple() if target_lower is None else get_symbols(target_lower)
-        provided_target = sorted(lower + upper, key=lambda s:
-                                 (int(s.name[1:]) if s.name[1:] else 0,
-                                  s.name[0]))
-        if tuple(provided_target) != target:
+        canonical_provided = sorted(lower + upper, key=lambda s:
+                                    (int(s.name[1:]) if s.name[1:] else 0,
+                                     s.name[0]))
+        if tuple(canonical_provided) != target:
             raise Inputerror(f"the provided target indices {target_upper} and "
                              f"{target_lower} do not agree with the found "
                              f"target indices {target}.")
@@ -219,11 +219,8 @@ def exploit_perm_sym(expr: e.expr, target_upper: str = None,
         # reduce the number of permutations to check - if a symmetry is already
         # ineherent to the term -> no need to check for that.
         term_sym = term.symmetry(only_target=True)
-        perms_to_check = []
-        for perms, factor in symmetry.items():
-            if any((p,) in term_sym for p in perms):
-                continue
-            perms_to_check.append((perms, factor))
+        perms_to_check = [(k, v) for k, v in symmetry.items()
+                          if k not in term_sym]
 
         # depending on the presence of a denominator choose the appropriate
         # function to try to collect two terms
