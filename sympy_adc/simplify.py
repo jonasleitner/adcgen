@@ -276,12 +276,14 @@ def extract_dm(expr, bra_ket_sym: int = None):
         # start with upper
         d_tensor = sorted(d_tensor.items(), key=lambda tpl: tpl[0],
                           reverse=True)
+        minimization_sub = {}
         for _, idx_list in d_tensor:
             for idx in idx_list:
+                if idx in target:  # skip target indices
+                    continue
+                # find the lowest unused index
                 name = idx.name
                 sp = index_space(name)
-                if name in used_indices[sp]:  # skip target indices
-                    continue
                 new_idx = get_first_missing_index(used_indices[sp], sp)
                 used_indices[sp].append(new_idx)
                 if name == new_idx:  # is already the lowest idx
@@ -289,12 +291,25 @@ def extract_dm(expr, bra_ket_sym: int = None):
                 # found a lower index -> permute indices in the term
                 new_idx = get_symbols(new_idx)[0]
                 sub = {idx: new_idx, new_idx: idx}
-                term = term.subs(sub, simultaneous=True)
-                # and the d-tensor (new_idx is not necessarily present on d)
-                for other_i, (uplo, other_idx_list) in enumerate(d_tensor):
-                    other_idx_list = [sub.get(s, s) for s in other_idx_list]
-                    d_tensor[other_i] = (uplo, other_idx_list)
-        return term, dict(d_tensor)
+                # immediately permute the d_tensor indices
+                for i, (_, other_idx_list) in enumerate(d_tensor):
+                    for other_i, s in enumerate(other_idx_list):
+                        d_tensor[i][1][other_i] = sub.get(s, s)
+                # and build a minimization sub dict to minimize
+                # the indices in the term at once
+                if not minimization_sub:
+                    minimization_sub = sub
+                else:
+                    for old, new in minimization_sub.items():
+                        if new is new_idx:
+                            minimization_sub[old] = idx
+                            del sub[new_idx]
+                        elif new is idx:
+                            minimization_sub[old] = new_idx
+                            del sub[idx]
+                    if sub:
+                        minimization_sub.update(sub)
+        return term.subs(minimization_sub, simultaneous=True), dict(d_tensor)
 
     def symmetrize_keep_pref(term, symmetry):
         symmetrized = term.copy()

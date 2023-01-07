@@ -231,16 +231,18 @@ class registered_intermediate:
         # find all target indices that can not be changed
         # the remainder has to have the the target indices explicitly set!
         # an index can only occur once in provided_target_idx
+        target = remainder.provided_target_idx
         used = defaultdict(list)
-        for s in remainder.provided_target_idx:
+        for s in target:
             used[index_space(s.name)].append(s.name)
         # iterate over all itmd_indices and see if we can find a lower index
         minimization_sub = {}
         for idx in itmd_indices:
+            if idx in target:  # skip target indices
+                continue
+            # find the lowest available index
             name = idx.name
             ov = index_space(name)
-            if name in used[ov]:  # its a target index
-                continue
             new_idx = get_first_missing_index(used[ov], ov)
             used[ov].append(new_idx)
             if name == new_idx:  # already have the lowest index
@@ -250,6 +252,11 @@ class registered_intermediate:
             new_idx = get_symbols(new_idx)[0]
             # build a new substitution dict that minimizes the itmd indices
             additional_sub = {idx: new_idx, new_idx: idx}
+            # immediately apply to the itmd_indices
+            for i, s in enumerate(itmd_indices):
+                itmd_indices[i] = additional_sub.get(s, s)
+            # and build a minimization sub to minimize the remainder
+            # with a single call to sub
             if not minimization_sub:
                 minimization_sub = additional_sub
             else:
@@ -262,8 +269,6 @@ class registered_intermediate:
                         del additional_sub[idx]
                 if additional_sub:
                     minimization_sub.update(additional_sub)
-        # permute/minimize the itmd target indices
-        itmd_indices = [minimization_sub.get(s, s) for s in itmd_indices]
 
         # permute/minimize the remainder
         # the input remainder has to have a prefactor of +1!

@@ -202,7 +202,7 @@ class expr(container):
         if num is None:
             self.__expr = factor(self.sympy)
             return self
-        num = sympify(num, rational=True)
+        num = nsimplify(num, rational=True)
         factored = map(lambda t: Mul(nsimplify(Pow(num, -1), rational=True),
                        t.sympy), self.terms)
         self.__expr = Mul(num, Add(*factored), evaluate=False)
