@@ -1369,14 +1369,27 @@ class obj(container):
     @property
     def idx(self) -> tuple:
         """Return the indices of the canonical ordered object."""
+
+        def sort_delta_idx(delta):
+            idx = delta.args
+            sp1, sp2 = index_space(idx[0].name), index_space(idx[1].name)
+            if sp1 == sp2:  # oo / vv / gg -> sort according to name
+                return tuple(sorted(
+                    idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0,
+                                        s.name[0])
+                ))
+            else:  # g + o/v -> return o/v first
+                if sp1 in ['occ', 'virt']:
+                    return idx
+                elif sp2 in ['occ', 'virt']:
+                    return (idx[1], idx[0])
+
         get_idx = {
             'antisym_tensor': lambda o: (
                 o.lower + o.upper if self.is_amplitude else o.upper + o.lower
             ),
             # delta indices are sorted automatically
-            'delta': lambda o: tuple(sorted(o.args, key=lambda s:
-                                     (int(s.name[1:]) if s.name[1:] else 0,
-                                      s.name[0]))),
+            'delta': sort_delta_idx,
             'annihilate': lambda o: (o.args[0],),
             'create': lambda o: (o.args[0],),
             'nonsym_tensor': lambda o: o.indices

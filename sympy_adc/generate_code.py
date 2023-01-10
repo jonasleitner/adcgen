@@ -81,13 +81,13 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
     else:
         expr_with_perm_sym = exploit_perm_sym(expr)
 
-    ret = ''
+    ret = []
     for perm_symmetry, expr in expr_with_perm_sym.items():
         # make symmetry more readable
         perm_symmetry = _pretty_perm_symmetry(perm_symmetry)
 
         # generate contractions for each term
-        contraction_code = ''
+        contraction_code = []
         for term in expr.terms:
             # 1) generate a string for the prefactor
             if (pref := term.prefactor) < 0:
@@ -98,7 +98,7 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
             pref_str += backend_specifics['prefactor'](pref)
 
             if term.sympy.is_number:  # term just consists of a number
-                contraction_code += pref_str
+                contraction_code.append(pref_str)
                 continue
 
             if optimize_contractions:  # only two objects at once - min scaling
@@ -123,12 +123,14 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
                 c_str = backend_specifics['contraction'](c_data,
                                                          contraction_strings)
                 if i == last_idx:  # only the last contraction is relevant
-                    contraction_code += \
-                        f"{pref_str} * {c_str}  {scaling_comment}\n"
+                    contraction_code.append(
+                        f"{pref_str} * {c_str}  {scaling_comment}"
+                    )
                 else:  # save the contraction -> need it in the final
                     contraction_strings[c_data.obj_idx] = (c_str, c_data)
-        ret += f"Apply {perm_symmetry} to:\n{contraction_code}\n\n"
-    return ret
+        contraction_code = "\n".join(contraction_code)
+        ret.append(f"Apply {perm_symmetry} to:\n{contraction_code}")
+    return "\n\n".join(ret)
 
 
 def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:

@@ -193,7 +193,7 @@ def import_from_sympy_latex(expr_string: str):
 
     def import_obj(obj_str: str):
         import re
-        from sympy.physics.secondquant import KroneckerDelta
+        from sympy.physics.secondquant import KroneckerDelta, NO, Fd, F
         from sympy import Pow
         from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
         from .indices import get_symbols
@@ -206,10 +206,14 @@ def import_from_sympy_latex(expr_string: str):
             if len(idx) != 2:
                 raise RuntimeError(f"Invalid indices for delta: {idx}.")
             return KroneckerDelta(*idx)
-        elif "\\left" in obj_str:  # braket
+        elif "\\left(" in obj_str:  # braket
             obj_str = obj_str.replace("\\left(", "").replace("\\right)", "")
             return import_from_sympy_latex(obj_str).sympy
-        else:  # tensor
+        elif "\\left\\{" in obj_str:  # NO
+            obj_str = \
+                obj_str.replace("\\left\\{", "").replace("\\right\\}", "")
+            return NO(import_from_sympy_latex(obj_str).sympy)
+        else:  # tensor or creation/annihilation operator
             obj = []
             exponent = None
             for component in re.split('\\^|_', obj_str):
@@ -222,7 +226,15 @@ def import_from_sympy_latex(expr_string: str):
                 else:
                     obj.append(component)
             name, idx = obj[0], obj[1:]
-            if len(idx) == 1:  # NonSymmetricTensor
+            if name == 'a':  # creation / annihilation operator
+                if len(idx) == 2 and idx[0] == "\\dagger":  # creation
+                    return Fd(get_symbols(idx[1])[0])
+                elif len(idx) == 1:  # annihilation
+                    return F(get_symbols(idx[0])[0])
+                else:
+                    raise NotImplementedError("Unknown second quantized "
+                                              f"operator: {obj_str}.")
+            elif len(idx) == 1:  # NonSymmetricTensor
                 idx = get_symbols(*idx)
                 base = NonSymmetricTensor(name, idx)
             elif len(idx) == 2:  # AntiSymmetricTensor
