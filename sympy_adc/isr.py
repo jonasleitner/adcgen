@@ -462,7 +462,7 @@ class intermediate_states:
             lower_spaces.append(space_str)
         return lower_spaces
 
-    def validate_space(self, space_str):
+    def validate_space(self, space_str: str) -> bool:
         """Checks wheter the provided space is a valid space for
            the current ADC variant.
            """
@@ -471,4 +471,4 @@ class intermediate_states:
             return True
 
         lower_spaces = self.__generate_lower_spaces(space_str)
-        return any([sp in self.min_space for sp in lower_spaces])
+        return any(sp in self.min_space for sp in lower_spaces)
