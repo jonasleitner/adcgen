@@ -3,7 +3,7 @@ from .misc import Inputerror
 from .sort_expr import exploit_perm_sym
 from collections import namedtuple
 
-scaling = namedtuple('scaling', ['o', 'v', 'g'])
+scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
 contraction_data = namedtuple('contraction_data',
                               ['obj_idx', 'indices', 'obj_names',
                                'contracted', 'target', 'scaling'])
@@ -13,7 +13,7 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
                   target_bra_ket_sym: int = 0, max_tensor_dim: int = None,
                   optimize_contractions: bool = True) -> str:
 
-    def unoptimized_contraction(term: e.term, target_indices: str = None):
+    def unoptimized_contraction(term: e.term, target_indices: str):
         from .indices import index_space, get_symbols
         # construct a contraction_data object for the simulötaneous,
         # unoptimized contraction of all objects of a term.
@@ -48,9 +48,10 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
         occ = target_sp.count('o') + contracted_sp.count('o')
         virt = target_sp.count('v') + contracted_sp.count('v')
         general = target_sp.count('g') + contracted_sp.count('g')
+        total = occ + virt + general
+        scal = scaling(total, general, virt, occ, len(target_indices))
         return [contraction_data(tuple(o_idx), tuple(indices), tuple(names),
-                                 tuple(contracted), tuple(target),
-                                 scaling(occ, virt, general))]
+                                 tuple(contracted), tuple(target), scal)]
 
     if not isinstance(expr, e.expr):
         raise Inputerror("The expression needs to be provided as an instance "
@@ -108,10 +109,9 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
                 contractions = unoptimized_contraction(term, target_indices)
 
             # 2) construct a comment string that describes the scaling
-            max_scal = max([contr.scaling for contr in contractions],
-                           key=lambda sc: (sum(sc), sc.g, sc.v, sc.o))
+            max_scal: scaling = max(contr.scaling for contr in contractions)
             scaling_comment = \
-                f"{backend_specifics['comment']} N^{sum(max_scal)}: "
+                f"{backend_specifics['comment']} N^{max_scal.total}: "
             for sp in ['o', 'v', 'g']:
                 if (n := getattr(max_scal, sp)):
                     scaling_comment += f"{sp.capitalize()}^{n}"

@@ -902,19 +902,21 @@ class term(container):
             occ = target_sp['o'] + contracted_sp['o']
             virt = target_sp['v'] + contracted_sp['v']
             general = target_sp['g'] + contracted_sp['g']
+            total = occ + virt + general
+            scal = scaling(total, general, virt, occ, len(target))
 
             # sort contracted and target indices canonical and store as tuple
             contracted = tuple(sorted(contracted, key=sort_canonical))
             target = tuple(sorted(target, key=sort_canonical))
 
-            # it it the outermost contraction?
+            # is it the outermost contraction?
             # rather use the provided target indices -> correct order
             if canonical_target == target:
                 target = tuple(target_indices)
 
             return contraction_data((i, other_i), (indices, other_indices),
                                     (name, other_name), contracted, target,
-                                    scaling(occ, virt, general))
+                                    scal)
 
         def term_contraction(objects: dict, target_indices, canonical_target,
                              max_tensor_dim=None) -> list[list]:
@@ -976,7 +978,8 @@ class term(container):
             i, o = next(iter(relevant_objects.items()))
             indices = o.idx
             target_sp = Counter(index_space(s.name)[0] for s in target_indices)
-            scal = scaling(target_sp['o'], target_sp['v'], target_sp['g'])
+            scal = scaling(sum(target_sp.values()), target_sp['g'],
+                           target_sp['v'], target_sp['o'], len(target_indices))
             # no contraction, transpose might be possible
             if set(indices) == set(target_indices):
                 contracted = tuple()
@@ -986,13 +989,8 @@ class term(container):
             return [contraction_data((i,), (indices,), (o.pretty_name,),
                                      contracted, target_indices, scal)]
 
-        if max_tensor_dim is not None:  # validate max tensor dim
-            if not isinstance(max_tensor_dim, int):
-                raise Inputerror(f"Invalid max_tensor_dim {max_tensor_dim}.")
-            elif target_indices is not None and \
-                    max_tensor_dim < len(target_indices):
-                raise Inputerror(f"max_tensor_dim {max_tensor_dim} is smaller "
-                                 f"than the target tensor {target_indices}.")
+        if max_tensor_dim is not None and not isinstance(max_tensor_dim, int):
+            raise Inputerror(f"Invalid max_tensor_dim {max_tensor_dim}.")
 
         contraction_variants = term_contraction(relevant_objects,
                                                 target_indices,
@@ -1005,15 +1003,13 @@ class term(container):
             # variants (not all objects could be contracted successfully)
             if len(variant) < len(relevant_objects) - 1:
                 continue
-            max_scalings.append(max([contr.scaling for contr in variant],
-                                key=lambda s: (sum(s), s.g, s.v, s.o)))
+            max_scalings.append(max(contr.scaling for contr in variant))
         if not max_scalings:
             raise RuntimeError("Could not find a valid contraction scheme for "
                                f"{self} while restricting the maximum tensor "
                                f"dimension to {max_tensor_dim}.")
         variant, _ = min(
-            zip(contraction_variants, max_scalings), key=lambda tpl:
-            (sum(tpl[1]), tpl[1].g, tpl[1].v, tpl[1].o)
+            zip(contraction_variants, max_scalings), key=lambda tpl: tpl[1]
         )
         return variant
 
