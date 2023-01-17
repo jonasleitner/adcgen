@@ -3,7 +3,7 @@ from collections import namedtuple
 import pathlib
 import json
 
-from sympy_adc.misc import import_from_sympy_latex
+from sympy_adc.func import import_from_sympy_latex
 
 
 @pytest.fixture(scope='session')

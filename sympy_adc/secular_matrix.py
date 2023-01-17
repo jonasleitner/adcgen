@@ -1,4 +1,4 @@
-from sympy.physics.secondquant import wicks
+from sympy.physics.secondquant import wicks, evaluate_deltas
 from sympy import sqrt, S
 
 from math import factorial
@@ -6,7 +6,7 @@ from math import factorial
 from .indices import repeated_indices
 from .misc import (Inputerror, cached_member, transform_to_tuple,
                    process_arguments, validate_input)
-from .func import evaluate_deltas, gen_term_orders
+from .func import gen_term_orders
 from .simplify import simplify
 
 
@@ -201,7 +201,7 @@ class secular_matrix:
         #       f"{prefactor_mvp}, {prefactor_ampl}.")
         return evaluate_deltas(
             (prefactor_mvp * prefactor_ampl * m * y).expand()
-        ).sympy
+        )
 
     @process_arguments
     @cached_member

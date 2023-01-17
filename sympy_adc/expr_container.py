@@ -186,8 +186,8 @@ class expr(container):
         self.__expr = self.sympy.subs(*args, **kwargs)
         return self
 
-    def doit(self):
-        self.__expr = self.sympy.doit()
+    def doit(self, *args, **kwargs):
+        self.__expr = self.sympy.doit(*args, **kwargs)
         return self
 
     def substitute_contracted(self):
@@ -536,8 +536,8 @@ class term(container):
     def subs(self, *args, **kwargs):
         return expr(self.term.subs(*args, **kwargs), **self.assumptions)
 
-    def doit(self):
-        return expr(self.sympy.doit(), **self.assumptions)
+    def doit(self, *args, **kwargs):
+        return expr(self.sympy.doit(*args, **kwargs), **self.assumptions)
 
     def permute(self, *perms):
         """Applies the provided permutations to the term one after another,
@@ -1242,8 +1242,8 @@ class obj(container):
     def subs(self, *args, **kwargs):
         return expr(self.obj.subs(*args, **kwargs), **self.assumptions)
 
-    def doit(self):
-        return expr(self.sympy.doit(), **self.assumptions)
+    def doit(self, *args, **kwargs):
+        return expr(self.sympy.doit(*args, **kwargs), **self.assumptions)
 
     @property
     def exponent(self):
@@ -1366,28 +1366,13 @@ class obj(container):
     def idx(self) -> tuple:
         """Return the indices of the canonical ordered object."""
 
-        def sort_delta_idx(delta):
-            idx = delta.args
-            sp1, sp2 = index_space(idx[0].name), index_space(idx[1].name)
-            if sp1 == sp2:  # oo / vv / gg -> sort according to name
-                return tuple(sorted(
-                    idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0,
-                                        s.name[0])
-                ))
-            else:  # g + o/v -> return o/v first
-                if sp1 in ['occ', 'virt']:
-                    return idx
-                elif sp2 in ['occ', 'virt']:
-                    return (idx[1], idx[0])
-
         get_idx = {
             'antisym_tensor': lambda o: (
                 o.lower + o.upper if self.is_amplitude else o.upper + o.lower
             ),
-            # delta indices are sorted automatically
-            'delta': sort_delta_idx,
-            'annihilate': lambda o: (o.args[0],),
-            'create': lambda o: (o.args[0],),
+            'delta': lambda o: o.args,
+            'annihilate': lambda o: o.args,
+            'create': lambda o: o.args,
             'nonsym_tensor': lambda o: o.indices
         }
         try:
