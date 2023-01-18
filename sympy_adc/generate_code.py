@@ -4,6 +4,7 @@ from .sort_expr import exploit_perm_sym
 from collections import namedtuple
 
 scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
+mem_scaling = namedtuple('mem_scaling', ['total', 'g', 'v', 'o'])
 contraction_data = namedtuple('contraction_data',
                               ['obj_idx', 'indices', 'obj_names',
                                'contracted', 'target', 'scaling'])
@@ -12,6 +13,11 @@ contraction_data = namedtuple('contraction_data',
 def generate_code(expr: e.expr, target_indices: str, backend: str,
                   target_bra_ket_sym: int = 0, max_tensor_dim: int = None,
                   optimize_contractions: bool = True) -> str:
+    """Transforms an expression to contractions using either einsum (python)
+       or libtensor (C++) syntax. Additionally, the computational and the
+       memory scaling of each term is given as comment after each contraction
+       string in the form '{comp_scaling} / {mem_scaling}'.
+       """
 
     def unoptimized_contraction(term: e.term, target_indices: str):
         from .indices import index_space, get_symbols
@@ -49,7 +55,9 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
         virt = target_sp.count('v') + contracted_sp.count('v')
         general = target_sp.count('g') + contracted_sp.count('g')
         total = occ + virt + general
-        scal = scaling(total, general, virt, occ, len(target_indices))
+        mem = mem_scaling(len(target_indices), target_sp.count('g'),
+                          target_sp.count('v'), target_sp.count('o'))
+        scal = scaling(total, general, virt, occ, mem)
         return [contraction_data(tuple(o_idx), tuple(indices), tuple(names),
                                  tuple(contracted), tuple(target), scal)]
 
@@ -108,13 +116,21 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
             else:  # just contract all objects at once
                 contractions = unoptimized_contraction(term, target_indices)
 
-            # 2) construct a comment string that describes the scaling
+            # 2) construct a comment string that describes the scaling:
+            #    computational and memory
             max_scal: scaling = max(contr.scaling for contr in contractions)
-            scaling_comment = \
-                f"{backend_specifics['comment']} N^{max_scal.total}: "
+            max_itmd_mem = max(contr.scaling.mem for contr in contractions)
+            max_mem: mem_scaling = max(max_itmd_mem, term.memory_requirements)
+            comp_scaling = ""
+            mem_scal = ""
             for sp in ['o', 'v', 'g']:
                 if (n := getattr(max_scal, sp)):
-                    scaling_comment += f"{sp.capitalize()}^{n}"
+                    comp_scaling += f"{sp.capitalize()}^{n}"
+                if (n := getattr(max_mem, sp)):
+                    mem_scal += f"{sp.capitalize()}^{n}"
+            scaling_comment = f"{backend_specifics['comment']} "
+            scaling_comment += f"N^{max_scal.total}: {comp_scaling} / "
+            scaling_comment += f"N^{max_mem.total}: {mem_scal}"
 
             # 3) construct a string for the contraction
             contraction_strings = {}  # cache for not final contractions
@@ -129,7 +145,11 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
                 else:  # save the contraction -> need it in the final
                     contraction_strings[c_data.obj_idx] = (c_str, c_data)
         contraction_code = "\n".join(contraction_code)
-        ret.append(f"Apply {perm_symmetry} to:\n{contraction_code}")
+        res_string = (
+            "The scaling in the comments is given as: [comp_scaling] / "
+            f"[mem_scaling]\nApply {perm_symmetry} to:\n{contraction_code}"
+        )
+        ret.append(res_string)
     return "\n\n".join(ret)
 
 
@@ -156,15 +176,19 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
 
     obj_strings = []
     idx_strings = []
+    factors = []
     for o_idx, indices, name in \
             zip(c_data.obj_idx, c_data.indices, c_data.obj_names):
         if name == 'contraction':  # nested contraction
             try:  # get the contraction string and its target indices
                 c_str, other_c_data = c_strings[o_idx]
-                obj_strings.append(c_str)
-                idx_strings.append(
-                    "".join(s.name for s in other_c_data.target)
-                )
+                if indices:
+                    obj_strings.append(c_str)
+                    idx_strings.append(
+                        "".join(s.name for s in other_c_data.target)
+                    )
+                else:  # the object has no indices -> its a number
+                    factors.append(c_str)
             except KeyError:
                 raise KeyError(f"Could not find the contraction {o_idx} to "
                                f"use in the nested contraction {c_data}. "
@@ -173,12 +197,27 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
             if name in translate_tensor_names:
                 name = translate_tensor_names[name](indices)
 
-            obj_strings.append(name)
-            idx_strings.append("".join(s.name for s in indices))
-    target_str = "".join(s.name for s in c_data.target)
-    # build the einsum contraction string
-    contraction_str = f"einsum('{','.join(idx_strings)}->{target_str}', "
-    contraction_str += f"{', '.join(obj_strings)})"
+            if indices:
+                obj_strings.append(name)
+                idx_strings.append("".join(s.name for s in indices))
+            else:  # no indices -> its a number
+                raise RuntimeError("An object that is no contraction should "
+                                   "hold indices. Did we miss a prefactor?",
+                                   c_data)
+
+    contraction_str = ""
+    if factors:
+        contraction_str += " * ".join(factors)
+    if obj_strings:
+        if contraction_str:
+            contraction_str += " * "
+        target_str = "".join(s.name for s in c_data.target)
+        # build the einsum contraction string
+        contraction_str += f"einsum('{','.join(idx_strings)}->{target_str}', "
+        contraction_str += f"{', '.join(obj_strings)})"
+    if not contraction_str:
+        raise RuntimeError(f"Could not translate {c_data} to a contraction "
+                           "string.")
     return contraction_str
 
 
@@ -219,16 +258,18 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
         start = "dot_product("
         end = ")"
         separator = ", "
-    else:
-        raise NotImplementedError(f"{c_data}")
 
     obj_strings = []
+    factors = []
     for o_idx, indices, name in \
             zip(c_data.obj_idx, c_data.indices, c_data.obj_names):
         if name == 'contraction':
             try:
                 c_str, _ = c_strings[o_idx]
-                obj_strings.append(c_str)
+                if indices:
+                    obj_strings.append(c_str)
+                else:
+                    factors.append(c_str)
             except KeyError:
                 raise KeyError(f"The contraction {o_idx} has not been "
                                "constructed prior to the current contration "
@@ -236,8 +277,23 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
         else:
             if name in translate_tensor_names:
                 name = translate_tensor_names[name](indices)
-            obj_strings.append(f"{name}({'|'.join(s.name for s in indices)})")
-    return start + separator.join(obj_strings) + end
+
+            if indices:
+                obj_strings.append(
+                    f"{name}({'|'.join(s.name for s in indices)})"
+                )
+            else:
+                raise RuntimeError("An object that is no contraction should "
+                                   "hold indices. Did we miss a prefactor?",
+                                   c_data)
+    contraction_str = ""
+    if factors:
+        contraction_str += " * ".join(factors)
+    if obj_strings:
+        if contraction_str:
+            contraction_str += " * "
+        contraction_str += start + separator.join(obj_strings) + end
+    return contraction_str
 
 
 def _einsum_prefactor(pref):

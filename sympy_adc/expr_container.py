@@ -471,6 +471,21 @@ class term(container):
         """Returns the perturbation theoretical order of the term."""
         return sum(t.order for t in self.tensors)
 
+    @property
+    def memory_requirements(self):
+        """Returns the memory requirements of the largest object of the term.
+           """
+        from .generate_code import mem_scaling
+
+        mem = []
+        for o in self.objects:
+            space = o.space
+            mem.append(mem_scaling(
+                len(space), space.count('g'), space.count('v'),
+                space.count('o')
+            ))
+        return max(mem)
+
     def make_real(self, return_sympy=False):
         """Makes the expression real by removing all 'c' in the names
            of the t-amplitudes."""
@@ -855,7 +870,7 @@ class term(container):
            string, e.g., 'ijab' for a Doubles amplitude or 'iajb' for the
            p-h/p-h matrix block. If no target indices are provided the
            target indices will be sorted canonical."""
-        from .generate_code import scaling, contraction_data
+        from .generate_code import scaling, contraction_data, mem_scaling
         from .indices import get_symbols
         from collections import Counter
         from itertools import combinations
@@ -903,7 +918,10 @@ class term(container):
             virt = target_sp['v'] + contracted_sp['v']
             general = target_sp['g'] + contracted_sp['g']
             total = occ + virt + general
-            scal = scaling(total, general, virt, occ, len(target))
+            # mem = (total, general, virt, occ)
+            mem = mem_scaling(len(target), target_sp['g'], target_sp['v'],
+                              target_sp['o'])
+            scal = scaling(total, general, virt, occ, mem)
 
             # sort contracted and target indices canonical and store as tuple
             contracted = tuple(sorted(contracted, key=sort_canonical))
@@ -952,10 +970,16 @@ class term(container):
             return ret
 
         relevant_objects = {}
-        for i, o in enumerate(self.objects):
+        n = 0
+        for o in self.objects:
             # nonsym_tensor / antisym_tensor / delta
             if 'tensor' in (o_type := o.type) or o_type == 'delta':
-                relevant_objects[i] = o
+                if (exp := o.exponent) < 0:
+                    raise NotImplementedError("Contractions for divisions not "
+                                              f"implemented: {self}.")
+                for i in range(n, exp+n):
+                    relevant_objects[i] = o
+                    n += 1
             elif o_type == 'prefactor':  # prefactor
                 continue
             else:  # polynom / create / annihilate / NormalOrdered
@@ -974,12 +998,14 @@ class term(container):
 
         if len(relevant_objects) == 0:
             return []
-        elif len(relevant_objects) == 1:  # only a single object
+        elif len(relevant_objects) == 1:  # only a single tensor
             i, o = next(iter(relevant_objects.items()))
             indices = o.idx
             target_sp = Counter(index_space(s.name)[0] for s in target_indices)
+            mem = mem_scaling(len(target_indices), target_sp['g'],
+                              target_sp['v'], target_sp['o'])
             scal = scaling(sum(target_sp.values()), target_sp['g'],
-                           target_sp['v'], target_sp['o'], len(target_indices))
+                           target_sp['v'], target_sp['o'], mem)
             # no contraction, transpose might be possible
             if set(indices) == set(target_indices):
                 contracted = tuple()
@@ -996,14 +1022,25 @@ class term(container):
                                                 target_indices,
                                                 canonical_target,
                                                 max_tensor_dim)
-        # find the variant with the lowest computational scaling
+        # find the variant with the lowest computational scaling:
+        # 1) Maximum: Total scaling
+        # 2) Sum of all total scalings  (N^5 + N^3 < N^5 + N^5)
+        # 3) Maximum: General scaling (just for generality of the function)
+        # 4) Maximum: virt scaling
+        # 5) Maximum: occ scaling
         max_scalings = []
         for variant in contraction_variants:
             # the max_dim for intermediates leads to incomplete contraction
             # variants (not all objects could be contracted successfully)
             if len(variant) < len(relevant_objects) - 1:
                 continue
-            max_scalings.append(max(contr.scaling for contr in variant))
+            sum_scaling = sum(contr.scaling.total for contr in variant)
+            scalings = []
+            for contr in variant:
+                scal = list(contr.scaling)
+                scal.insert(1, sum_scaling)
+                scalings.append(scal)
+            max_scalings.append(max(scalings))
         if not max_scalings:
             raise RuntimeError("Could not find a valid contraction scheme for "
                                f"{self} while restricting the maximum tensor "
