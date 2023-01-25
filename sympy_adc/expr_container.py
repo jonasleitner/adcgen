@@ -684,7 +684,7 @@ class term(container):
         symmetry = self.symmetry(only_contracted=True)
         res = self.sympy
         for perm, factor in symmetry.items():
-            res += factor * self.permute(*perm).sympy
+            res += self.permute(*perm).sympy * factor
         # renormalize the term
         res *= Rational(1, len(symmetry) + 1)
         return expr(res.expand(), **self.assumptions)

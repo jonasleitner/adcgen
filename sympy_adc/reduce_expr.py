@@ -29,10 +29,12 @@ def reduce_expr(expr):
     print(f"Expanded in expression of length {len(expr)}. Took "
           f"{time.perf_counter()-start:.3f} seconds.")
 
+    assumptions = expr.assumptions
+
     # 2) Split the expression in a orbital energy fraction and a eri remainder.
     #    Compare the remainder pattern and try to find Permutations of
     #    contracted indices that allow to factor the eri remainder.
-    print("Factoring ERI... ", end='')
+    print("\nFactoring ERI... ", end='')
     start = time.perf_counter()
     expr = factor_eri(expr)
     print(f"Found {len(expr)} different ERI structures. "
@@ -44,16 +46,13 @@ def reduce_expr(expr):
     #    multiple terms in the numerator
     print("Factoring denominators... ", end='')
     start = time.perf_counter()
-    expr = chain.from_iterable((factor_denom(sub_expr) for sub_expr in expr))
+    expr = chain.from_iterable(factor_denom(sub_expr) for sub_expr in expr)
     expr = [factored.factor() for factored in expr]
     if any(len(factored) != 1 for factored in expr):
         raise RuntimeError("Expected all subexpressions to be of length 1 "
                            "after factorization.")
     print(f"Found {len(expr)} different ERI/denominator combinations. "
           f"Took {time.perf_counter()-start:.3f} seconds.")
-
-    if not expr:  # ensure that always a expr is returned
-        return e.expr(0)
 
     # 4) permute the orbital energy numerator
     print("Permuting Numerators... ", end='')
@@ -66,13 +65,21 @@ def reduce_expr(expr):
     # 5) Cancel the orbital energy fraction
     print("Cancel denominators... ", end='')
     start = time.perf_counter()
-    reduced = e.compatible_int(0)
+    reduced = e.expr(0, **assumptions)
     for term in expr:
         term = eri_orbenergy(term)
         reduced += term.cancel_orb_energy_frac()
     print(f"{len(reduced)} terms remaining. "
           f"Took {time.perf_counter()-start} seconds.")
-    return reduced
+
+    # 6) Since we changed some denominators, it might now be possible to
+    #    collect more terms -> factor eri and denom again
+    result = e.expr(0, **assumptions)
+    for term in chain.from_iterable(factor_denom(sub_expr) for sub_expr
+                                    in factor_eri(reduced)):
+        result += term
+    print(f"After collecting terms again {len(result)} terms remain.\n")
+    return result
 
 
 def factor_eri(expr: e.expr) -> list[e.expr]:

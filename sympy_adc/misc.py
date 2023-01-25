@@ -60,8 +60,7 @@ def process_arguments(function):
             'opstring': sort_spaces,
             'space': sort_spaces,
             'indices': sort_indices,
-            'block': sort_spaces,
-            'mvp_space': sort_spaces,
+            'block': sort_spaces
         }
 
         n_args = len(args)
@@ -124,7 +123,7 @@ def cached_property(function):
 
 
 def validate_input(**kwargs):
-    # order, min_order, adc_order, braket, space, lr, mvp_space: single input
+    # order, min_order, adc_order, braket, space, lr: single input
     # indices, block: 2 strings possible
     validate = {
         'order': lambda o: isinstance(o, int) and o >= 0,  # int
@@ -134,16 +133,15 @@ def validate_input(**kwargs):
         'min_order': lambda o: isinstance(o, int) and o >= 0,  # int
         'lr': lambda lr: lr in ['left', 'right'],  # left/right
         'block': lambda b: all(validate['space'](sp) for sp in b),
-        'mvp_space': lambda sp: all(s in ['p', 'h'] for s in sp),
         'adc_order': lambda o: isinstance(o, int) and o >= 0,  # int
         'opstring': lambda op: all(o in ['a', 'c'] for o in op),
         'lr_isr': lambda lr: lr in ['left', 'right'],  # left/right
     }
     # braket, lr are exprected as str!
     # order, min_order, adc_order are expected as int!
-    # space, mvp_space, block and indices as list/tuple or ',' separated string
+    # space, block and indices as list/tuple or ',' separated string
     for var, val in kwargs.items():
-        if var in {'space', 'mvp_space', 'opstring'}:
+        if var in {'space', 'opstring'}:
             tpl = transform_to_tuple(val)
             if len(tpl) != 1:
                 raise Inputerror(f'Invalid input for {var}: {val}.')

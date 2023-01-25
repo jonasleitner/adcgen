@@ -131,7 +131,7 @@ class secular_matrix:
 
     @process_arguments
     @cached_member
-    def mvp_block_order(self, order: int, mvp_space: str, block: str,
+    def mvp_block_order(self, order: int, space: str, block: str,
                         indices: str, subtract_gs: bool = True):
         """Computes the Matrix vector product for the provided space by
            contracting the specified matrix block with an Amplitudevector.
@@ -147,17 +147,17 @@ class secular_matrix:
            """
         from .indices import n_ov_from_space, extract_names
 
-        mvp_space = transform_to_tuple(mvp_space)
+        space = transform_to_tuple(space)
         block = transform_to_tuple(block)
         indices = transform_to_tuple(indices)
-        validate_input(order=order, mvp_space=mvp_space, block=block,
+        validate_input(order=order, space=space, block=block,
                        indices=indices)
         if len(indices) != 1:
             raise Inputerror(f"Invalid index input for MVP: {indices}")
-        mvp_space = mvp_space[0]
+        space = space[0]
         indices = indices[0]
-        if mvp_space != block[0]:
-            raise Inputerror(f"The desired MVP space {mvp_space} has to match "
+        if space != block[0]:
+            raise Inputerror(f"The desired MVP space {space} has to match "
                              f"the bra space of the secular matrix block: "
                              f"{block}.")
 
@@ -184,7 +184,7 @@ class secular_matrix:
 
         # - To keep the equality r = M * Y we also have to multiply the right
         #   hand side of the equation with p if we multiply r with p
-        n_ov = n_ov_from_space(mvp_space)
+        n_ov = n_ov_from_space(space)
         prefactor_mvp = 1 / sqrt(
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
@@ -197,7 +197,7 @@ class secular_matrix:
             factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
         )
 
-        # print(f"prefactors for {mvp_space} MVP from block {block}: "
+        # print(f"prefactors for {space} MVP from block {block}: "
         #       f"{prefactor_mvp}, {prefactor_ampl}.")
         return evaluate_deltas(
             (prefactor_mvp * prefactor_ampl * m * y).expand()
@@ -266,7 +266,7 @@ class secular_matrix:
         mvp_idx = self.indices.get_generic_indices(**n_ov_from_space(block[0]))
         mvp_idx = "".join(extract_names(mvp_idx))
         # compute the MVP
-        mvp = self.mvp_block_order(order, mvp_space=block[0], block=block,
+        mvp = self.mvp_block_order(order, space=block[0], block=block,
                                    indices=mvp_idx, subtract_gs=subtract_gs)
         # generate the left amplitude vector
         left = self.isr.amplitude_vector(mvp_idx, lr='left')
