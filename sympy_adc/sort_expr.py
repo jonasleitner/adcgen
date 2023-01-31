@@ -120,7 +120,7 @@ def by_tensor_target_idx(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr
         if not key:  # did not find a single occurence of the tensor
             key = (f'no_{t_string}',)
         if key not in ret:
-            ret[key] = e.compatible_int(0)
+            ret[key] = 0
         ret[key] += term
     return ret
 
@@ -166,7 +166,7 @@ def exploit_perm_sym(expr: e.expr, target_upper: str = None,
             raise ValueError("Target indices need to be equal for all terms. "
                              f"Found {term.target} in current term and "
                              f"{target} in the first term")
-        has_denom = True if term.polynoms else False
+        has_denom = bool(term.polynoms)
         tensors = tuple(sorted((t.name, t.space) for t in term.tensors
                                for _ in range(t.exponent)))
         deltas = tuple(
@@ -213,7 +213,7 @@ def exploit_perm_sym(expr: e.expr, target_upper: str = None,
         ]
         if not terms_to_compare:
             if tuple() not in ret:
-                ret[tuple()] = e.compatible_int(0)
+                ret[tuple()] = 0
             ret[tuple()] += term
             continue
 
@@ -242,9 +242,10 @@ def exploit_perm_sym(expr: e.expr, target_upper: str = None,
                     continue
                 removed_terms.add(other_i)
                 found_perms.append((perms, term_factor))
+                # it should only be possible to find a single term per perms
                 break
 
         if (key := tuple(found_perms)) not in ret:
-            ret[key] = e.compatible_int(0)
-        ret[tuple(found_perms)] += term
+            ret[key] = 0
+        ret[key] += term
     return ret

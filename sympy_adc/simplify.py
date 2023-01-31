@@ -212,7 +212,7 @@ def find_compatible_terms(terms: list[e.term]):
     return equal_terms
 
 
-def simplify(expr, real=False):
+def simplify(expr: e.expr, real: bool = False):
     """Simplify an expression by renaming indices. The new index names are
        determined by establishing a mapping between the indices in different
        terms. If all indices in two terms share the same pattern (essentially
@@ -234,13 +234,16 @@ def simplify(expr, real=False):
     if real and not expr.real:
         expr = expr.make_real()
 
-    # create terms and hand try to find comaptible terms that may be
+    if len(expr) == 1:  # trivial: only a single term
+        return expr
+
+    # create terms and try to find comaptible terms that may be
     # simplified by substituting indices
     terms = expr.terms
     equal_terms = find_compatible_terms(terms)
 
     # substitue the indices in other_n and keep n as is
-    res = e.compatible_int(0)
+    res = 0
     matched = set()
     for n, sub_dict in equal_terms.items():
         matched.add(n)
@@ -251,7 +254,6 @@ def simplify(expr, real=False):
     # Add the unmatched remainder
     res += e.expr(Add(*[terms[n].sympy for n in range(len(terms))
                   if n not in matched]), **expr.assumptions)
-    del terms  # not valid anymore (expr changed)
     # print(f"simplify took {time.time()- start} seconds")
     return res
 
@@ -334,7 +336,7 @@ def extract_dm(expr, bra_ket_sym: int = None):
         if block_expr.sympy.is_number:
             continue
 
-        removed = e.compatible_int(0)
+        removed = 0
         # - remove d in each term
         for term in block_expr.terms:
             new_term = e.expr(1, **term.assumptions)

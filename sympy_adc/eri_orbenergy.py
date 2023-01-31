@@ -247,7 +247,7 @@ class eri_orbenergy:
 
         # denominator
         if not self.denom.sympy.is_number:
-            denom = e.compatible_int(1)
+            denom = 1
             for braket in self.denom_brakets:
                 if adjust_sign(braket):
                     if isinstance(braket, e.expr):
@@ -307,15 +307,17 @@ class eri_orbenergy:
                 # construct new num by subtracting the braket that is canceled
                 new_num = num - to_subtract
                 # construct the new denominator:
-                new_denom = denom[:i] + denom[i+1:]  # remove braket from denom
-                if exponent != 1:  # just lower the exponent by 1
+                if exponent == 1:  # remove braket from denom
+                    new_denom = denom[:i] + denom[i+1:]
+                else:  # just lower the exponent by 1
                     new_braket = e.expr(
                         Pow(braket.extract_pow, braket.exponent - 1),
                         **braket.assumptions
                     )
+                    new_denom = denom[:]
                     new_denom[i] = new_braket
                 # build the new denom also as expr (currently it's a list)
-                new_denom_expr = e.compatible_int(1)
+                new_denom_expr = 1
                 for bk in new_denom:
                     new_denom_expr *= bk
                 # result = 1 / new_denom + new_num / denom
@@ -325,7 +327,7 @@ class eri_orbenergy:
                     cancel(new_num, denom)
             # it was not possible to cancel any more brakets in the denom
             # result = num / denom
-            denom_expr = e.compatible_int(1)
+            denom_expr = 1
             for bk in denom:
                 denom_expr *= bk
             return num * self.pref * self.eri / denom_expr

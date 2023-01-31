@@ -161,7 +161,7 @@ class expr(container):
            be set manually in the result."""
         # expand to get rid of polynoms as much as possible
         self.expand()
-        diag = compatible_int(0)
+        diag = 0
         for term in self.terms:
             diag += term.diagonalize_fock()
         self.__expr = diag.sympy
@@ -172,7 +172,7 @@ class expr(container):
         if not isinstance(current, str) or not isinstance(new, str):
             raise Inputerror("Old and new tensor name need to be provided as "
                              "strings.")
-        renamed = compatible_int(0)
+        renamed = 0
         for t in self.terms:
             renamed += t.rename_tensor(current, new)
         self.__expr = renamed.sympy
@@ -236,7 +236,7 @@ class expr(container):
     def expand_intermediates(self):
         """Insert all defined intermediates in the expression."""
         # TODO: only expand specific intermediates
-        expanded = compatible_int(0)
+        expanded = 0
         for t in self.terms:
             expanded += t.expand_intermediates()
         self.__expr = expanded.sympy
@@ -305,6 +305,10 @@ class expr(container):
             other = other.sympy
         return expr(self.sympy + other, **self.assumptions)
 
+    def __radd__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other + self.sympy, **self.assumptions)
+
     def __isub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -323,6 +327,10 @@ class expr(container):
                                 f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy - other, **self.assumptions)
+
+    def __rsub__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other - self.sympy, **self.assumptions)
 
     def __imul__(self, other):
         if isinstance(other, container):
@@ -343,6 +351,10 @@ class expr(container):
             other = other.sympy
         return expr(self.sympy * other, **self.assumptions)
 
+    def __rmul__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other * self.sympy, **self.assumptions)
+
     def __itruediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -361,6 +373,10 @@ class expr(container):
                                 f"{self.assumptions} and {other.assumptions}")
             other = other.sympy
         return expr(self.sympy / other, **self.assumptions)
+
+    def __rtruediv__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other / self.sympy, **self.assumptions)
 
     def __eq__(self, other):
         return isinstance(other, container) \
@@ -523,6 +539,10 @@ class term(container):
         for o in self.objects:
             diag_obj, sub_obj = o.diagonalize_fock(target)
             diag *= diag_obj.sympy
+            if any(k in sub and sub[k] != v for k, v in sub_obj.items()):
+                raise NotImplementedError("Did not implement the case of "
+                                          "multiple fock matrix elements with "
+                                          f"intersecting indices: {self}")
             sub.update(sub_obj)
         # if term is part of a polynom -> return the sub dict and perform the
         # substitution in the polynoms parent term object.
@@ -536,7 +556,7 @@ class term(container):
 
     def rename_tensor(self, current, new):
         """Rename tensors in a terms. Returns a new expr instance."""
-        renamed = compatible_int(1)
+        renamed = 1
         for o in self.objects:
             renamed *= o.rename_tensor(current, new)
         return renamed
@@ -1061,6 +1081,10 @@ class term(container):
     def __add__(self, other):
         return self.__iadd__(other)
 
+    def __radd__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other + self.sympy, **self.assumptions)
+
     def __isub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -1071,6 +1095,10 @@ class term(container):
 
     def __sub__(self, other):
         return self.__isub__(other)
+
+    def __rsub__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other - self.sympy, **self.assumptions)
 
     def __imul__(self, other):
         if isinstance(other, container):
@@ -1083,6 +1111,10 @@ class term(container):
     def __mul__(self, other):
         return self.__imul__(other)
 
+    def __rmul__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other * self.sympy, **self.assumptions)
+
     def __itruediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -1093,6 +1125,10 @@ class term(container):
 
     def __truediv__(self, other):
         return self.__itruediv__(other)
+
+    def __rtruediv__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other / self.sympy, **self.assumptions)
 
     def __eq__(self, other):
         return isinstance(other, container) \
@@ -1608,6 +1644,10 @@ class obj(container):
     def __add__(self, other):
         return self.__iadd__(other)
 
+    def __radd__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other + self.sympy, **self.assumptions)
+
     def __isub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -1618,6 +1658,10 @@ class obj(container):
 
     def __sub__(self, other):
         return self.__isub__(other)
+
+    def __rsub__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other - self.sympy, **self.assumptions)
 
     def __imul__(self, other):
         if isinstance(other, container):
@@ -1630,6 +1674,10 @@ class obj(container):
     def __mul__(self, other):
         return self.__imul__(other)
 
+    def __rmul__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other * self.sympy, **self.assumptions)
+
     def __itruediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -1640,6 +1688,10 @@ class obj(container):
 
     def __truediv__(self, other):
         return self.__itruediv__(other)
+
+    def __rtruediv__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other / self.sympy, **self.assumptions)
 
     def __eq__(self, other):
         return isinstance(other, container) \
@@ -1859,50 +1911,3 @@ class polynom(obj):
         if self.exponent != 1:
             tex_str += f"^{{{self.exponent}}}"
         return tex_str
-
-
-class compatible_int(int):
-    def __init__(self, num):
-        self.num = int(num)
-
-    def __iadd__(self, other):
-        return self.__add__(other)
-
-    def __add__(self, other):
-        if isinstance(other, container):
-            return expr(self.num + other.sympy, **other.assumptions)
-        elif isinstance(other, compatible_int):
-            return compatible_int(self.num + other)
-        else:
-            return other + self.num
-
-    def __isub__(self, other):
-        return self.__sub__(other)
-
-    def __sub__(self, other):
-        if isinstance(other, container):
-            return expr(self.num - other.sympy, **other.assumptions)
-        elif isinstance(other, compatible_int):
-            return compatible_int(self.num - other)
-        else:
-            return self.num - other
-
-    def __imul__(self, other):
-        return self.__mul__(other)
-
-    def __mul__(self, other):
-        if isinstance(other, container):
-            return expr(self.num * other.sympy, **other.assumptions)
-        elif isinstance(other, compatible_int):
-            return compatible_int(self.num * other)
-        else:
-            return self.num * other
-
-    def __itruediv__(self, other):
-        return self.__truediv__(other)
-
-    def __truediv__(self, other):
-        if isinstance(other, container):
-            return expr(self.num / other.sympy, **other.assumptions)
-        else:
-            return self.num / other
