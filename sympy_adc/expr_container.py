@@ -7,7 +7,71 @@ from sympy.physics.secondquant import NO, F, Fd, KroneckerDelta
 
 class container:
     """Base class for all container classes."""
-    pass
+
+    def __add__(self, other):
+        if isinstance(other, container):
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
+            other = other.sympy
+        return expr(self.sympy + other, **self.assumptions)
+
+    def __iadd__(self, other):
+        return self.__add__(other)
+
+    def __radd__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other + self.sympy, **self.assumptions)
+
+    def __sub__(self, other):
+        if isinstance(other, container):
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
+            other = other.sympy
+        return expr(self.sympy - other, **self.assumptions)
+
+    def __isub__(self, other):
+        return self.__sub__(other)
+
+    def __rsub__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other - self.sympy, **self.assumptions)
+
+    def __mul__(self, other):
+        if isinstance(other, container):
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
+            other = other.sympy
+        return expr(self.sympy * other, **self.assumptions)
+
+    def __imul__(self, other):
+        return self.__mul__(other)
+
+    def __rmul__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other * self.sympy, **self.assumptions)
+
+    def __truediv__(self, other):
+        if isinstance(other, container):
+            if self.assumptions != other.assumptions:
+                raise TypeError("Assumptions need to be equal. Got: "
+                                f"{self.assumptions} and {other.assumptions}")
+            other = other.sympy
+        return expr(self.sympy / other, **self.assumptions)
+
+    def __itruediv__(self, other):
+        return self.__truediv__(other)
+
+    def __rtruediv__(self, other):
+        # other: some sympy stuff or some number
+        return expr(other / self.sympy, **self.assumptions)
+
+    def __eq__(self, other):
+        return isinstance(other, container) \
+                and self.assumptions == other.assumptions and \
+                self.sympy == other.sympy
 
 
 class expr(container):
@@ -297,18 +361,6 @@ class expr(container):
         self.__expr = self.sympy + other
         return self
 
-    def __add__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy + other, **self.assumptions)
-
-    def __radd__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other + self.sympy, **self.assumptions)
-
     def __isub__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -319,18 +371,6 @@ class expr(container):
             other = expr(other, **self.assumptions).sympy
         self.__expr = self.sympy - other
         return self
-
-    def __sub__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy - other, **self.assumptions)
-
-    def __rsub__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other - self.sympy, **self.assumptions)
 
     def __imul__(self, other):
         if isinstance(other, container):
@@ -343,18 +383,6 @@ class expr(container):
         self.__expr = self.sympy * other
         return self
 
-    def __mul__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy * other, **self.assumptions)
-
-    def __rmul__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other * self.sympy, **self.assumptions)
-
     def __itruediv__(self, other):
         if isinstance(other, container):
             if self.assumptions != other.assumptions:
@@ -365,23 +393,6 @@ class expr(container):
             other = expr(other, **self.assumptions).sympy
         self.__expr = self.sympy / other
         return self
-
-    def __truediv__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy / other, **self.assumptions)
-
-    def __rtruediv__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other / self.sympy, **self.assumptions)
-
-    def __eq__(self, other):
-        return isinstance(other, container) \
-                and self.assumptions == other.assumptions and \
-                self.sympy == other.sympy
 
 
 class term(container):
@@ -1070,71 +1081,6 @@ class term(container):
         )
         return variant
 
-    def __iadd__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy + other, **self.assumptions)
-
-    def __add__(self, other):
-        return self.__iadd__(other)
-
-    def __radd__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other + self.sympy, **self.assumptions)
-
-    def __isub__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy - other, **self.assumptions)
-
-    def __sub__(self, other):
-        return self.__isub__(other)
-
-    def __rsub__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other - self.sympy, **self.assumptions)
-
-    def __imul__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy * other, **self.assumptions)
-
-    def __mul__(self, other):
-        return self.__imul__(other)
-
-    def __rmul__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other * self.sympy, **self.assumptions)
-
-    def __itruediv__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy / other, **self.assumptions)
-
-    def __truediv__(self, other):
-        return self.__itruediv__(other)
-
-    def __rtruediv__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other / self.sympy, **self.assumptions)
-
-    def __eq__(self, other):
-        return isinstance(other, container) \
-                and self.assumptions == other.assumptions and \
-                self.sympy == other.sympy
-
 
 class obj(container):
     def __new__(cls, t, pos=None, real=False, sym_tensors=None,
@@ -1632,71 +1578,6 @@ class obj(container):
         elif o_type == 'nonsym_tensor':  # orb energy + some special itmds
             kwargs = {'lower': "".join(s.name for s in tensor.indices)}
         return tensor_string(**kwargs)
-
-    def __iadd__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy + other, **self.assumptions)
-
-    def __add__(self, other):
-        return self.__iadd__(other)
-
-    def __radd__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other + self.sympy, **self.assumptions)
-
-    def __isub__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy - other, **self.assumptions)
-
-    def __sub__(self, other):
-        return self.__isub__(other)
-
-    def __rsub__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other - self.sympy, **self.assumptions)
-
-    def __imul__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy * other, **self.assumptions)
-
-    def __mul__(self, other):
-        return self.__imul__(other)
-
-    def __rmul__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other * self.sympy, **self.assumptions)
-
-    def __itruediv__(self, other):
-        if isinstance(other, container):
-            if self.assumptions != other.assumptions:
-                raise TypeError("Assumptions need to be equal. Got: "
-                                f"{self.assumptions} and {other.assumptions}")
-            other = other.sympy
-        return expr(self.sympy / other, **self.assumptions)
-
-    def __truediv__(self, other):
-        return self.__itruediv__(other)
-
-    def __rtruediv__(self, other):
-        # other: some sympy stuff or some number
-        return expr(other / self.sympy, **self.assumptions)
-
-    def __eq__(self, other):
-        return isinstance(other, container) \
-                and self.assumptions == other.assumptions and \
-                self.sympy == other.sympy
 
 
 class normal_ordered(obj):
