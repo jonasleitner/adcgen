@@ -1,37 +1,31 @@
-from sympy import symbols, Dummy
+from sympy import symbols, Dummy, S
 from .misc import Inputerror, Singleton
+
+
+# base names for all used indices
+idx_base = {'occ': 'ijklmno', 'virt': 'abcdefgh', 'general': 'pqrstuvw'}
 
 
 class indices(metaclass=Singleton):
     """Book keeping class that manages the indices in an expression.
        This ensures that for every index only a single instance exists,
        which allows to correctly identify equal indices.
-       i1 = symbols('i', below_fermi=True, cls=Dummy)
-       i2 = symbols('i', below_fermi=True, cls=Dummy)
-       i1 == i2
-       False
        """
     def __init__(self):
         # dict that holds all symbols that have been created previously.
-        self.symbols = {'occ': [], 'virt': [], 'general': []}
+        self._symbols = {'occ': [], 'virt': [], 'general': []}
         # dict that holds the generic indices. Automatically filled by
         # generated index strings.
         self.generic_indices = {'occ': [], 'virt': [], 'general': []}
         # o/v indices that are exclusively available for direct request via
         # get_indices, i.e. they can't be generic indices.
-        self.occ = ['i', 'j', 'k', 'l', 'm', 'n', 'o',
-                    'i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1',
-                    'i2', 'j2', 'k2', 'l2', 'm2', 'n2', 'o2']
-        self.virt = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
-                     'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1',
-                     'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2']
-        self.general = ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']
-
-    @property
-    def used_names(self):
-        return {'occ': set(s.name for s in self.symbols['occ']),
-                'virt': set(s.name for s in self.symbols['virt']),
-                'general': set(s.name for s in self.symbols['general'])}
+        self._occ = ('i', 'j', 'k', 'l', 'm', 'n', 'o',
+                     'i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1',
+                     'i2', 'j2', 'k2', 'l2', 'm2', 'n2', 'o2')
+        self._virt = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
+                      'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1',
+                      'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2')
+        self._general = ('p', 'q', 'r', 's', 't', 'u', 'v', 'w')
 
     def __gen_generic_idx(self, ov):
         """Generated the next 'generation' of generic indices, i.e. extends
@@ -40,9 +34,9 @@ class indices(metaclass=Singleton):
            at the last element of self.o/self.v by one.
            """
         # first call -> counter has not been initialized yet.
-        if not hasattr(self, 'counter_' + ov):
+        if not hasattr(self, f'counter_{ov}'):
             idx_list = sorted(
-                getattr(self, ov), key=lambda idx:
+                getattr(self, f'_{ov}'), key=lambda idx:
                 (int(idx[1:]) if idx[1:].isdigit() else 0, idx[0])
             )
             specific = int(idx_list[-1][1:]) \
@@ -50,11 +44,8 @@ class indices(metaclass=Singleton):
             setattr(self, 'counter_' + ov, specific + 1)
 
         # generate the new index strings
-        counter = getattr(self, 'counter_' + ov)
-        idx_base = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
-                    'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
-                    'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}
-        used = self.used_names[ov]
+        counter = getattr(self, f'counter_{ov}')
+        used = {s.name for s in self._symbols[ov]}
         new_idx = [idx + str(counter) for idx in idx_base[ov]
                    if idx + str(counter) not in used]
 
@@ -67,28 +58,25 @@ class indices(metaclass=Singleton):
         if not isinstance(indices, str):
             raise Inputerror(f"Indices {indices} need to be of type string.")
 
-        # split the string in the individual indices
-        splitted = split_idx_string(indices)
-
         ret = {}
-        for idx in splitted:
+        for idx in split_idx_string(indices):
             ov = index_space(idx)
             if ov not in ret:
                 ret[ov] = []
             # check whether the symbol is already available
             found = False
-            for s in self.symbols[ov]:
+            for s in self._symbols[ov]:
                 if idx == s.name:
                     ret[ov].append(s)
                     found = True
                     break
-            # did not find -> create a new symbol + add it to self.symbols
+            # did not find -> create a new symbol + add it to self._symbols
             # and if it is a generic index -> remove it from the current
             # generic index list.
             if not found:
                 s = self.__new_symbol(idx, ov)
                 ret[ov].append(s)
-                self.symbols[ov].append(s)
+                self._symbols[ov].append(s)
                 try:
                     self.generic_indices[ov].remove(idx)
                 except ValueError:
@@ -126,57 +114,11 @@ class indices(metaclass=Singleton):
         elif ov == 'general':
             return symbols(idx, cls=Dummy)
 
-    def substitute(self, expr):
-        """Substitute all contracted indices in an expression with new,
-           'earlier' indices. The function essentially uses all indices
-           in [i,j,k,l,m,n,o,i1...] from the beginning that are no target
-           indices."""
-        from . import expr_container as e
-        # option 1: leave all target indices untouched -> use container to
-        #           find them
-        # option 2: leave all indices that are for sure not specific untouched
-        #            should be an equivalent solution, but less general
-
-        def substitute_contracted(term):
-            # sort all target indices in a dict. Those indices will not be
-            # substituted and are therefore, already present in the term
-            # (avoid renaming another index to a target index name)
-            used = {'occ': [], 'virt': [], 'general': []}
-            for s in term.target:
-                ov = index_space(s.name)
-                used[ov].append(s.name)
-            # now iterate over the contracted indices and find the first
-            # missing index that may replace the contracted index
-            sub = {}
-            for s in term.contracted:
-                name = s.name
-                ov = index_space(name)
-                new_str = get_first_missing_index(used[ov], ov)
-                used[ov].append(new_str)
-                # need to get the symbol, because of i's introduced by wicks
-                new = self.get_indices(new_str)[ov][0]
-                if new is s:
-                    continue
-                sub[s] = new
-            if not sub:
-                return term
-            sub = term.subs(sub, simultaneous=True)
-            return sub
-
-        expr = expr.expand()
-        if not isinstance(expr, e.expr):
-            expr = e.expr(expr)
-        # iterate over terms and substitute all contracted indices
-        substituted = e.expr(0, **expr.assumptions)
-        for term in expr.terms:
-            substituted += substitute_contracted(term)
-        return substituted
-
     def substitute_with_generic(self, expr):
         """Substitute all contracted indices with new, generic indices."""
         from . import expr_container as e
 
-        def substitute_contracted(term):
+        def substitute_contracted(term: e.term) -> e.expr:
             # count how many indices need to be replaced and get new indices
             old = {}
             for s in term.contracted:
@@ -199,7 +141,13 @@ class indices(metaclass=Singleton):
                     raise RuntimeError(f"{len(sym_list)} {ov} indices needed "
                                        f"but got {len(new[ov])} new indices.")
                 sub.update({s: new_s for s, new_s in zip(sym_list, new[ov])})
-            return term.subs(sub, simultaneous=True)
+            new_term = term.subs(order_substitutions(sub))
+
+            # ensure substitutions are valid
+            if new_term.sympy is S.Zero and term.sympy is not S.Zero:
+                raise ValueError(f"Substitutions {sub} are not valid for "
+                                 f"{term}.")
+            return new_term
 
         expr = expr.expand()
         if not isinstance(expr, e.expr):
@@ -210,16 +158,16 @@ class indices(metaclass=Singleton):
         return substituted
 
 
-def index_space(idx):
+def index_space(idx: str) -> str:
     """Returns the space an index belongs to (occ/virt/geneal)."""
-    if idx[0] in {"i", "j", "k", "l", "m", "n", "o"}:
-        return 'occ'
-    elif idx[0] in {"a", "b", "c", "d", "e", "f", "g", "h"}:
-        return 'virt'
-    elif idx[0] in {"p", "q", "r", "s", "t", "u", "v", "w"}:
-        return 'general'
-    else:
-        raise Inputerror(f"Could not assign the index {idx} to a space.")
+    for sp, idx_string in idx_base.items():
+        if idx[0] in idx_string:
+            return sp
+    raise Inputerror(f"Could not assign the index {idx} to a space.")
+
+
+def idx_sort_key(s):
+    return (int(s.name[1:]) if s.name[1:] else 0, s.name[0])
 
 
 def split_idx_string(str_tosplit):
@@ -243,37 +191,28 @@ def n_ov_from_space(space_str):
     return {'n_occ': space_str.count('h'), 'n_virt': space_str.count('p')}
 
 
-def repeated_indices(idx_a, idx_b):
+def repeated_indices(idx_a: str, idx_b: str) -> bool:
     """Checks whether both index strings share an index."""
     split_a = split_idx_string(idx_a)
     split_b = split_idx_string(idx_b)
     return any(i in split_b for i in split_a)
 
 
-def get_first_missing_index(idx_list, ov):
-    """Returns the first index that is missing in the provided index list.
-       The indices need to be provided as strings.
-       [i,j,l] -> return k // [i,j,k] -> return l
-        """
-
-    idx_base = {'occ': ['i', 'j', 'k', 'l', 'm', 'n', 'o'],
-                'virt': ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
-                'general': ['p', 'q', 'r', 's', 't', 'u', 'v', 'w']}[ov]
-    ordered_idx = idx_base.copy()
-    if not idx_list:
-        return ordered_idx[0]
-    # keep sorting in this function!!!
-    idx_list = sorted(
-        idx_list, key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])
-    )
-    for i, idx in enumerate(idx_list):
-        if idx != ordered_idx[i]:
-            return ordered_idx[i]
-        if idx[0] in ['o', 'h', 'w']:
-            n = int(idx[1:]) + 1 if idx[1:] else 1
-            ordered_idx.extend([b + str(n) for b in idx_base])
-        new = ordered_idx[i+1]
-    return new
+def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
+    """Returns a list containing the n lowest indices that belong to the
+       desired space and are not present in the provided list of used indices.
+       """
+    # generate idx pool to pick the lowest indices from
+    base = idx_base[space]
+    idx = list(base)
+    required = len(used) + n  # the number of indices present in the term
+    suffix = 1
+    while len(idx) < required:
+        idx.extend(s + str(suffix) for s in base)
+        suffix += 1
+    # remove the already used indices (that are not available anymore)
+    # and return the first n elements of the resulting list
+    return [s for s in idx if s not in used][:n]
 
 
 def extract_names(syms):
@@ -305,3 +244,78 @@ def get_symbols(idx: str | list[str] | list[Dummy]) -> list[Dummy]:
     else:
         raise Inputerror("Indices need to be provided as string or a list "
                          "of sympy Dummy objects.")
+
+
+def order_substitutions(subsdict: dict[Dummy, Dummy]) -> list:
+    """Returns substitutions ordered in a way one can use the subs method
+       without the need to use the 'sumiltanous=True' option. Essentially
+       identical to a part of the substitute_dummies function of sympy."""
+    subs = []
+    final_subs = []
+    for o, n in subsdict.items():
+        if o is n:  # indices are identical -> nothing to do
+            continue
+        # the new index is substituted by another index
+        if (other_n := subsdict.get(n, None)) is not None:
+            if other_n in subsdict:
+                # i -> j / j -> i
+                # temporary variable is needed
+                p = Dummy('p')
+                subs.append((o, p))
+                final_subs.append((p, n))
+            else:
+                # i -> j / j -> k
+                # in this case it is sufficient to do the i -> j substitution
+                # after the j -> k substitution, but before temporary variables
+                # are resubstituted again.
+                final_subs.insert(0, (o, n))
+        else:
+            subs.append((o, n))
+    subs.extend(final_subs)
+    return subs
+
+
+def minimize_tensor_indices(tensor_indices: tuple,
+                            target_idx: dict[str, list[str]]):
+    """Minimizes the tensor indices using the lowest available non target
+       indices. Returns the minimized indices as well as the corresponding
+       substitution dict."""
+    from .symmetry import permutation, permutation_product
+
+    for target in target_idx.values():
+        if not all(isinstance(s, str) for s in target):
+            raise TypeError("Target indices need to be provided as string.")
+
+    tensor_indices: list = list(tensor_indices)
+    n_unique_indices: int = len(set(tensor_indices))
+    minimal_indices: dict[str, list] = {}
+    permutations = []  # list for collecting the applied permutations
+    minimized = set()
+    for s in tensor_indices:
+        if s in minimized:
+            continue
+        space = index_space(s.name)
+        # target indices of the corresponding space
+        space_target = target_idx.get(space, [])
+        # index is a target idx -> keep as is
+        if s.name in space_target:
+            minimized.add(s)
+            continue
+        # generate minimal indices for the corresponding space
+        if space not in minimal_indices:
+            minimal_indices[space] = get_symbols(
+                get_lowest_avail_indices(n_unique_indices, space_target, space)
+            )
+        # get the lowest available index for the corresponding space
+        min_s = minimal_indices[space].pop(0)
+        minimized.add(min_s)
+        if s is min_s:  # s is already the lowest available index
+            continue
+        # found a lower index
+        # -> permute tensor indices and append permutation to permutations
+        #    list
+        perm = {s: min_s, min_s: s}
+        for i, other_s in enumerate(tensor_indices):
+            tensor_indices[i] = perm.get(other_s, other_s)
+        permutations.append(permutation(s, min_s))
+    return tuple(tensor_indices), permutation_product(permutations)

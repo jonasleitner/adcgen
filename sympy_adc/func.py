@@ -49,8 +49,16 @@ def import_from_sympy_latex(expr_string: str):
                 raise RuntimeError(f"Invalid indices for delta: {idx}.")
             return KroneckerDelta(*idx)
         elif "\\left(" in obj_str:  # braket
-            obj_str = obj_str.replace("\\left(", "").replace("\\right)", "")
-            return import_from_sympy_latex(obj_str).sympy
+            # need to take care of exponent of the braket!
+            splitted = obj_str.split('\\right)')
+            if len(splitted) != 2:
+                raise NotImplementedError(f"Unexpected braket {obj_str}")
+            if splitted[1]:  # exponent != 1
+                exponent = int(splitted[1].lstrip('^{').rstrip('}'))
+            else:
+                exponent = 1
+            obj_str = splitted[0].replace("\\left(", "")
+            return Pow(import_from_sympy_latex(obj_str).sympy, exponent)
         elif "\\left\\{" in obj_str:  # NO
             obj_str = \
                 obj_str.replace("\\left\\{", "").replace("\\right\\}", "")

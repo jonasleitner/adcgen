@@ -1,4 +1,5 @@
 from functools import wraps
+import inspect
 
 
 class Inputerror(ValueError):
@@ -6,16 +7,33 @@ class Inputerror(ValueError):
 
 
 def cached_member(function):
-    """Decorator for a member function thats called with
+    """Decorator for a class method thats called with
        at least one argument. The result is cached in the
        member variable '_function_cache' of the class instance.
        """
 
     fname = function.__name__
 
+    # create the signature of the wrapped function and check that we dont
+    # have any keyword only arguments in the wrapped function
+    func_sig = inspect.signature(function)
+    invalid_arg_types = (inspect.Parameter.KEYWORD_ONLY,
+                         inspect.Parameter.VAR_KEYWORD)
+    if any(arg.kind in invalid_arg_types for arg in
+           func_sig.parameters.values()):
+        raise TypeError("Functions with keyword only arguments are not "
+                        "supported by cached_member.")
+
     @wraps(function)
-    def wrapper(self, *args):
-        try:
+    def wrapper(self, *args, **kwargs):
+        # - transform all arguments to positional arguments
+        #   and add not provided default arguments
+        bound_args: inspect.BoundArguments = func_sig.bind(self, *args, **kwargs)  # noqa E5001
+        bound_args.apply_defaults()
+        assert len(bound_args.kwargs) == 0
+        args = bound_args.args[1:]  # remove self from the positional arguments
+
+        try:  # load/create the cache
             fun_cache = self._function_cache[fname]
         except AttributeError:
             self._function_cache = {}
@@ -23,82 +41,67 @@ def cached_member(function):
         except KeyError:
             fun_cache = self._function_cache[fname] = {}
 
-        try:
+        try:  # try to load the data from the cache
             return fun_cache[args]
         except KeyError:
             fun_cache[args] = result = function(self, *args)
         return result
+
     return wrapper
 
 
 def process_arguments(function):
     """Decorator for a function thats called with at least one argument.
-       All provided arguments (args and kwargs) are processed if necessary to
-       avoid unnecessary calculations. For instance, indices are sorted, i.e.,
-       indices='ijab' and indices='abji' will both be tranformed to 'abij'.
-       Furthermore, all kwargs are forwarded as args to the decorated function.
+       All provided arguments (args and kwargs) are processed (sorted) if
+       necessary to avoid unnecessary calculations. For instance,
+       indices='ijab' and indices='abji' will both be sorted to 'ijab'.
        """
-    from .indices import split_idx_string
-    import inspect
+    from .indices import split_idx_string, index_space
+
+    def sort_spaces(spaces):
+        # 'hhp,ph' -> 'phh,ph'
+        # also works for operator strings: 'acac' -> 'ccaa'
+        return ",".join(["".join(sorted(s, reverse=True)) for s in
+                         transform_to_tuple(spaces)])
+
+    def sort_indices(idx_string):
+        # expects something like: 'ak,ji' -> 'ka,ij'
+        sorted_str = []
+        for sub_str in transform_to_tuple(idx_string):
+            sorted_str.append("".join(sorted(
+                split_idx_string(sub_str), key=sort_idxstr_canonical
+            )))
+        return ",".join(sorted_str)
+
+    def sort_idxstr_canonical(s):
+        return index_space(s)[0], int(s[1:]) if s[1:] else 0, s[0]
 
     sig = inspect.signature(function)
+    # determine all parameters of the wrapped function
+    params = list(sig.parameters.keys())[1:]  # remove self from params
 
-    @wraps(function)
-    def wrapper(*args, **kwargs):
-        def sort_spaces(spaces):
-            return ",".join(["".join(sorted(s, reverse=True)) for s in spaces])
-
-        def sort_indices(idx_tpl):
-            sorted_list = ["".join(sorted(split_idx_string(idx),
-                           key=lambda i: (int(i[1:]) if i[1:] else 0, i[0])))
-                           for idx in idx_tpl]
-            return ",".join(sorted_list)
-
-        # order, min_order, braket, lr, subtract_gs, adc_order
-        # -> nothing to sort
-        process = {
+    # dict that connects argument names to the corresponding sorting functions
+    # order, min_order, braket, lr, subtract_gs, adc_order are int/bool
+    # -> nothing to sort
+    process = {
             'opstring': sort_spaces,
             'space': sort_spaces,
             'indices': sort_indices,
             'block': sort_spaces
-        }
+    }
 
-        n_args = len(args)
-        new_args = []
-        for arg_idx, (arg, value) in enumerate(sig.parameters.items()):
-            # add all args to kwargs and then process if necessary
-            # if this is used to decorate a member function self should also
-            # be handled correctly
-            if n_args > arg_idx:
-                if arg in kwargs:
-                    raise RuntimeError(f"found argument {arg} in kwargs, "
-                                       "but expected it in args.")
-                kwargs[arg] = args[arg_idx]
-            try:
-                val = kwargs[arg]
-                # process the value if needed and not just the default value
-                # has been provided
-                if val != value.default:
-                    fun = process.get(arg, None)
-                    val = fun(transform_to_tuple(val)) if fun else val
-                new_args.append(val)
-                del kwargs[arg]
-            except KeyError:
-                # argument is not provided in kwargs or args
-                # -> has to have a default value
-                if value.default is not inspect._empty:
-                    new_args.append(value.default)
-                    continue
-                else:
-                    raise TypeError(f"Positional argument {arg} missing.")
-        # if everything worked kwargs should be an empty dict here
-        if kwargs:
-            raise Inputerror(
-                "Wrong or too many arguments provided for function "
-                f"{function.__name__}. Not possible to assign {kwargs} "
-                f"to {inspect.signature(function).parameters}."
-            )
-        return function(*new_args)
+    @wraps(function)
+    def wrapper(self, *args, **kwargs):
+        # - process positional arguments
+        args = list(args)
+        for i, val in enumerate(args):
+            if (fun := process.get(params[i], None)) is not None:
+                args[i] = fun(val)
+        # - process keyword arguments
+        for arg, val in kwargs.items():
+            if (fun := process.get(arg, None)) is not None:
+                kwargs[arg] = fun(val)
+        return function(self, *args, **kwargs)
 
     return wrapper
 

@@ -1,8 +1,9 @@
-from .indices import index_space, get_first_missing_index, get_symbols
+from .indices import (index_space, get_symbols, order_substitutions,
+                      get_lowest_avail_indices, minimize_tensor_indices)
 from .misc import Inputerror
-from . import sort_expr as sort
 from . import expr_container as e
-from sympy import Add
+from sympy import Add, Pow, S, Dummy, KroneckerDelta, sqrt, Rational
+from collections import Counter, defaultdict
 
 
 def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
@@ -24,7 +25,6 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
                  E.g. ['V', 'V'] return all terms that contain 'V' at least
                  once.
        """
-    from collections import Counter
 
     def check_term(term):
         available = [o.name for o in term.tensors for _ in range(o.exponent)]
@@ -36,7 +36,7 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
             available = Counter(available)
             desired = Counter(t_strings)
             return desired.items() <= available.items()
-        # True if ony the requested Tensors are in the term in the correct
+        # True if only the requested Tensors are in the term in the correct
         # amount
         elif strict == 'high':
             if ignore_amplitudes:
@@ -69,170 +69,192 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
 
 
 def find_compatible_terms(terms: list[e.term]):
-    from itertools import product
+    from itertools import product, combinations
+
+    def compare_terms(pattern: dict, other_pattern: dict, target: tuple,
+                      term: e.term, other_term: e.term) -> None | list:
+        # function to compare two terms that are compatible, i.e., have the
+        # same amount of indices in each space, the same amount and type of
+        # objects and the same target indices
+        sub_list: list[dict] = []
+        for ov, idx_pattern in pattern.items():
+            # only compare indices that belong to the same space
+            other_idx_pattern = other_pattern[ov]
+            # list to hold the substitution dictionaries of the current space
+            ov_sub_list: list[dict] = []
+
+            for idx, pat in idx_pattern.items():
+                # find all possible matches for the current idx
+                # if its a target idx -> only allow mapping on other target idx
+                is_target = idx in target
+                matching_idx = []  # list to collect all possible matches
+                for other_idx, other_pat in other_idx_pattern.items():
+                    other_is_target = other_idx in target
+                    if is_target != other_is_target:
+                        continue  # 1 index is a target index -> cant map
+                    # the pattern of both indices is identical
+                    # -> possible match
+                    if pat == other_pat:
+                        # can't substitute target indices
+                        if is_target and other_is_target \
+                                and idx is not other_idx:
+                            continue
+                        matching_idx.append(other_idx)
+                # could not find a match for idx -> no need to check further
+                if not matching_idx:
+                    break
+
+                if not ov_sub_list:  # initialize the subdicts
+                    ov_sub_list.extend({s: idx} for s in matching_idx)
+                else:  # already initialized -> add when possible
+                    new_ov_sub_list = []
+                    for sub, other_idx in product(ov_sub_list, matching_idx):
+                        # other_idx is already mapped onto another idx
+                        if other_idx in sub:
+                            continue
+                        # copy the sub_dict to avoid inplace modification
+                        extended_sub = sub.copy()
+                        extended_sub[other_idx] = idx
+                        new_ov_sub_list.append(extended_sub)
+                    ov_sub_list = new_ov_sub_list
+                    if not ov_sub_list:  # did not find any valid combination
+                        # will not be able to construct complete sub dicts
+                        # say we matched idx1 to some indices and then obtain
+                        # no valid sub dicts after matching idx2
+                        # -> can only obtain sub dicts that do not contain idx1
+                        #    and idx2 -> they can not be valid
+                        # -> terms can not match!
+                        return None
+            # Done with comparing the indices of a space
+            # -> check the result and create total substitution dicts
+
+            # remove incomplete sub lists
+            # This might not be necessary anymore
+            ov_sub_list = [sub for sub in ov_sub_list if
+                           sub.keys() == other_idx_pattern.keys()]
+
+            if not ov_sub_list:  # did not find a single complete sub dict
+                return None
+
+            # initialize the final substitution dicts
+            if not sub_list:
+                sub_list.extend(ov_sub_list)
+            else:  # combine the sub dicts. different spaces can not overlap
+                sub_list = [other_sp_sub | sub for other_sp_sub, sub in
+                            product(sub_list, ov_sub_list)]
+
+        # test all sub dicts to identify the correct one (if one exists)
+        for sub in sub_list:
+            sub = order_substitutions(sub)
+            sub_other_term = other_term.sympy.subs(sub)
+            # sub is not valid for other term: evaluates to 0 due to
+            # some antisymmetry e.g. t_ijcd -> t_ijcc = 0
+            if sub_other_term is S.Zero and other_term.sympy is not S.Zero:
+                continue
+            # diff (or sum) is a single term (no Add obj)
+            # can either sum up to 0 or to a single term with a different pref
+            # -> check for type of result and not for result value
+            if not isinstance(term.sympy - sub_other_term, Add):
+                return sub
+        return None  # no valid sub dict -> return None
+
+    def repeating_idx_sp(idx_list: list):
+        repeating_idx = []
+        for idx1, idx2 in combinations(idx_list, 2):
+            descr1, descr2 = idx1[0], idx2[0]
+            for i1, i2 in product(idx1[1:], idx2[1:]):
+                repeated = i1 & i2
+                if len(repeated) > 1:
+                    repeated = "".join(sorted(index_space(s.name)[0] for s
+                                              in repeated))
+                    repeating_idx.append((repeated, *sorted([descr1, descr2])))
+        return tuple(sorted(repeating_idx))
 
     if not all(isinstance(term, e.term) for term in terms):
         raise Inputerror("Expected terms as a list of term Containers.")
 
-    # NOTE: tensors and deltas do not cover deltas and tensors in polynoms
-    #       However, this should not be a problem, since a term
-    #       (a+b) / (c+d) * (e+f) may be split in the three brakets which
-    #       can be treated correctly.
-
-    # extract the target indices
-    term_target: list[tuple] = [term.target for term in terms]
-    term_pattern: list[dict] = []
-    term_tensors: list[list[str]] = []
-    term_deltas: list[list[str]] = []
-    term_target_obj: list[list[tuple]] = []
-    for term, target_idx in zip(terms, term_target):
-        # extract the pattern
-        term_pattern.append(term.pattern(target=target_idx))
-        # extract tensors
-        term_tensors.append(sorted(
-            [o.name for o in term.tensors for _ in range(o.exponent)]
+    # prefilter terms according to
+    # - number of objects, excluding prefactor
+    # - type, name, space, obj target indices and exponent of objects
+    # - the space of repeating indices subsets (2, 3, ...) that repeat on
+    #   on multiple objects together in a common index subspace (upper/lower)
+    # - number of indices in each space
+    # - the target indices
+    filtered_terms = defaultdict(list)
+    term_pattern = []
+    term_target = []
+    for term_i, term in enumerate(terms):
+        # target indices
+        target = term.target
+        term_target.append(target)
+        # pattern
+        pattern = term.pattern
+        term_pattern.append(pattern)
+        # obj name, space, exponent, obj_target_indices, repeating_indices
+        descriptions = []
+        tensor_idx_list = []
+        length = 0
+        for o in term.objects:
+            if (descr := o.description()) == 'prefactor':
+                continue
+            elif 'antisymtensor' in descr:
+                tensor = o.extract_pow
+                tensor_idx_list.append(
+                    (descr, set(tensor.upper), set(tensor.lower))
+                )
+            elif 'delta' in descr or 'nonsymtensor' in descr:
+                tensor_idx_list.append((descr, set(o.idx), set()))
+            length += 1
+            descriptions.append(descr)
+        pattern_key = tuple(sorted(
+            (sp, len(idx_pat)) for sp, idx_pat in pattern.items()
         ))
-        # extract deltas
-        term_deltas.append(sorted(
-            [o.space for o in term.deltas for _ in range(o.exponent)]
-        ))
-        # extract objects that hold the target indices and also how many occ
-        # virt target indices the object holds, e.g. f_cc Y_ij^ac
-        # Y holds 2o, 1v
-        temp = []
-        for o in term.target_idx_objects:
-            obj_target_sp = "".join(
-                [index_space(s.name)[0] for s in o.idx if s in target_idx]
-            )
-            temp.extend([
-                (o.description(), obj_target_sp.count('o'), obj_target_sp.count('v'))  # noqa E501
-                for _ in range(o.exponent)
-            ])
-        term_target_obj.append(sorted(temp))
-        del temp
+        key = (length, tuple(sorted(descriptions)),
+               repeating_idx_sp(tensor_idx_list), pattern_key, target)
+        filtered_terms[key].append(term_i)
 
-    # collect terms that are equal according to their pattern
-    equal_terms: dict[int, dict[int, dict]] = {}
-    matched: set = set()
-    for i, pattern in enumerate(term_pattern):
-        if i in matched:
-            continue
-        term = terms[i]
-        target = term_target[i]
-        tensors = term_tensors[i]
-        deltas = term_deltas[i]
-        target_obj = term_target_obj[i]
-        for other_i in range(i+1, len(term_pattern)):
-            other_term = terms[other_i]
-            other_pattern = term_pattern[other_i]
-            other_target = term_target[other_i]
-            # check if the terms are compatible:
-            # - have the same length (number of objects) up to a prefactor
-            # - the same number and type of indices
-            # - the same target indices
-            # - the same tensors and deltas
-            # - the target indices are placed on the same objects
-            if other_i in matched or abs(len(term) - len(other_term)) > 1 or \
-                    pattern.keys() != other_pattern.keys() or \
-                    any(len(idx_pat) != len(other_pattern[sp])
-                        for sp, idx_pat in pattern.items()) or \
-                    target != other_target or \
-                    tensors != term_tensors[other_i] or \
-                    deltas != term_deltas[other_i] or \
-                    target_obj != term_target_obj[other_i]:
+    compatible_terms = {}
+    for term_idx_list in filtered_terms.values():
+        # set to keep track of the already mapped terms
+        matched = set()
+        for i, term_i in enumerate(term_idx_list):
+            if term_i in matched:  # term already mapped
                 continue
 
-            # try to map the indices onto each other according to the pattern
-            # if a match for all indices can be found, it should be possible
-            # to combine both terms into a single term (or cancel them to 0)
-            # by applying index permutations of contracted indices
-            match: bool = True
-            sub_list: list[dict] = []
-            for ov, idx_pat in pattern.items():
-                other_idx_pat = other_pattern[ov]
-                ov_maps: list[dict] = []
-                for idx, pat in idx_pat.items():
-                    # find all possible matches for the given index
-                    # if its a target index -> can only map onto other
-                    # target indices
-                    is_target = idx in target
-                    matching_idx = []  # list to collect all possible matches
-                    for other_idx, other_pat in other_idx_pat.items():
-                        other_is_target = other_idx in other_target
-                        if is_target != other_is_target:
-                            continue  # only one of them is a target idx
-                        # pattern is sorted list of strings -> directly compare
-                        if pat == other_pat:
-                            if is_target and other_is_target and \
-                                    idx is not other_idx:
-                                continue  # can't substitute target indices
-                            matching_idx.append(other_idx)
-                    if not matching_idx:
-                        break  # could not find a match for the idx
-                    if not ov_maps:
-                        # initialize all sub dicts
-                        ov_maps.extend([{s: idx} for s in matching_idx])
-                    else:  # sub dicts already initialized -> add when possible
-                        for sub, other_idx in product(ov_maps, matching_idx):
-                            if other_idx in sub or idx in sub.values():
-                                continue
-                            sub[other_idx] = idx
+            compatible_terms[term_i] = {}
 
-                # filter incomplete sub dicts and remove redundant entries
-                valid: list[dict] = []
-                for sub in ov_maps:
-                    if sub.keys() != other_idx_pat.keys():
-                        continue  # did not find a match for all idx
-                    valid.append({old: new for old, new in sub.items()
-                                  if old is not new})
-                if not valid:
-                    match = False
-                    break
-                if not sub_list:
-                    # initialize all final sub dicts
-                    sub_list.extend(valid)
-                else:  # all sub dicts already initialized
-                    # spaces can not overlap -> just combine the dicts
-                    sub_list = [other_sp_sub | sub for other_sp_sub, sub
-                                in product(sub_list, valid)]
-            if not match:  # could not map the terms onto each other
-                continue
+            # data of the current term
+            term = terms[term_i]
+            target = term_target[term_i]
+            pattern = term_pattern[term_i]
 
-            for sub in sub_list:
-                if not sub:  # can a sub dict be empty?
+            for other_i in range(i+1, len(term_idx_list)):
+                other_term_i = term_idx_list[other_i]
+                if other_term_i in matched:  # term already mapped
                     continue
-                # test the sub_dict: terms should add up or cancel to 0
-                sub_other = other_term.subs(sub, simultaneous=True)
-                if len(term - sub_other) == 1:
-                    if i not in equal_terms:
-                        equal_terms[i] = {}
-                    equal_terms[i][other_i] = sub
-                    matched.add(other_i)
-                    break
-    return equal_terms
+
+                sub = compare_terms(pattern, term_pattern[other_term_i],
+                                    target, term, terms[other_term_i])
+                # was possible to map the terms onto each other!
+                if sub is not None:
+                    compatible_terms[term_i][other_term_i] = sub
+                    matched.add(other_term_i)
+    return compatible_terms
 
 
-def simplify(expr: e.expr, real: bool = False):
+def simplify(expr: e.expr) -> e.expr:
     """Simplify an expression by renaming indices. The new index names are
        determined by establishing a mapping between the indices in different
        terms. If all indices in two terms share the same pattern (essentially
-       have the same occurences), but have different names. The function will
+       occur on the same tensors), but have different names. The function will
        rename the indices in one of the two terms.
-       If real is set, all 'c' are removed in the tensor names in order to make
-       the amplitudes real. Additionally, make_real is called that tries to
-       further simplify the expression by swapping bra and ket of symmetric
-       tensors. By default the Fock matrix 'f' and the ERI 'V' are added to
-       the provided symmetric tensors.
        """
 
-    # start = time.time()
+    if not isinstance(expr, e.expr):
+        raise Inputerror("The expression to simplify needs to be provided as "
+                         f"{e.expr} object.")
 
     expr = expr.expand()
-    # adjust symmetric tensors of the container
-    if not isinstance(expr, e.expr):
-        expr = e.expr(expr, real)
-    if real and not expr.real:
-        expr = expr.make_real()
 
     if len(expr) == 1:  # trivial: only a single term
         return expr
@@ -244,204 +266,280 @@ def simplify(expr: e.expr, real: bool = False):
 
     # substitue the indices in other_n and keep n as is
     res = 0
-    matched = set()
-    for n, sub_dict in equal_terms.items():
-        matched.add(n)
+    for n, matches in equal_terms.items():
         res += terms[n]
-        for other_n, sub in sub_dict.items():
-            matched.add(other_n)
-            res += terms[other_n].subs(sub, simultaneous=True)
-    # Add the unmatched remainder
-    res += e.expr(Add(*[terms[n].sympy for n in range(len(terms))
-                  if n not in matched]), **expr.assumptions)
-    # print(f"simplify took {time.time()- start} seconds")
+        for other_n, sub in matches.items():
+            res += terms[other_n].subs(sub)
     return res
 
 
-def extract_dm(expr, bra_ket_sym: int = None):
-    """Function that extracts the density matrix from the expectation
-       value expression. Thereby, a dict is returned that contains the
-       defintions of all canonical blocks of the density matrix."""
-    from sympy.physics.secondquant import KroneckerDelta
-    from sympy import Rational
-    from .sympy_objects import AntiSymmetricTensor
+def remove_tensor(expr: e.expr, t_name: str):
+    """Removes the given tensor in each term of an expr by reverting the
+       contraction.
+       """
+    from .sympy_objects import AntiSymmetricTensor, NonSymmetricTensor
 
-    def minimize_d_indices(term: e.expr, d_tensor: dict,
-                           target: tuple) -> tuple[e.expr, dict]:
-        from collections import defaultdict
+    def remove(term: e.term, tensor: e.obj, target_indices: dict) -> e.expr:
+        # - get the tensor indices
+        indices = list(tensor.idx)
+        # print(f"\nRemoving {tensor} with indices {indices}.")
+        # print(f"remaining term: {term}")
 
-        used_indices = defaultdict(list)
-        for s in target:  # add all target indices to used indices
+        # - split the indices that are in the remaining term according
+        #   to their space
+        used_indices = {}
+        for s in set(s for s, _ in term._idx_counter):
+            if (ov := index_space(s.name)) not in used_indices:
+                used_indices[ov] = set()
+            used_indices[ov].add(s.name)
+
+        # - check if the tensor is holding target indices.
+        #   have to introduce a KroneckerDelta for each target index to avoid
+        #   loosing indices in the term and replace the target indices on the
+        #   tensor by new, unused indices:
+        #   f_bc * Y^ac_ij -> delta_ik * delta_jl * delta_ad * f_bc * Y^dc_kl
+
+        # get all target indices on the tensor, split according to their space
+        tensor_target_indices = {}
+        for s in indices:
             ov = index_space(s.name)
-            if s not in used_indices[ov]:
-                used_indices[ov].append(s)
-        # start with upper
-        d_tensor = sorted(d_tensor.items(), key=lambda tpl: tpl[0],
-                          reverse=True)
-        minimization_sub = {}
-        for _, idx_list in d_tensor:
-            for idx in idx_list:
-                if idx in target:  # skip target indices
-                    continue
-                # find the lowest unused index
-                name = idx.name
-                sp = index_space(name)
-                new_idx = get_first_missing_index(used_indices[sp], sp)
-                used_indices[sp].append(new_idx)
-                if name == new_idx:  # is already the lowest idx
-                    continue
-                # found a lower index -> permute indices in the term
-                new_idx = get_symbols(new_idx)[0]
-                sub = {idx: new_idx, new_idx: idx}
-                # immediately permute the d_tensor indices
-                for i, (_, other_idx_list) in enumerate(d_tensor):
-                    for other_i, s in enumerate(other_idx_list):
-                        d_tensor[i][1][other_i] = sub.get(s, s)
-                # and build a minimization sub dict to minimize
-                # the indices in the term at once
-                if not minimization_sub:
-                    minimization_sub = sub
-                else:
-                    for old, new in minimization_sub.items():
-                        if new is new_idx:
-                            minimization_sub[old] = idx
-                            del sub[new_idx]
-                        elif new is idx:
-                            minimization_sub[old] = new_idx
-                            del sub[idx]
-                    if sub:
-                        minimization_sub.update(sub)
-        return term.subs(minimization_sub, simultaneous=True), dict(d_tensor)
+            if s.name in target_indices.get(ov, []):
+                if ov not in tensor_target_indices:
+                    tensor_target_indices[ov] = []
+                if s not in tensor_target_indices[ov]:
+                    tensor_target_indices[ov].append(s)
 
-    def symmetrize_keep_pref(term, symmetry):
-        symmetrized = term.copy()
-        for perms, factor in symmetry.items():
-            symmetrized += term.copy().permute(*perms) * factor
-        return symmetrized
+        # - add the tensor indices to the term_indices to collect all
+        #   unavailable indices
+        for s in indices:
+            if (ov := index_space(s.name)) not in used_indices:
+                used_indices[ov] = set()
+            used_indices[ov].add(s.name)
 
-    if bra_ket_sym is not None and bra_ket_sym not in [0, 1, -1]:
-        raise Inputerror(f"Invalid bra_ket symmetry {bra_ket_sym}. 0, 1 and -1"
-                         "are valid values.")
+        if tensor_target_indices:
+            # print("Found target indices on tensor to remove:",
+            #       tensor_target_indices)
+            for space, idx_list in tensor_target_indices.items():
+                if space not in used_indices:
+                    used_indices[space] = set()
+                additional_indices = get_lowest_avail_indices(
+                    len(idx_list), used_indices[space], space
+                )
+                # add the new indices to the unavailable indices
+                used_indices[space].update(additional_indices)
+                # transform them from string to Dummies
+                additional_indices = get_symbols(additional_indices)
+                sub = {s: new_s for s, new_s in
+                       zip(idx_list, additional_indices)}
+                # create a delta for each index and attach to the term
+                # and replace the index in tensor indices
+                for s, new_s in sub.items():
+                    term *= KroneckerDelta(s, new_s)
+                indices = [sub.get(s, s) for s in indices]
+            # print(f"modified tensor indices to: {indices}")
+            # print(f"Term now reads {term}")
 
-    # assume no polynoms are present in the term
-    expr = expr.expand()
-    # ensure that the expression is in a container
+        # - check for repeating indices:
+        #   introduce a delta in the term for each repeating index
+        #   e.g. d_iiij -> d_iklj // term <- delta_ik * delta_il
+        #   Problem: this might introduce unstable deltas...
+        repeating_indices = {}
+        for s, n in Counter(indices).items():
+            if n > 1:
+                if (ov := index_space(s.name)) not in repeating_indices:
+                    repeating_indices[ov] = []
+                repeating_indices[ov].extend(s for _ in range(n-1))
+        if repeating_indices:
+            # print(f"Found repeating indices {repeating_indices}")
+            #   - get the list indices of all tensor indices
+            indices_i: dict[Dummy, list[int]] = {}
+            for i, s in enumerate(indices):
+                if s not in indices_i:
+                    indices_i[s] = []
+                indices_i[s].append(i)
+            # - iterate through the repeating indices and generate a new
+            #   index for each repeating index. Use the repeating and the
+            #   new index to create a KroneckerDelta. On AntiSymmetricTensors
+            #   indices can at most twice, once in upper and once in lower.
+            #   On NonSymmetricTensors no such limit exists -> implement for
+            #   an arbitrary amount of repetitions
+            for space, idx_list in repeating_indices.items():
+                additional_indices = get_lowest_avail_indices(
+                    len(idx_list), used_indices.get(space, []), space
+                )
+                additional_indices = get_symbols(additional_indices)
+                for s, new_s in zip(idx_list, additional_indices):
+                    term *= KroneckerDelta(s, new_s)
+                    # substitute the second occurence of s in tensor indices
+                    indices[indices_i[s].pop(1)] = new_s
+            # no repeating indices left
+            assert max(Counter(indices).values()) == 1
+            # print(f"Replaced repeating indices by new indices: {indices}")
+            # print(f"The term now reads: {term}")
+        # - minimize the tensor indices by permuting contracted indices.
+        #   Ensure indices occur in ascending order: kijab -> ijkab.
+        #   target indices are excluded from this procedure:
+        #   with target indices i, a: kijab -> jikab
+        # print(f"Minimized {indices} to ", end='', flush=True)
+        indices, perms = minimize_tensor_indices(indices, target_indices)
+        # print(indices)
+        # - apply the index permuations for minimizig the indices
+        #   also to the term
+        term: e.expr = term.permute(*perms)
+        assert term.sympy is not S.Zero
+        # - build a new tensor that holds the minimized indices
+        #   further minimization might be possible taking the tensor
+        #   symmetry into account, because we did not touch target indices:
+        #   jikab -> d^jik_ab = - d^ijk_ab
+        if isinstance(tensor.sympy, AntiSymmetricTensor):
+            bra_ket_sym = tensor.bra_ket_sym
+            if tensor.is_amplitude:  # indices = lower, upper
+                n_l = len(tensor.lower)
+                tensor = e.expr(
+                    AntiSymmetricTensor(t_name, indices[n_l:],
+                                        indices[:n_l], bra_ket_sym)
+                ).terms[0]
+            else:  # indices = upper, lower
+                n_u = len(tensor.upper)
+                tensor = e.expr(
+                    AntiSymmetricTensor(t_name, indices[:n_u],
+                                        indices[n_u:], bra_ket_sym)
+                ).terms[0]
+        elif isinstance(tensor.sympy, NonSymmetricTensor):
+            bra_ket_sym = None
+            tensor = e.expr(
+                NonSymmetricTensor(tensor.symbol.name, indices)
+            ).terms[0]
+        else:
+            raise TypeError(f"Unknown tensor type {type(tensor.sympy)}")
+        # print(f"The tensor now reads: {tensor}")
+        # if we got a -1 -> move to the term
+        term *= tensor.prefactor
+        # print(f"Term now reads: {term}")
+        # PREFACTOR:
+        # - For a contraction d^ij_ab we obtain an additional prefactor of 1/4
+        #   in the term, for d^ij_ka it is 1/2, or 1/4 for d^ij_kl
+        #   -> it depends on the symmetry of the tensor we want to remove
+        #      factor = n_perms + 1
+        #   -> need to remove it from the term: multiply by the term by the
+        #      inverse factor (4 for d^ij_ab)
+        # - Additionally we need to ensure that the resulting expression
+        #   preserves symmetry that was included in the input expression
+        #   through the tensor we want to remove
+        #   -> apply the tensor symmetry to the term
+        #      d^ij_ab * X -> 1/4 (X - P_ij X - P_ab X + P_ij P_ab X)
+        #   -> this leads to another factor of 1/(n_perms + 1)
+        # - For usual tensors both factors cancel each other exactly:
+        #   (n_perms + 1) / (n_perms + 1) = 1
+        #   -> don't change the prefactor and just symmetrize the term
+        # - If the tensor has additionaly bra ket symmetry:
+        #    swapping bra and ket will either result in an identical
+        #    tensor block (diagonal block)
+        #    or will give a non canonical block which is folded into
+        #    the canonical block we are treating currently
+        #   - diagonal block: multiply the term by 1/2 to keep the result
+        #     normalized... we will get twice as many terms from applying
+        #     the tensor symmetry as without bra ket symmetry
+        #   - non-diagonal block: bra ket swap gives a non canonical block
+        #     which can be folded into the canonical block:
+        #       f_ia + f_ai = 2 f_ia
+        #     However we only want to treat canonical tensor blocks.
+        #     Therefore, we need to "remove" the contributions from the
+        #     non-canonical blocks by multiplying with 1/2
+        #  -> if we have bra ket symmetry introduce a factor 1/2
+        if bra_ket_sym is not None and bra_ket_sym is not S.Zero:
+            term *= Rational(1, 2)
+        # - For ADC amplitudes we only have to multiply the term by
+        #   sqrt(n_perms + 1), because the other part of the factor
+        #   is hidden inside the amplitude vector to keep the vector
+        #   norm constant when lifting index restrictions
+        #   -> we obtain an overall factor of
+        #      sqrt(n_perms + 1) / (n_perms + 1) = 1 / sqrt(n_perms + 1)
+        tensor_sym = tensor.symmetry()
+        if t_name in ['X', 'Y']:  # are we removing an ADC amplitude?
+            if bra_ket_sym is not S.Zero:
+                raise ValueError("ADC amplitude vectors should have "
+                                 "no bra ket szmmetrz.")
+            term *= 1 / sqrt(len(tensor_sym) + 1)
+        # print(f"Before symmetrization the terms reads {term}")
+        # - add the tensor indices to the target indices of the term
+        #   but only if it is not possible to determine them with the einstein
+        #   sum convention -> only if target indices have been set manually
+        if term.provided_target_idx is not None:
+            term.set_target_idx(term.provided_target_idx + indices)
+        # - apply the symmetry of the removed tensor to the term
+        symmetrized_term = term.copy()
+        for perms, sym_factor in tensor_sym.items():
+            symmetrized_term += term.copy().permute(*perms) * sym_factor
+        # - reduce the number of terms as much as possible
+        return simplify(symmetrized_term)
+
+    def process_term(term: e.term, t_name):
+        # print(f"\nProcessing term {term}")
+        # collect all occurences of the desired tensor
+        tensors = []
+        remaining_term = e.expr(1, **term.assumptions)
+        for obj in term.objects:
+            if obj.name == t_name:
+                tensors.extend(obj for _ in range(obj.exponent))
+            else:
+                remaining_term *= obj
+        if not tensors:  # could not find the tensor
+            return {('none',): term}
+        # extract all the target indices and split according to their space
+        target_indices = {}
+        for s in term.target:
+            if (ov := index_space(s.name)) not in target_indices:
+                target_indices[ov] = set()
+            target_indices[ov].add(s.name)
+        # remove the first occurence of the tensor
+        # and add all the remaining occurences back to the term
+        for remaining_t in tensors[1:]:
+            remaining_term *= remaining_t
+        # the tensor might have an exponent that we need to take care of!
+        tensor = tensors[0]
+        if (exponent := tensor.exponent) > 1:  # lower exponent by 1
+            base = tensor.extract_pow
+            tensor = e.expr(base, **tensor.assumptions).terms[0].objects[0]
+            remaining_term *= Pow(base, exponent - 1)
+        elif exponent < 1:
+            raise NotImplementedError("Did not implement the case of removing "
+                                      f"tensors with exponents < 1: {t_name} "
+                                      f"in {term}")
+        assert len(remaining_term) == 1
+        remaining_term = remove(remaining_term.terms[0], tensor,
+                                target_indices)
+        # determine the space/block of the removed tensor
+        # used as key in the returned dict
+        t_block = [tensor.space]
+        # print(t_block, remaining_term)
+        if len(tensors) == 1:  # only a single occurence no need to recurse
+            return {tuple(t_block): remaining_term}
+        else:  # more than one occurence of the tensor
+            # iterate through the terms that already have the first occurence
+            # removed and recurse for each term
+            ret = {}
+            for t in remaining_term.terms:
+                # hier gibts ein dict mit block, expr
+                # bereits entfernter block + zusätzlich entfernte block
+                contribution = process_term(t, t_name)
+                for blocks, contrib in contribution.items():
+                    key = tuple(sorted(t_block + list(blocks)))
+                    if key not in ret:
+                        ret[key] = 0
+                    ret[key] += contrib
+            return ret
+
     if not isinstance(expr, e.expr):
-        expr = e.expr(expr)
+        raise Inputerror(f"The expression needs to be provided as {e.expr} "
+                         "object.")
+    if not isinstance(t_name, str):
+        raise Inputerror("Tensor name needs to be provided as string.")
 
-    # sort the expression according to the blocks of the density matrix
-    blocks = sort.by_tensor_block(expr, 'd', bra_ket_sym)
-
-    for block, block_expr in blocks.items():
-        if block_expr.sympy.is_number:
-            continue
-
-        removed = 0
-        # - remove d in each term
-        for term in block_expr.terms:
-            new_term = e.expr(1, **term.assumptions)
-            d_tensor = None
-            for t in term.objects:
-                # found the d tensor
-                if t.type == 'antisym_tensor' and t.name == 'd':
-                    if d_tensor is not None:
-                        raise NotImplementedError("Found two d tensors in the "
-                                                  f"term {term}.")
-                    d_tensor = t.extract_pow
-                    current_bra_ket_sym = d_tensor.bra_ket_sym
-                    d_tensor: dict[str, list] = {'upper': list(d_tensor.upper),
-                                                 'lower': list(d_tensor.lower)}
-                else:  # anything else than the d tensor
-                    new_term *= t
-            if d_tensor is None:
-                raise RuntimeError("Could not find a d tensor in the term "
-                                   f"{term}.")
-            # if indices repeat on the d tensor -> introduce a delta.
-            # I think this should only be possible in the occ space, because it
-            # should originate from a p+ q contraction
-            repeated_idx = [idx for idx in d_tensor['upper']
-                            if idx in d_tensor['lower']]
-            if repeated_idx:  # extract the indices of new_term
-                term_idx: dict[str, set] = {}
-                for s in new_term.idx:
-                    if (ov := index_space(s.name)) not in term_idx:
-                        term_idx[ov] = set()
-                    term_idx[ov].add(s.name)
-            for idx in repeated_idx:
-                # indices that are currently present in the term that belong
-                # to the same space as the repeated index
-                sp = index_space(idx.name)
-                current_idx = {s.name for idx_list in d_tensor.values()
-                               for s in idx_list if index_space(s.name) == sp}
-                if sp in term_idx:
-                    current_idx.update(term_idx[sp])
-                # generate a second index of the same space for the delta, e.g.
-                # X_ij d^ki_kj -> X_ij delta_kl
-                new_idx = get_symbols(get_first_missing_index(current_idx, sp))[0]  # noqa E501
-                new_term *= KroneckerDelta(idx, new_idx)
-                # also replace the idx in the d_tensor. Does not matter if in
-                # upper or lower -> just arbitrarily use lower
-                # the index can only appear once in lower. Otherwise the tensor
-                # has to be 0 according to the antisymmetry.
-                d_tensor['lower'][d_tensor['lower'].index(idx)] = new_idx
-
-            # Now minimize the indices on the d_tensor - the target indices of
-            # the term after the d tensor is removed.
-            # This ensures that all terms that contribute to the ovov block,
-            # for instance, have the same target indices iajb.
-            new_term, d_tensor = minimize_d_indices(new_term, d_tensor,
-                                                    term.target)
-            # now symmetrize the term.
-            # Here only Permutations P_ij / P_ab are taken into account,
-            # because permutations P_ia will produce a term that contributes to
-            # a different, non-canonical, block of the density matrix, e.g.,
-            # P_ka d_ijka -> d_ijak, while P_ij d_ijab -> d_jiab is still part
-            # of the canonical oovv block.
-            # As a result, this function only returns terms that contribute
-            # to canonical blocks of the DM.
-            # Therefore, when computing an expectation value, e.g., the
-            # ovov block needs to be multiplied by a factor of 4, because it
-            # also represents the voov, ovvo, vovo blocks, which are not
-            # present in memory - due to the antisym of the density and the
-            # operator matrix:
-            #   D_ovov d_ovov = D_voov d_voov.
-            # Symmetric DM's have additional symmetry on diagonal blocks,
-            # e.g., D_ijkl = D_klij.
-            # Therefore, terms that contribute to a diagonal block are
-            # multiplied by 1/2 and the bra/ket permutation
-            # is applied in addition to the anti-symmetry permutations.
-            # Regarding the prefactor:
-            #  - we have to multiply with the inverse of the prefactor that is
-            #    introduced from the sum D_pqrs d_pqrs when computing the
-            #    expectation value:
-            #       mutliply by 4 for 2p-DM.
-            #  - However, another prefactor of 1/4 has to be introduced to
-            #    account for the anti-symmetry of the operator matrix:
-            #       X d_ijab = 1/4 X (1 - P_ij)(1 - P_ab) d_jiab
-            #     -> both prefactors cancel each other exactly. No need to
-            #        adjust the prefactor
-            #  - if a symmetric DM is computed for a symmetric operator matrix,
-            #    terms of non-canonical blocks are added to canonical blocks,
-            #    because in this case
-            #       d_ovoo = d_ooov and D_ovoo = D_oovo.
-            #    As a consequence if the pure ooov block is desired for a
-            #    symmetric tensor
-            #   -> need to multiply all tems by 1/2 if the bra/ket swap
-            #      gives a non-canonical block. But only if bra/ket are of the
-            #      same length. Otherwise the operator can not be symmetric
-            #      anyway.
-            #   -> diagonal blocks also need to be multiplied by 1/2, because
-            #      here we additionally have to account for the
-            #      bra_ket symmetry!
-            if current_bra_ket_sym:  # possible values: +-1 (or 0)
-                new_term *= Rational(1, 2)
-            # bra_ket symmetry is automaticall accounted for!
-            d_tensor = e.expr(AntiSymmetricTensor('d', d_tensor['upper'],
-                                                  d_tensor['lower'],
-                                                  current_bra_ket_sym))
-            sym = d_tensor.terms[0].symmetry()
-            symmetrized = symmetrize_keep_pref(new_term, sym)
-            symmetrized = simplify(symmetrized)
-            removed += symmetrized
-        blocks[block] = removed
-    return blocks
+    ret = {}  # expr sorted by tensor block
+    for term in expr.terms:
+        for key, contrib in process_term(term, t_name).items():
+            if key not in ret:
+                ret[key] = 0
+            ret[key] += contrib
+    return ret

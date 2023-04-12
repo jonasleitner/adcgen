@@ -11,7 +11,7 @@ contraction_data = namedtuple('contraction_data',
 
 
 def generate_code(expr: e.expr, target_indices: str, backend: str,
-                  target_bra_ket_sym: int = 0, max_tensor_dim: int = None,
+                  bra_ket_sym: int = 0, max_tensor_dim: int = None,
                   optimize_contractions: bool = True) -> str:
     """Transforms an expression to contractions using either einsum (python)
        or libtensor (C++) syntax. Additionally, the computational and the
@@ -78,17 +78,9 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
     backend_specifics = backend_specifics[backend]
 
     # try to reduce the number of terms by exploiting permutational symmetry
-    if ',' in target_indices:
-        if target_indices.count(',') != 1:
-            raise Inputerror("Found more than 1 ',' in target_indices str "
-                             f"{target_indices}. Since it should separate "
-                             "bra and ket spaces, there should only be 1.")
-        upper, lower = target_indices.split(',')
-        expr_with_perm_sym = exploit_perm_sym(expr, upper, lower,
-                                              target_bra_ket_sym)
-        target_indices = upper + lower  # recombine the indices without ','
-    else:
-        expr_with_perm_sym = exploit_perm_sym(expr)
+    expr_with_perm_sym = exploit_perm_sym(expr, target_indices, bra_ket_sym)
+    if ',' in target_indices:  # remove the separator in target indices
+        target_indices = "".join(target_indices.split(','))
 
     ret = []
     for perm_symmetry, expr in expr_with_perm_sym.items():

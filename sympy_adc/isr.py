@@ -11,6 +11,7 @@ from .misc import (cached_member, Inputerror, transform_to_tuple,
 from .simplify import simplify
 from .func import gen_term_orders
 from .groundstate import ground_state
+from .expr_container import expr
 
 
 class intermediate_states:
@@ -234,7 +235,7 @@ class intermediate_states:
             if norm is S.Zero:
                 continue
             # 2) construct S for a given norm factor
-            # the overall order is split between he norm_factor and S
+            # the overall order is split between the norm_factor and S
             orders_overlap = gen_term_orders(
                 order=norm_term[1], term_length=2, min_order=0
             )
@@ -251,7 +252,7 @@ class intermediate_states:
         # It should be valid to simplifiy the result by permuting contracted
         # indices before returning -> should lower the overall size of the
         # final expression
-        res = simplify(res)
+        res = simplify(expr(res))
         print(f"Build overlap {block} S_{indices}^({order}) = {res}")
         return res.sympy
 
@@ -284,24 +285,29 @@ class intermediate_states:
         # create an index list: first and last element are the two provided
         # idx strings
         idx = list(indices)
-        res = sympify(0)
+        # create more indices: exponent-1 or len(taylor_expansion)-1 indices
+        #  - x*x 1 additional index 'pair' is required: I,I' = I,I'' * I'',I'
+        #  - x^3: I,I' = I,I'' * I'',I''' * I''',I'
+        for _ in range(len(taylor_expansion) - 1):
+            new_idx = self.indices.get_generic_indices(**n_ov)
+            idx.insert(-1, "".join(extract_names(new_idx)))
         # iterate over exponents and terms, starting with the lowest exponent
+        res = sympify(0)
         for pref, termlist in taylor_expansion:
-            # generate len(termlist)-1 or exponent-1 index spaces, e.g. for x*x
-            # 1 additional space is required: s,s' = s,s''*s'',s'
-            # x^3: s,s' = s,s'' * s'',s''' * s''',s' etc.
-            while len(idx)-1 < len(termlist[0]):
-                new = self.indices.get_generic_indices(**n_ov)
-                new = "".join(extract_names(new))
-                idx.insert(-1, new)
+            # all terms in the list should have the same length, i.e.
+            # all originate from x*x or x^3 etc.
             for term in termlist:
+                relevant_idx = idx[:len(term)] + [idx[-1]]
                 i1 = pref
-                for n, o in enumerate(term):
+                for o in term:
                     i1 *= self.overlap_precursor(order=o, block=block,
-                                                 indices=(idx[n], idx[n+1]))
+                                                 indices=(relevant_idx[:2]))
+                    del relevant_idx[0]
                     if i1 is S.Zero:
                         break
-                # in combined terms S*S delta evaluation might be necessary
+                assert len(relevant_idx) == 1 and relevant_idx[0] == indices[1]
+                # in squared or higher terms S*S*... delta evaluation might
+                # be necessary
                 res += evaluate_deltas(i1.expand())
         print(f"Build {block} S_root_{indices}^({order}) = {latex(res)}")
         return res

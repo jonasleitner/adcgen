@@ -1,5 +1,5 @@
 from sympy_adc.expr_container import expr
-from sympy_adc.simplify import simplify, extract_dm
+from sympy_adc.simplify import simplify, remove_tensor
 from sympy_adc import sort_expr as sort
 
 from sympy import S
@@ -30,12 +30,12 @@ class TestGroundState():
         assert simplify(ref_expec - expec).sympy is S.Zero
 
         # extract all blocks of the symmetric dm
-        density_matrix = extract_dm(expec)
+        density_matrix = remove_tensor(expec, 'd')
         for block, block_expr in density_matrix.items():
             assert len(block) == 1
             ref_dm = ref["real_sym_dm"][block[0]]
             ref_dm = expr(ref_dm, **block_expr.assumptions)
-            assert simplify(block_expr - ref_dm, True).sympy is S.Zero
+            assert simplify(block_expr - ref_dm).sympy is S.Zero
 
             # exploit permutational symmetry
             re_expanded_dm = expr(0, **block_expr.assumptions)

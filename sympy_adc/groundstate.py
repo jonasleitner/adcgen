@@ -8,6 +8,7 @@ from .misc import (cached_member, cached_property, Inputerror,
                    process_arguments, transform_to_tuple, validate_input)
 from .simplify import simplify
 from .func import gen_term_orders
+from .expr_container import expr
 
 
 class Hamiltonian:
@@ -83,7 +84,7 @@ class ground_state:
         # option 2: simplify the energy expression and replace the indices with
         #           new, generic indices
         # guess option 2 is nicer, because energy is more readable and shorter
-        e = simplify(e)
+        e = simplify(expr(e))
         e = self.indices.substitute_with_generic(e)
         print(f"E^({order}) = {e}")
         return e.sympy
@@ -218,7 +219,7 @@ class ground_state:
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
         # simplify the result by permuting contracted indices
-        res = simplify(res)
+        res = simplify(expr(res))
         print(f"Build GS S^({order}) = {res}")
         return res.sympy
 
@@ -259,7 +260,7 @@ class ground_state:
                 d += wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
             res += (norm * d).expand()
-        return simplify(res).sympy
+        return simplify(expr(res)).sympy
 
     def norm_factor(self, order):
         """Computes all nth order terms of:

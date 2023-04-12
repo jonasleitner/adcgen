@@ -1,6 +1,6 @@
 from . import expr_container as e
 from .misc import Inputerror
-from .indices import index_space
+from .indices import index_space, get_symbols, idx_sort_key
 
 
 def by_delta_types(expr: e.expr) -> dict[tuple[str], e.expr]:
@@ -125,127 +125,171 @@ def by_tensor_target_idx(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr
     return ret
 
 
-def exploit_perm_sym(expr: e.expr, target_upper: str = None,
-                     target_lower: str = None,
-                     target_bra_ket_sym: int = 0) -> dict[tuple, e.expr]:
-    from .indices import get_symbols
+def exploit_perm_sym(expr: e.expr, target_indices: str = None,
+                     bra_ket_sym: int = 0) -> dict[tuple, e.expr]:
+    """Reduces the number of terms in an expression by exploiting its
+       symmetry, i.e., splits the expression in sub expressions that
+       are assigned to specific permutations. Applying those permutations
+       to the sub expressions regenerates the full expression.
+       To speed up this process the target indices can be provided as str,
+       where a comma separates the bra and ket indices. In combination with the
+       bra ket symmetry this reduces the amount of permutations
+       the expression is probed for, e.g., the target indices ijab may either
+       belong to a doubles vector with ij and ab antisym or to the
+       ph/ph block of the secular matrix with ij-ab sym.
+       """
     from .sympy_objects import AntiSymmetricTensor
+    from .eri_orbenergy import eri_orbenergy
+    from .simplify import simplify
+    from .reduce_expr import factor_eri_parts, factor_denom
+    from itertools import chain
     from sympy import S
+    from collections import defaultdict
 
-    def collect_denom_terms(sub_expr: e.expr):
-        from .reduce_expr import factor_eri, factor_denom
-        from itertools import chain
-
-        factored_expr = chain.from_iterable(
-            factor_denom(sub_e) for sub_e in factor_eri(sub_expr)
+    def simplify_terms_with_denom(sub_expr: e.expr):
+        factored = chain.from_iterable(
+            factor_denom(sub_e) for sub_e in factor_eri_parts(sub_expr)
         )
-        factored_expr = [factored.factor() for factored in factored_expr]
         ret = e.expr(0, **sub_expr.assumptions)
-        for term in factored_expr:
+        for term in factored:
             ret += term
-        return ret.expand()
-
-    def collect_terms(sub_expr: e.expr):
-        from .simplify import simplify
-        return simplify(sub_expr)
+        return ret
 
     if not isinstance(expr, e.expr):
         raise Inputerror("Expression needs to be provided as expr instance.")
-    expr = expr.expand()
 
     if expr.sympy.is_number:
         return {tuple(): expr}
 
-    # iterate over all terms split according to denom and determine target
-    # indices
-    terms = expr.terms
-    term_data = []
-    target = terms[0].target
-    for term in terms:
-        if term.target != target:
-            raise ValueError("Target indices need to be equal for all terms. "
-                             f"Found {term.target} in current term and "
-                             f"{target} in the first term")
-        has_denom = bool(term.polynoms)
-        tensors = tuple(sorted((t.name, t.space) for t in term.tensors
-                               for _ in range(t.exponent)))
-        deltas = tuple(
-            sorted([d.space for d in term.deltas for _ in range(d.exponent)])
-        )
-        term_data.append((has_denom, tensors, deltas))
+    expr: e.expr = expr.expand()
+    terms: list[e.term] = expr.terms
 
-    # determine the permutations that needs to be probed
-    # e.g. M_ia,jb -> M^ia_jb -> only + P_ij P_ab perm required
-    #      r_ijab  -> only - P_ij and - P_ab required.
-    # both have target indices ijab. need to know how to separate the target
-    # indices in order to avoid probing unnecessary permutations
-    if target_lower or target_upper:
-        upper = tuple() if target_upper is None else get_symbols(target_upper)
-        lower = tuple() if target_lower is None else get_symbols(target_lower)
-        canonical_provided = sorted(lower + upper, key=lambda s:
-                                    (int(s.name[1:]) if s.name[1:] else 0,
-                                     s.name[0]))
-        if tuple(canonical_provided) != target:
-            raise Inputerror(f"the provided target indices {target_upper} and "
-                             f"{target_lower} do not agree with the found "
-                             f"target indices {target}.")
-        target_tensor = AntiSymmetricTensor('x', upper, lower,
-                                            target_bra_ket_sym)
-        symmetry = e.expr(target_tensor).terms[0].symmetry()
-    else:  # can not separate spaces -> possibly unnecessary permutations
-        target_tensor = AntiSymmetricTensor('x', tuple(), target)
-        symmetry = e.expr(target_tensor).terms[0].symmetry()
+    # check that each term in the expr contains the same target indices
+    ref_target = terms[0].target
+    if not expr.provided_target_idx and \
+            any(term.target != ref_target for term in terms):
+        raise Inputerror("Each term in the expression needs to contain the "
+                         "same target indices.")
 
-    # go through all permutations for each term and check whether permuted
-    # term is identical to another term of the expr.
-    # if this is the case: save the permutations and the found factor (+-1)
-    #                      and remove the other term from the expr
+    # if target indices have been provided
+    # -> check that they match with the found target indices
+    if target_indices is not None:
+        # split in upper/lower indices if possible
+        if ',' in target_indices:
+            upper, lower = target_indices.split(',')
+        else:
+            upper, lower = target_indices, ""
+        upper, lower = get_symbols(upper), get_symbols(lower)
+        sorted_provided_target = tuple(sorted(upper + lower, key=idx_sort_key))
+        if sorted_provided_target != ref_target:
+            raise Inputerror(f"The provided target indices {target_indices} "
+                             "are not equal to the target indices found in "
+                             f"the expr: {ref_target}.")
+    else:  # just use the found target indices
+        upper, lower = ref_target, tuple()
+    # build a tensor holding the target indices and determine its symmetry
+    # if no target indices have been provided all indices are in upper
+    # -> bra ket sym is irrelevant
+    tensor = AntiSymmetricTensor('x', upper, lower, bra_ket_sym)
+    symmetry = e.expr(tensor).terms[0].symmetry()
+
+    # prefilter the terms according to the contained objects (name, space, exp)
+    # and if a denominator is present -> number and length of the brackets
+    filtered_terms = defaultdict(list)
+    has_denom: list[bool] = []
+    for term_i, term in enumerate(terms):
+        term = eri_orbenergy(term)
+        has_denom.append(not term.denom.is_number)
+        eri_descr: tuple[str] = tuple(sorted(
+            o.description(include_target_idx=False)
+            for o in term.eri.objects
+        ))
+        idx_space = "".join(sorted(
+            index_space(s.name)[0] for s in term.eri.contracted
+        ))
+        key = (eri_descr, term.denom_description(), idx_space)
+        filtered_terms[key].append(term_i)
+
     ret = {}
     removed_terms = set()
-    for i, (term, data) in enumerate(zip(terms, term_data)):
-        if i in removed_terms:
-            continue
-        # get the indices of all similar terms
-        terms_to_compare = [
-            other_i for other_i, other_data in enumerate(term_data)
-            if (i != other_i and other_i not in removed_terms and
-                data == other_data)
-        ]
-        if not terms_to_compare:
+    for term_idx_list in filtered_terms.values():
+        # term is unique -> nothing to compare with
+        # can not map this term onto any other terms
+        if len(term_idx_list) == 1:
             if tuple() not in ret:
                 ret[tuple()] = 0
-            ret[tuple()] += term
+            ret[tuple()] += terms[term_idx_list[0]]
             continue
 
-        # reduce the number of permutations to check - if a symmetry is already
-        # ineherent to the term -> no need to check for that.
-        term_sym = term.symmetry(only_target=True)
-        perms_to_check = [(k, v) for k, v in symmetry.items()
-                          if k not in term_sym]
+        # decide which function to use for comparing the terms
+        terms_have_denom = has_denom[term_idx_list[0]]
+        assert all(terms_have_denom == has_denom[term_i]
+                   for term_i in term_idx_list)
+        if terms_have_denom:
+            simplify_terms = simplify_terms_with_denom
+        else:
+            simplify_terms = simplify
 
-        # depending on the presence of a denominator choose the appropriate
-        # function to try to collect two terms
-        collect = collect_denom_terms if data[0] else collect_terms
-
-        found_perms = []
-        for perms, _ in perms_to_check:
-            perm_term = term.permute(*perms)
-            for other_i in terms_to_compare:
-                if other_i in removed_terms:
+        # first loop over terms!!
+        # Otherwise it is not garuanteed that all matches for a term can
+        # be found: consider 4 terms with ia, ja, ib and jb
+        # we want to find: P_ab, P_ij and P_ijP_ab for ia (or any other term)
+        # if we first loop over perms, e.g., P_ab we may find
+        # ia -> ib, ja -> jb for instance.
+        #  -> we will not be able to find the full symmetry of the terms
+        for term_i in term_idx_list:
+            if term_i in removed_terms:
+                continue
+            term: e.expr = terms[term_i]
+            found_sym = []
+            for perms, factor in symmetry.items():
+                # apply the permutations to the current term
+                perm_term = term.permute(*perms)
+                # permutations are not valid for the current term
+                if perm_term.sympy is S.Zero and term.sympy is not S.Zero:
                     continue
-                sum = collect(perm_term + terms[other_i])
-                if sum.sympy is S.Zero:  # P_pq X + (- P_pq X) = 0
-                    term_factor = -1
-                elif len(sum) == 1:  # P_pq X + (+ P_pq X) = 2 P_pq X
-                    term_factor = +1
+                # check if the permutations did change the term
+                # if the term is still the same (up to the sign) continue
+                # thereby only looking for the desired symmetry
+                if factor == -1:
+                    # looking for antisym: P_pq X = - X -> P_pq X + X = 0?
+                    if perm_term.sympy + term.sympy is S.Zero:
+                        continue
+                elif factor == 1:
+                    # looking for sym: P_pq X = + X -> P_pq X - X = 0?
+                    if perm_term.sympy - term.sympy is S.Zero:
+                        continue
                 else:
-                    continue
-                removed_terms.add(other_i)
-                found_perms.append((perms, term_factor))
-                # it should only be possible to find a single term per perms
-                break
+                    raise ValueError(f"Invalid sym factor {factor}.")
+                # perm term != term -> compare to other terms
+                for other_term_i in term_idx_list:
+                    if term_i == other_term_i or other_term_i in removed_terms:
+                        continue
+                    # compare the terms: again only look for the desired
+                    # symmetry
+                    if factor == -1:
+                        # looking for antisymmetry: X - X'
+                        # P_pq X + (-X') = 0   | P_pq X = +X'
+                        simplified = (
+                            simplify_terms(perm_term + terms[other_term_i])
+                        )
+                    else:  # factor == 1
+                        # looking for symmetry: X + (X')
+                        # P_pq X - X' = 0  | P_pq X = +X'
+                        simplified = (
+                            simplify_terms(perm_term - terms[other_term_i])
+                        )
+                    # could not map the terms onto each other
+                    if simplified.sympy is not S.Zero:
+                        continue
+                    # mapped the terms onto each other
+                    removed_terms.add(other_term_i)
+                    found_sym.append((perms, factor))
+                    break
+            # use the found symmetry as dict key
+            found_sym = tuple(found_sym)
 
-        if (key := tuple(found_perms)) not in ret:
-            ret[key] = 0
-        ret[key] += term
+            if found_sym not in ret:
+                ret[found_sym] = 0
+            ret[found_sym] += term
     return ret

@@ -6,6 +6,7 @@ from .simplify import simplify
 from sympy.physics.secondquant import wicks
 from sympy import sqrt, S, sympify
 from math import factorial
+from .expr_container import expr
 
 
 class properties:
@@ -115,7 +116,7 @@ class properties:
                 expec += wicks(i1, keep_only_fully_contracted=True,
                                simplify_kronecker_deltas=True)
             res += (norm * expec).expand()
-        return simplify(res).sympy
+        return simplify(expr(res)).sympy
 
     @process_arguments
     @cached_member
@@ -237,7 +238,7 @@ class properties:
                 trans_mom += wicks(i1, keep_only_fully_contracted=True,
                                    simplify_kronecker_deltas=True)
             res += (norm * trans_mom).expand()
-        return simplify(res).sympy
+        return simplify(expr(res)).sympy
 
     @process_arguments
     @cached_member

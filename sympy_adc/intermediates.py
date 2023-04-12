@@ -1,36 +1,48 @@
-from .indices import get_symbols, index_space
-from .misc import Inputerror, Singleton
+from .indices import (
+    get_symbols, index_space, order_substitutions, idx_sort_key
+)
+from .indices import indices as idx_cls
+from .misc import Inputerror, Singleton, cached_property, cached_member
 from . import expr_container as e
 from .eri_orbenergy import eri_orbenergy
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
+from .symmetry import lazy_term_map
 
-from sympy import S, Dummy
+from sympy import S, Dummy, Rational
 
-from collections import defaultdict
+from collections import namedtuple
+
+
+base_expr = namedtuple('base_expr', ['expr', 'target', 'contracted'])
 
 
 class intermediates(metaclass=Singleton):
     def __init__(self):
-        self.__registered: dict = registered_intermediate()._registry
-        self.__available: dict = {
-            name: obj for objects in self.__registered.values()
+        self._registered: dict = registered_intermediate()._registry
+        self._available: dict = {
+            name: obj for objects in self._registered.values()
             for name, obj in objects.items()
         }
 
     @property
     def available(self) -> dict:
-        return self.__available
+        return self._available
 
     @property
     def types(self) -> list[str]:
-        return list(self.__registered.keys())
+        return list(self._registered.keys())
 
-    def __getattr__(self, attr):
-        try:
-            return self.__registered[attr]
-        except KeyError:
+    def __getattr__(self, attr) -> dict:
+        if attr in self._registered:  # is the attr an intermediate type?
+            return self._registered[attr]
+        elif attr in self._available:  # is the attr an intermediate name?
+            return {attr: self._available[attr]}
+        else:
             raise AttributeError(f"{self} has no attribute {attr}. "
-                                 f"Available intermediate types: {self.types}")
+                                 f"The intermediate types: {self.types} "
+                                 "and the intermediate names: "
+                                 f"{list(self.available.keys())} are "
+                                 "available.")
 
 
 class registered_intermediate:
@@ -96,284 +108,217 @@ class registered_intermediate:
                              f"intermediate {self.name}.")
         return indices
 
-    def expand_itmd(self, *args, **kwargs):
-        raise NotImplementedError("Expand itmd not implemented for "
-                                  f"intermediate {self.name}.")
+    def expand_itmd(self, indices: str = None, lower: str = None,
+                    upper: str = None, return_sympy: bool = False):
+        # check that the provided indices are fine for the itmd
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
 
-    def tensor(self, *args, **kwargs):
-        raise NotImplementedError("Method for symbolic representation of "
-                                  f"{self.name} not implemented.")
+        # build a cached base version of the intermediate where we can just
+        # substitute indices
+        expanded_itmd = self._build_expanded_itmd
 
-    def tensor_symmetry(self) -> dict:
-        """Determines the symmetry of the itmd tensor objects, e.g.,
-           triples symmetry for t3_2."""
-
-        # try to load from cache
-        if hasattr(self, '_tensor_symmetry'):
-            return self._tensor_symmetry
-        # determine the symmetry
-        tensor = self.tensor().make_real()
-        tensor_sym = tensor.terms[0].symmetry()
-        if not hasattr(self, '_tensor_symmetry'):
-            self._tensor_symmetry = {}
-        self._tensor_symmetry = tensor_sym
-        return tensor_sym
-
-    def itmd_term_map(self, factored_itmds: list[str] = None) \
-            -> dict[tuple, dict]:
-        """Determines which permutations of the itmd target indices transform
-           a certain itmd_term into another one, e.g.,
-           ... + (1 - P_ij) * (1 - P_ab) * x for the t2_2 amplitudes.
-           The target indices of the provided itmd expr need to be set
-           to the target indices of the itmd."""
-        from sympy import Mul
-
-        if factored_itmds is None:
-            factored_itmds = tuple()
-        else:
-            factored_itmds = tuple(factored_itmds)
-
-        # try to load the term map from the cache
-        cache: dict[tuple, dict] = self._term_map_cache
-        if factored_itmds in cache:
-            return cache[factored_itmds]
-
-        # compute the term map
-        itmd = self._prepare_itmd(factored_itmds=factored_itmds)
-        itmd_symmetry = self.tensor_symmetry()
-
-        itmd_terms = itmd.terms
-        term_map = defaultdict(lambda: defaultdict(list))
-        for i, term in enumerate(itmd_terms):
-            # only apply permutations to a term that are not already
-            # inherent to the term!
-            term_sym = term.symmetry(only_target=True)
-            to_check = dict(itmd_symmetry.items() - term_sym.items())
-            for perms, factor in to_check.items():
-                perm_term = term.permute(*perms).sympy
-                for other_i, other_term in enumerate(itmd_terms):
-                    if i == other_i:
-                        continue
-                    if (sum := perm_term + other_term.sympy) is S.Zero:
-                        # P_pq X + (- P_pq X) = 0
-                        factor = -1
-                    elif isinstance(sum, Mul):  # only a single term?
-                        # P_pq X + (+ P_pq X) = 2 P_pq X
-                        factor = +1
-                    else:
-                        continue
-                    term_map[perms][i].append((other_i, factor))
-        term_map = dict(term_map)
-        for key, default_d in term_map.items():
-            term_map[key] = dict(default_d)
-        cache[factored_itmds] = term_map
-        return term_map
-
-    def _prepare_itmd(self, factored_itmds: list[str] = None) -> e.expr:
-        """"Factor all previously factorized in intermediates in the current
-            intermediate."""
-        from .reduce_expr import factor_eri, factor_denom
-        from itertools import chain
-
-        if factored_itmds is None:
-            factored_itmds = tuple()
-        else:
-            factored_itmds = tuple(factored_itmds)
-
-        # did we already factore the itmd previously?
-        factored_variants = self._factored_variants
-        if (itmd := factored_variants.get(factored_itmds)) is not None:
-            return itmd
-
-        if factored_variants:  # load the reduces base intermediate
-            itmd = factored_variants[tuple()]
-        else:  # construct the expanded intermediate
-            itmd: e.expr = self.expand_itmd().expand().make_real()
-            # reduce the expanded intermediate
-            reduced = chain.from_iterable(
-                factor_denom(sub_expr) for sub_expr in factor_eri(itmd)
+        # build the substitution dict
+        subs = {}
+        # map target indices onto each other
+        if (base_target := expanded_itmd.target) is not None:
+            subs.update({o: n for o, n in zip(base_target, idx)})
+        # map contracted indices onto each other
+        if (base_contracted := expanded_itmd.contracted) is not None:
+            spaces = [index_space(s.name) for s in base_contracted]
+            contracted = idx_cls().get_generic_indices(
+                n_o=spaces.count('occ'), n_v=spaces.count('virt'),
+                n_g=spaces.count('general')
             )
-            itmd = e.expr(0, **itmd.assumptions)
-            for term in reduced:
-                itmd += term.factor()
-            factored_variants[tuple()] = itmd
-        # factor all previously factored intermediates in the current itmd
-        if factored_itmds:
-            available = intermediates().available
-            factored = []
-            for it in factored_itmds:
-                cache_key = tuple([*factored, it])
-                try:  # try to load from cache
-                    itmd = factored_variants[cache_key]
-                except KeyError:
-                    itmd = available[it].factor_itmd(
-                        itmd, factored_itmds=factored, max_order=self.order
-                    )
-                    factored_variants[cache_key] = itmd
-                factored.append(it)
+            for old, sp in zip(base_contracted, spaces):
+                subs[old] = contracted[sp].pop(0)
+            if any(li for li in contracted.values()):
+                raise RuntimeError("Generated more contracted indices than "
+                                   f"necessary. {contracted} are left.")
+
+        # do some extra work with the substitutions to avoid using the
+        # simultantous=True option for subs (very slow)
+        subs = order_substitutions(subs)
+        itmd = expanded_itmd.expr.subs(subs)
+
+        if itmd is S.Zero and expanded_itmd.expr is not S.Zero:
+            raise ValueError(f"The substitutions {subs} ar enot valid for "
+                             f"{expanded_itmd.expr}.")
+
+        if not return_sympy:
+            itmd = e.expr(itmd, target_idx=idx)
         return itmd
 
-    def _determine_target_idx(self, sub: dict) -> list:
-        """Returns the target indices of the itmd if the provided
-           substitutions are applied to the default intermediate."""
-        return [sub.get(idx, idx) for idx in get_symbols(self.default_idx)]
+    def tensor(self, indices: str = None, upper: str = None, lower: str = None,
+               return_sympy: bool = False):
+        # check that the provided indices are sufficient for the itmd
+        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
 
-    def _minimal_itmd_indices(self, remainder: e.expr, sub: dict):
-        """Minimize the target indices of the intermediate to factor."""
-        from .indices import get_first_missing_index, get_symbols, index_space
+        # build the tensor object
+        tensor = self._build_tensor(indices=idx)
+        if return_sympy:
+            return tensor
+        else:
+            if isinstance(tensor, AntiSymmetricTensor):
+                if tensor.bra_ket_sym is S.One:  # bra ket symmetry
+                    return e.expr(tensor, sym_tensors=[tensor.symbol.name])
+                elif tensor.bra_ket_sym is S.NegativeOne:  # bra ket anisym
+                    return e.expr(tensor, antisym_tensors=[tensor.symbol.name])
+            return e.expr(tensor)
 
-        if not isinstance(remainder, e.expr) or len(remainder) != 1:
-            raise Inputerror("Expected an expr of length 1 as remainder.")
+    @cached_property
+    def tensor_symmetry(self) -> dict:
+        """Determines the symmetry of the itmd tensor object using the
+           default indices, e.g., ijk + abc triples symmetry for t3_2."""
+        return self.tensor().terms[0].symmetry()
 
-        # determine the intermediate target indices if sub is applied
-        itmd_indices = self._determine_target_idx(sub)
+    @cached_member
+    def itmd_term_map(self,
+                      factored_itmds: tuple[str] = tuple()) -> lazy_term_map:
+        """Returns a map that lazily determines which permutation of target
+           indices map terms in the intermediate definition onto other terms.
+           Since the form (and order of terms) depends on the previsously
+           factored intermediates, a term map for each variant has to be
+           created.
+           """
+        # - load the appropriate version of the intermediate
+        itmd = self._prepare_itmd(factored_itmds)
+        return lazy_term_map(itmd)
 
-        # find all target indices that can not be changed
-        # the remainder has to have the the target indices explicitly set!
-        # an index can only occur once in provided_target_idx
-        target = remainder.provided_target_idx
-        used = defaultdict(list)
-        for s in target:
-            used[index_space(s.name)].append(s.name)
-        # iterate over all itmd_indices and see if we can find a lower index
-        minimization_sub = {}
-        for idx in itmd_indices:
-            if idx in target:  # skip target indices
-                continue
-            # find the lowest available index
-            name = idx.name
-            ov = index_space(name)
-            new_idx = get_first_missing_index(used[ov], ov)
-            used[ov].append(new_idx)
-            if name == new_idx:  # already have the lowest index
-                continue
-            # found a lower index -> build a substitution dictionary that
-            # leads to a minimization of the itmd indices if applied
-            new_idx = get_symbols(new_idx)[0]
-            # build a new substitution dict that minimizes the itmd indices
-            additional_sub = {idx: new_idx, new_idx: idx}
-            # immediately apply to the itmd_indices
-            for i, s in enumerate(itmd_indices):
-                itmd_indices[i] = additional_sub.get(s, s)
-            # and build a minimization sub to minimize the remainder
-            # with a single call to sub
-            if not minimization_sub:
-                minimization_sub = additional_sub
-            else:
-                for old, new in minimization_sub.items():
-                    if new is new_idx:
-                        minimization_sub[old] = idx
-                        del additional_sub[new_idx]
-                    elif new is idx:
-                        minimization_sub[old] = new_idx
-                        del additional_sub[idx]
-                if additional_sub:
-                    minimization_sub.update(additional_sub)
+    @cached_member
+    def _prepare_itmd(self, factored_itmds: list[str] = tuple()) -> e.expr:
+        """"Generate the default variant of the intermediate, simplify it
+            as much as possible and factor all given intermediates in the
+            provided order."""
+        from .reduce_expr import factor_eri_parts, factor_denom
+        from itertools import chain
 
-        # permute/minimize the remainder
-        # the input remainder has to have a prefactor of +1!
-        remainder = remainder.subs(minimization_sub, simultaneous=True)
-        pref = remainder.terms[0].prefactor  # possibly a -1!
-        remainder *= pref
-        return remainder, itmd_indices, pref
+        # In a usual run we only need 1 variant of an intermediate:
+        #   a  b  c  d  e
+        #      a  b  c  d
+        #         a  b  c
+        #            a  b
+        #               a
+        # For example, always the version of b where a is factorized
+        # -> for b this function will always be called with a as factored_itmds
+        # -> caching decorator is sufficient... no need to additionally
+        #    cache the simplified base version
 
-    def factor_itmd(self, expr: e.expr, factored_itmds: list[str] = None,
+        # build the base version of the itmd and simplify it
+        # - factor eri and denominator
+        itmd: e.expr = self.expand_itmd().expand().make_real()
+        reduced = chain.from_iterable(
+            factor_denom(sub_expr) for sub_expr in factor_eri_parts(itmd)
+        )
+        itmd = e.expr(0, **itmd.assumptions)
+        for term in reduced:
+            itmd += term
+
+        print('\n', '-'*80, sep='')
+        print(f"Preparing Intermediate: Factoring {factored_itmds}")
+
+        if factored_itmds:
+            available = intermediates().available
+            # iterate through factored_itmds and factor them one after another
+            # in the simplified base itmd
+            for i, it in enumerate(factored_itmds):
+                print('-'*80)
+                print(f"Factoring {it} in {self.name}:")
+                itmd = available[it].factor_itmd(
+                    itmd, factored_itmds=factored_itmds[:i],
+                    max_order=self.order
+                )
+        print('\n', '-'*80, sep='')
+        print(f"Done with factoring {factored_itmds} in {self.name}")
+        print('-'*80)
+        return itmd
+
+    def factor_itmd(self, expr: e.expr, factored_itmds: tuple[str] = tuple(),
                     max_order: int = None) -> e.expr:
+        """Factors the intermediate in a given expression assuming a
+           real orbital basis."""
+
         from .factor_intermediates import (_factor_long_intermediate,
-                                           _factor_short_intermediate)
-        from collections import Counter
+                                           _factor_short_intermediate,
+                                           factorization_term_data)
 
         if not isinstance(expr, e.expr):
-            raise Inputerror("Expr to factor needs to be an instance of "
-                             f"{e.expr}.")
+            raise TypeError("Expr to factor needs to be provided as "
+                            f"{e.expr} instance.")
         if not expr.real:
             raise NotImplementedError("Intermediates only implemented for "
                                       "a real orbital basis.")
-        if expr.sympy.is_number or \
-                (factored_itmds and self.name in factored_itmds) or \
-                self.name == 't4_2':
+
+        # ensure that the previously factored intermediates
+        # are provided as tuple -> can use them as dict key
+        if factored_itmds is None:
+            factored_itmds = tuple()
+        elif not isinstance(factored_itmds, tuple):
+            factored_itmds = tuple(factored_itmds)
+
+        # can not factor if the expr is just a number or the intermediate
+        # has already been factored or the order of the pt order of the
+        # intermediate is to high.
+        # also it does not make sense to factor t4_2 again, because of the
+        # used factorized form.
+        if expr.sympy.is_number or self.name in factored_itmds or \
+                self.name == 't4_2' or \
+                (max_order is not None and max_order < self.order):
             return expr
 
         expr = expr.expand()
-        if max_order is not None and max_order < self.order:
-            return expr
+        terms = expr.terms
 
-        # try to reduce the number of terms that can be factored
-        to_factor = e.expr(0, **expr.assumptions)
-        remainder = e.expr(0, **expr.assumptions)
-        max_found_order = 0
-        for term in expr.terms:
-            order = term.order
-            max_found_order = max(max_found_order, order)
-            if order < self.order:  # order high enough?
-                remainder += term
-            # amplitudes need (except t4_2) need to have some denominator
-            elif self.itmd_type == 't_amplitude' and self.name != 't4_2':
-                if any(o.exponent < 0 and o.contains_only_orb_energies
-                       for o in term.objects):
-                    to_factor += term
-                else:
-                    remainder += term
-            else:
-                to_factor += term
-        if to_factor.sympy is S.Zero:  # don't have anything to factor
-            return expr
-
-        if factored_itmds is None:  # transform to tuple -> use as dict key
-            factored_itmds = tuple()
+        # if want to factor a t_amplitude
+        # -> terms to consider need to have a denominator
+        # Also the pt order of the term needs to be high enough for the
+        # current intermediate
+        if self.itmd_type == 't_amplitude' and self.name != 't4_2':
+            term_is_relevant = [term.order >= self.order and
+                                any(o.exponent < 0 and
+                                    o.contains_only_orb_energies
+                                    for o in term.objects)
+                                for term in terms]
         else:
-            factored_itmds = tuple(factored_itmds)
-
-        # prepare the intermediate before factorization
-        itmd_expr = self._prepare_itmd(factored_itmds=factored_itmds)
-
-        # extract data from the intermediate
-        itmd: list[eri_orbenergy] = [eri_orbenergy(term).canonicalize_sign()
-                                     for term in itmd_expr.terms]
-        itmd_data: list[dict] = []
-        itmd_tensors: list[Counter] = []
-        for term in itmd:
-            itmd_pattern = term.eri_pattern(include_exponent=False,
-                                            target_idx_string=False)
-            itmd_indices = [o.idx for o in term.eri.objects]
-            itmd_obj_sym = [o.symmetry() for o in term.eri.objects]
-            itmd_data.append({'itmd_pattern': itmd_pattern,
-                              'itmd_indices': itmd_indices,
-                              'itmd_obj_sym': itmd_obj_sym})
-            itmd_tensors.append(Counter([t.name for t in term.eri.tensors
-                                         for _ in range(t.exponent)]))
-
-        # filter further terms
-        temp = e.expr(0, **to_factor.assumptions)
-        for term in to_factor.terms:
-            # does the term contain all necessary tensors?
-            tensors = Counter([t.name for t in term.tensors
-                               for _ in range(t.exponent)])
-            if any(all(tensors[t] >= n for t, n in itmd_term_tensors.items())
-                   for itmd_term_tensors in itmd_tensors):
-                temp += term
-            else:
-                remainder += term
-        to_factor = temp
-        if to_factor.sympy is S.Zero:
+            term_is_relevant = [term.order >= self.order for term in terms]
+        # no term has a denominator or a sufficient pt order
+        # -> can't factor the itmd
+        if not any(term_is_relevant):
             return expr
 
-        # actually factor the expression
-        if len(itmd) == 1:  # short intermediate -> only a single term
-            itmd: eri_orbenergy = itmd[0]
-            itmd_pattern: dict = itmd_pattern[0]
-            itmd_tensors: Counter = itmd_tensors[0]
-            itmd_data: dict = itmd_data[0]
-            expr = _factor_short_intermediate(to_factor, itmd, itmd_data, self)
-            expr += remainder.sympy
-        else:  # long intermediate -> multiple terms
+        # determine the maximum pt order present in the expr (order is cached)
+        max_order = max(term.order for term in terms)
+
+        # build a new expr that only contains the relevant terms
+        remainder = 0
+        to_factor = e.expr(0, **expr.assumptions)
+        for term, is_relevant in zip(terms, term_is_relevant):
+            if is_relevant:
+                to_factor += term
+            else:
+                remainder += term.sympy
+
+        # - prepare the itmd for factorization and extract data to speed
+        #   up the later comparison
+        itmd_expr = self._prepare_itmd(factored_itmds=factored_itmds)
+        itmd = tuple(eri_orbenergy(term).canonicalize_sign()
+                     for term in itmd_expr.terms)
+        itmd_data = tuple(factorization_term_data(term) for term in itmd)
+
+        # factor the intermediate in the expr
+        if len(itmd) == 1:  # short intermediate that consists of a single term
+            factored = _factor_short_intermediate(
+                to_factor, itmd[0], itmd_data[0], self
+            )
+            factored += remainder
+        else:  # long intermediate that consists of multiple terms
             itmd_term_map = self.itmd_term_map(factored_itmds)
-            for _ in range(max_found_order // self.order):
+            for _ in range(max_order // self.order):
                 to_factor = _factor_long_intermediate(
                     to_factor, itmd, itmd_data, itmd_term_map, self
                 )
-            expr = to_factor + remainder.sympy
-        return expr
+            factored = to_factor + remainder
+        return factored
+
 
 # -----------------------------------------------------------------------------
 # INTERMEDIATE DEFINITIONS:
@@ -382,40 +327,27 @@ class registered_intermediate:
 class t2_1(registered_intermediate):
     """First order MP doubles amplitude."""
     _itmd_type: str = 't_amplitude'  # type has to be a class variable
+    _order: int = 1
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    def __init__(self):
-        self._order: int = 1
-        self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, a, b = idx
-        # actually build the amplitude
+    @cached_property
+    def _build_expanded_itmd(self):
+        # build a basic version of the intermediate using minimal indices
+        # 'like on paper'
+        i, j, a, b = get_symbols(self.default_idx)
         denom = orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j)
-        t2 = eri((a, b, i, j)) / denom
-        t2 = e.expr(t2, target_idx=(a, b, i, j))
-        self.__cache[idx] = t2
-        return t2
+        return base_expr(eri((a, b, i, j)) / denom, (i, j, a, b), None)
 
-    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
         # guess its not worth caching here. Maybe if used a lot.
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        upper = idx[2:]
-        lower = idx[:2]
         # build the tensor
-        t2 = AntiSymmetricTensor('t1', upper, lower)
-        return e.expr(t2)
+        return AntiSymmetricTensor('t1', indices[2:], indices[:2])
 
     def factor_itmd(self, expr: e.expr, factored_itmds: list[str] = None,
                     max_order: int = None):
-        from .factor_intermediates import _compare_obj
-        # special function for factoring t2_1 amplitudes
-        # maybe replace this later with a function for intermediates of length
-        # 1, i.e., intermediates that consist of a single term
+        """Factors the t2_1 intermediate in an expression assuming a real
+           orbital basis."""
+
         if not isinstance(expr, e.expr):
             raise Inputerror("Expr to factor needs to be an instance of "
                              f"{e.expr}.")
@@ -424,186 +356,160 @@ class t2_1(registered_intermediate):
                                       "real orbital basis.")
         # do we have something to factor? did we already factor the itmd?
         if expr.sympy.is_number or \
-                factored_itmds and self.name in factored_itmds:
+                (factored_itmds and self.name in factored_itmds):
             return expr
 
-        expr = expr.expand()
-        if max_order is None:
-            max_order = max((term.order for term in expr.terms))
-        if max_order < self.order:  # the order of the itmd is too high
+        # no need to determine max order for a first order intermediate
+        if max_order is not None and max_order < self.order:
             return expr
 
         # prepare the itmd and extract information
         t2 = self.expand_itmd().make_real()
         t2 = eri_orbenergy(t2).canonicalize_sign()
-        t2_eri = t2.eri.objects[0]
-        t2_eri_descr = t2_eri.description(include_exponent=False)
-        t2_eri_idx = t2_eri.idx
-        t2_eri_sym = e.expr(t2_eri.sympy).terms[0].symmetry()
+        t2_eri: e.obj = t2.eri.objects[0]
+        t2_eri_descr: str = t2_eri.description(include_exponent=False,
+                                               include_target_idx=False)
+        t2_denom = t2.denom.sympy
+        t2_eri_idx: tuple = t2_eri.idx
 
-        substituted_expr = e.expr(0, **expr.assumptions)
+        expr = expr.expand()
+
+        factored = 0
         for term in expr.terms:
-            term = eri_orbenergy(term).canonicalize_sign()
-            # print(f"\nterm = {term}")
+            term = eri_orbenergy(term)  # split the term
+
             if term.denom.sympy.is_number:  # term needs to have a denominator
-                substituted_expr += term.expr
+                factored += term.expr
                 continue
-            pref = term.pref
-            denom = term.denom
-            substituted_term = e.expr(1, **term.eri.assumptions)
-            eri_indices = []
-            denom_indices = []
+            term = term.canonicalize_sign()  # fix the sign of the denominator
+
+            brackets = term.denom_brackets
+            removed_brackets = set()
+            factored_term = 1
+            eri_obj_to_remove = []
+            denom_brackets_to_remove = []
             for eri_idx, eri in enumerate(term.eri.objects):
-                if (sub := _compare_obj(eri, t2_eri, [], [],
-                                        itmd_obj_descr=t2_eri_descr,
-                                        itmd_obj_idx=t2_eri_idx,
-                                        itmd_obj_sym=t2_eri_sym)):
-                    # no need to consider the symmetry here! just use the first
-                    # sub dictionary... all should be valid!
-                    sub, factor = sub[0]
-                    t2_sub_denom = t2.denom.copy().subs(sub, simultaneous=True)
-                    if (denom_idx := term.find_matching_braket(t2_sub_denom)):
-                        if len(denom_idx) != 1:
-                            raise RuntimeError("Found more than one possible "
-                                               "match for a denominator.")
-                        denom_indices.extend(denom_idx)
-                        eri_indices.append(eri_idx)
-                        target = self._determine_target_idx(sub)
-                        # construct the t2 ampltude and multiply to the result
-                        itmd = self.tensor(indices=target).sympy
-                        # adjust the final pref (sign) for factoring the itmd
-                        pref /= t2.pref * factor
-                        substituted_term *= itmd
-            # remove the matched eri
-            denom = term.cancel_denom_brakets(denom_indices)
-            eri = term.cancel_eri_objects(eri_indices)
-            # substituted everything in the term
-            substituted_term *= eri * term.num * pref / denom
-            # print(f"substituted_term = {substituted_term}")
-            substituted_expr += substituted_term
-        return substituted_expr
+                # - compare the eri objects (check if we have a oovv eri)
+                #   coupling is not relevant for t2_1 (only a single object)
+                descr = eri.description(include_exponent=False,
+                                        include_target_idx=False)
+                if descr != t2_eri_descr:
+                    continue
+                # - have a correct eri -> zip indices together and substitute
+                #   the itmd denominator
+                sub = order_substitutions(dict(zip(t2_eri_idx, eri.idx)))
+                sub_t2_denom = t2_denom.subs(sub)
+                # - check if we find a matching denominator
+                for bk_idx, bk in enumerate(brackets):
+                    # was the braket already removed?
+                    if bk_idx in removed_brackets:
+                        continue
+                    if isinstance(bk, e.expr):
+                        exponent = 1
+                        bk = bk.sympy
+                    else:
+                        exponent = bk.exponent
+                        bk = bk.extract_pow
+                    if bk == sub_t2_denom:
+                        # found matching bracket in denominator
+                        # -> lower exponent by 1 (if exponent is 1: remove)
+                        if exponent == 1:
+                            removed_brackets.add(bk_idx)
+                        # found matching eri and denominator
+                        # replace eri and bracket by a t2_1 tensor
+                        denom_brackets_to_remove.append(bk_idx)
+                        eri_obj_to_remove.append(eri_idx)
+                        # can simply use the indices of the eri as target
+                        # indices for the tensor
+                        factored_term *= (
+                            self.tensor(indices=eri.idx, return_sympy=True) /
+                            t2.pref
+                        )
+            # - remove the matched eri and denominator objects
+            denom = term.cancel_denom_brackets(denom_brackets_to_remove)
+            eri = term.cancel_eri_objects(eri_obj_to_remove)
+            # - collect the remaining objects in the term and add to result
+            factored_term *= term.pref * eri * term.num / denom
+            print(f"\nFactoring {self.name} in:\n{term}\nresult:\n"
+                  f"{eri_orbenergy(factored_term)}")
+            factored += factored_term
+        return factored
 
 
 class t1_2(registered_intermediate):
     """Second order MP singles amplitude."""
     _itmd_type: str = "t_amplitude"
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'a')
+    _min_n_terms = 2
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'a')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
+    @cached_property
+    def _build_expanded_itmd(self):
         # target_indices
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, a = idx
+        i, a = get_symbols(self.default_idx)
         # additional contracted indices
-        contracted = idx_cls().get_generic_indices(n_o=2, n_v=2)
-        j, k = contracted['occ']
-        b, c = contracted['virt']
+        j, k, b, c = get_symbols('jkbc')
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the amplitude
         denom = orb_energy(i) - orb_energy(a)
         term1 = (Rational(1, 2) *
-                 t2.expand_itmd(upper=(b, c), lower=(i, j)).sympy *
+                 t2.expand_itmd(indices=(i, j, b, c), return_sympy=True) *
                  eri([j, a, b, c]))
         term2 = (Rational(1, 2) *
-                 t2.expand_itmd(upper=(a, b), lower=(j, k)).sympy *
+                 t2.expand_itmd(indices=(j, k, a, b), return_sympy=True) *
                  eri([j, k, i, b]))
-        t1 = e.expr(term1/denom + term2/denom, target_idx=(i, a))
-        self.__cache[idx] = t1
-        return t1
+        return base_expr(term1/denom + term2/denom, (i, a), (j, k, b, c))
 
-    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
-        # target indices
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        i, a = idx
-        t1 = AntiSymmetricTensor('t2', (a,), (i,))
-        return e.expr(t1)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2', (indices[1],), (indices[0],))
 
 
 class t2_2(registered_intermediate):
     """Second order MP doubles amplitude."""
     _itmd_type: str = 't_amplitude'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
-        from .indices import indices as idx_cls
-        from sympy import Rational
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, a, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
-        contracted = idx_cls().get_generic_indices(n_o=2, n_v=2)
-        k, l = contracted['occ']  # noqa: E741
-        c, d = contracted['virt']
+        k, l, c, d = get_symbols('klcd')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2_ampl: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the t2_2 amplitude
         denom = (orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j))
         # - 0.5 t2eri_3
-        term1 = (- Rational(1, 2) *
-                 t2_ampl.expand_itmd(lower=(k, l), upper=(a, b)).sympy *
-                 eri((i, j, k, l)))
+        itmd = (- Rational(1, 2) * eri((i, j, k, l)) *
+                t2.expand_itmd(indices=(k, l, a, b), return_sympy=True))
         # - 0.5 t2eri_5
-        term2 = (- Rational(1, 2) *
-                 t2_ampl.expand_itmd(lower=(i, j), upper=(c, d)).sympy *
-                 eri((a, b, c, d)))
+        itmd += (- Rational(1, 2) * eri((a, b, c, d)) *
+                 t2.expand_itmd(indices=(i, j, c, d), return_sympy=True))
         # + (1 - P_ij) (1 - P_ab) P_ij t2eri_4
         base = (
-            t2_ampl.expand_itmd(lower=(i, k), upper=(a, c)) * eri((k, b, j, c))
+            t2.expand_itmd(indices=(i, k, a, c)) * eri((k, b, j, c))
         )
-        term3 = (base.sympy - base.copy().permute((i, j)).sympy
+        itmd += (base.sympy - base.copy().permute((i, j)).sympy
                  - base.copy().permute((a, b)).sympy
                  + base.copy().permute((i, j), (a, b)).sympy)
-        t2 = e.expr((term1 + term2 + term3) / denom, target_idx=(i, j, a, b))
-        self.__cache[idx] = t2
-        return t2
+        return base_expr(itmd / denom, (i, j, a, b), (k, l, c, d))
 
-    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        lower = idx[:2]
-        upper = idx[2:]
-        t2 = AntiSymmetricTensor('t2', upper, lower)
-        return e.expr(t2)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2', indices[2:], indices[:2])
 
 
 class t3_2(registered_intermediate):
     """Second order MP triples amplitude."""
     _itmd_type: str = 't_amplitude'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'k', 'a', 'b', 'c')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'k', 'a', 'b', 'c')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, k, a, b, c = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, k, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
-        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
-        l, d = contracted['occ'][0], contracted['virt'][0]
+        l, d = get_symbols('ld')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the t3_2 amplitude
@@ -611,17 +517,17 @@ class t3_2(registered_intermediate):
                  - orb_energy(a) - orb_energy(b) - orb_energy(c))
         # (1 - P_ik - P_jk) (1 - P_ab - P_ac) <kd||bc> t_ij^ad
         base = t2.expand_itmd(indices=(i, j, a, d)) * eri((k, d, b, c))
-        term1 = (base.sympy - base.copy().permute((i, k)).sympy
-                 - base.copy().permute((j, k)).sympy
-                 - base.copy().permute((a, b)).sympy
-                 - base.copy().permute((a, c)).sympy
-                 + base.copy().permute((i, k), (a, b)).sympy
-                 + base.copy().permute((i, k), (a, c)).sympy
-                 + base.copy().permute((j, k), (a, b)).sympy
-                 + base.copy().permute((j, k), (a, c)).sympy)
+        itmd = (base.sympy - base.copy().permute((i, k)).sympy
+                - base.copy().permute((j, k)).sympy
+                - base.copy().permute((a, b)).sympy
+                - base.copy().permute((a, c)).sympy
+                + base.copy().permute((i, k), (a, b)).sympy
+                + base.copy().permute((i, k), (a, c)).sympy
+                + base.copy().permute((j, k), (a, b)).sympy
+                + base.copy().permute((j, k), (a, c)).sympy)
         # (1 - P_ij - P_ik) (1 - P_ac - P_bc) <jk||lc> t_il^ab
         base = t2.expand_itmd(indices=(i, l, a, b)) * eri((j, k, l, c))
-        term2 = (base.sympy - base.copy().permute((i, j)).sympy
+        itmd += (base.sympy - base.copy().permute((i, j)).sympy
                  - base.copy().permute((i, k)).sympy
                  - base.copy().permute((a, c)).sympy
                  - base.copy().permute((b, c)).sympy
@@ -629,45 +535,33 @@ class t3_2(registered_intermediate):
                  + base.copy().permute((i, j), (b, c)).sympy
                  + base.copy().permute((i, k), (a, c)).sympy
                  + base.copy().permute((i, k), (b, c)).sympy)
-        t3 = e.expr(term1/denom + term2/denom, target_idx=(i, j, k, a, b, c))
-        self.__cache[idx] = t3
-        return t3
+        return base_expr(itmd/denom, (i, j, k, a, b, c), (l, d))
 
-    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        lower = idx[:3]
-        upper = idx[3:]
-        t2 = AntiSymmetricTensor('t2', upper, lower)
-        return e.expr(t2)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2', indices[3:], indices[:3])
 
 
 class t4_2(registered_intermediate):
     """Second order MP quadruple amplitudes in a factorized form that avoids
        the construction of the quadruples denominator."""
     _itmd_type: str = 't_amplitude'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'k', 'l', 'a', 'b', 'c', 'd')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'k', 'l',
-                                         'a', 'b', 'c', 'd')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
+    @cached_property
+    def _build_expanded_itmd(self):
         from itertools import product
 
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, k, l, a, b, c, d = idx
+        i, j, k, l, a, b, c, d = get_symbols(self.default_idx)
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the t4_2 amplitude
         # (1 - P_ac - P_ad - P_bc - P_bd + P_ac P_bd) (1 - P_jk - P_jl)
         #  t_ij^ab t_kl^cd
-        base: e.expr = (t2.expand_itmd(indices=(i, j, a, b)) *
-                        t2.expand_itmd(indices=(k, l, c, d)).sympy)
+        base: e.expr = (
+            t2.expand_itmd(indices=(i, j, a, b)) *
+            t2.expand_itmd(indices=(k, l, c, d), return_sympy=True)
+        )
         v_permutations = {tuple(tuple()): 1, ((a, c),): -1, ((a, d),): -1,
                           ((b, c),): -1, ((b, d),): -1, ((a, c), (b, d)): +1}
         o_permutations = {tuple(tuple()): 1, ((j, k),): -1, ((j, l),): -1}
@@ -676,90 +570,63 @@ class t4_2(registered_intermediate):
                 product(o_permutations.items(), v_permutations.items()):
             perms = o_perms + v_perms
             t4 += o_factor * v_factor * base.copy().permute(*perms).sympy
-        t4 = e.expr(t4, target_idx=(i, j, k, l, a, b, c, d))
-        self.__cache[idx] = t4
-        return t4
+        return base_expr(t4, (i, j, k, l, a, b, c, d), None)
 
-    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        lower = idx[:4]
-        upper = idx[4:]
-        t2 = AntiSymmetricTensor('t2', upper, lower)
-        return e.expr(t2)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2', indices[4:], indices[:4])
 
 
 class t1_3(registered_intermediate):
-    """Third order MP triple amplitudes."""
+    """Third order MP single amplitudes."""
     _itmd_type: str = 't_amplitude'
+    _order: int = 3
+    _default_idx: tuple[str] = ('i', 'a')
 
-    def __init__(self):
-        self._order: int = 3
-        self._default_idx: tuple[str] = ('i', 'a')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, a = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, a = get_symbols('ia')
         # generate additional contracted indices (2o / 2v)
-        contracted = idx_cls().get_generic_indices(n_o=2, n_v=2)
-        j, k = contracted['occ']
-        b, c = contracted['virt']
+        j, k, b, c = get_symbols('jkbc')
         # other intermediate class instances
         t1: t1_2 = self._registry['t_amplitude']['t1_2']
         t2: t2_2 = self._registry['t_amplitude']['t2_2']
         t3: t3_2 = self._registry['t_amplitude']['t3_2']
         # build the amplitude
         denom = orb_energy(i) - orb_energy(a)
-        terms = (Rational(1, 2) *
-                 t2.expand_itmd(indices=(i, j, b, c)).sympy *
-                 eri([j, a, b, c]))
-        terms += (Rational(1, 2) *
-                  t2.expand_itmd(indices=(j, k, a, b)).sympy *
-                  eri([j, k, i, b]))
-        terms += (- t1.expand_itmd(indices=(j, b)).sympy * eri([i, b, j, a]))
-        terms += (Rational(1, 4) *
-                  t3.expand_itmd(indices=(i, j, k, a, b, c)).sympy *
-                  eri([j, k, b, c]))
-        itmd = e.expr(terms / denom, target_idx=(i, a))
-        self.__cache[idx] = itmd
-        return itmd
+        itmd = (Rational(1, 2) * eri([j, a, b, c]) *
+                t2.expand_itmd(indices=(i, j, b, c), return_sympy=True))
+        itmd += (Rational(1, 2) * eri([j, k, i, b]) *
+                 t2.expand_itmd(indices=(j, k, a, b), return_sympy=True))
+        itmd -= (t1.expand_itmd(indices=(j, b), return_sympy=True) *
+                 eri([i, b, j, a]))
+        itmd += (Rational(1, 4) * eri([j, k, b, c]) *
+                 t3.expand_itmd(indices=(i, j, k, a, b, c), return_sympy=True))
+        # need to keep track of all contracted indices... also contracted
+        # indices within each of the second order t-amplitudes
+        # -> substitute_contracted indices to minimize the number of contracted
+        #    indices
+        target = (i, a)
+        itmd = e.expr(itmd, target_idx=target).substitute_contracted().sympy
+        contracted = tuple(sorted(
+            [s for s in itmd.atoms(Dummy) if s not in target], key=idx_sort_key
+        ))
+        return base_expr(itmd / denom, target, contracted)
 
-    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
-        i, a = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        t3 = AntiSymmetricTensor('t3', (a,), (i,))
-        return e.expr(t3)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t3', (indices[1],), (indices[0],))
 
 
 class t2_3(registered_intermediate):
-    """Third order MP triple amplitudes."""
+    """Third order MP double amplitudes."""
     _itmd_type: str = 't_amplitude'
+    _order: int = 3
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    def __init__(self):
-        self._order: int = 3
-        self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, lower=None, upper=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, a, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
-        contracted = idx_cls().get_generic_indices(n_o=2, n_v=2)
-        k, l = contracted['occ']  # noqa E741
-        c, d = contracted['virt']
+        k, l, c, d = get_symbols('klcd')
         # other intermediate class instances
         _t2_1: t2_1 = self._registry['t_amplitude']['t2_1']
         t1: t1_2 = self._registry['t_amplitude']['t1_2']
@@ -770,193 +637,140 @@ class t2_3(registered_intermediate):
         denom = orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j)
         # +(1-P_ij) * <ic||ab> t^c_j(2)
         base = t1.expand_itmd(indices=(j, c)) * eri((i, c, a, b))
-        terms = base.sympy - base.permute((i, j)).sympy
+        itmd = base.sympy - base.permute((i, j)).sympy
         # +(1-P_ab) * <ij||ka> t^b_k(2)
         base = t1.expand_itmd(indices=(k, b)) * eri((i, j, k, a))
-        terms += base.sympy - base.permute((a, b)).sympy
+        itmd += base.sympy - base.permute((a, b)).sympy
         # - 0.5 * <ab||cd> t^cd_ij(2)
-        terms -= Rational(1, 2) * \
-            t2.expand_itmd(indices=(i, j, c, d)).sympy * eri((a, b, c, d))
+        itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
+                 t2.expand_itmd(indices=(i, j, c, d), return_sympy=True))
         # - 0.5 * <ij||kl> t^ab_kl(2)
-        terms -= Rational(1, 2) * \
-            t2.expand_itmd(indices=(k, l, a, b)).sympy * eri((i, j, k, l))
+        itmd -= (Rational(1, 2) * eri((i, j, k, l)) *
+                 t2.expand_itmd(indices=(k, l, a, b), return_sympy=True))
         # + (1-P_ij)*(1-P_ab) * <jc||kb> t^ac_ik(2)
         base = t2.expand_itmd(indices=(i, k, a, c)) * eri((j, c, k, b))
-        terms += base.sympy - base.copy().permute((i, j)).sympy \
-            - base.copy().permute((a, b)).sympy \
-            + base.copy().permute((i, j), (a, b)).sympy
+        itmd += (base.sympy - base.copy().permute((i, j)).sympy
+                 - base.copy().permute((a, b)).sympy
+                 + base.copy().permute((i, j), (a, b)).sympy)
         # + 0.5 * (1-P_ab) * <ka||cd> t^bcd_ijk(2)
         base = t3.expand_itmd(indices=(i, j, k, b, c, d)) * eri((k, a, c, d))
-        terms += Rational(1, 2) * base.sympy \
-            - Rational(1, 2) * base.copy().permute((a, b)).sympy
+        itmd += (Rational(1, 2) * base.sympy
+                 - Rational(1, 2) * base.copy().permute((a, b)).sympy)
         # + 0.5 * (1-P_ij) <kl||ic> t^abc_jkl(2)
         base = t3.expand_itmd(indices=(j, k, l, a, b, c)) * eri((k, l, i, c))
-        terms += Rational(1, 2) * base.sympy \
-            - Rational(1, 2) * base.copy().permute((i, j)).sympy
+        itmd += (Rational(1, 2) * base.sympy
+                 - Rational(1, 2) * base.copy().permute((i, j)).sympy)
         # + 0.25 <kl||cd> t^abcd_ijkl(2)
-        terms += Rational(1, 4) * \
-            t4.expand_itmd(indices=(i, j, k, l, a, b, c, d)).sympy * \
-            eri((k, l, c, d))
+        itmd += (Rational(1, 4) * eri((k, l, c, d)) *
+                 t4.expand_itmd(indices=(i, j, k, l, a, b, c, d),
+                                return_sympy=True))
         # - 0.25 <kl||cd> t^ab_ij(1) t^kl_cd(1)
-        terms -= Rational(1, 4) * \
-            _t2_1.expand_itmd(indices=(i, j, a, b)).sympy * \
-            _t2_1.expand_itmd(indices=(k, l, c, d)).sympy * \
-            eri((k, l, c, d))
-        itmd = e.expr(terms / denom, target_idx=(i, j, a, b))
-        self.__cache[idx] = itmd
-        return itmd
+        itmd -= (Rational(1, 4) * eri((k, l, c, d)) *
+                 _t2_1.expand_itmd(indices=(i, j, a, b), return_sympy=True) *
+                 _t2_1.expand_itmd(indices=(k, l, c, d), return_sympy=True))
+        # minimize the number of contracted indices
+        target = (i, j, a, b)
+        itmd = e.expr(itmd, target_idx=target).substitute_contracted().sympy
+        contracted = contracted = tuple(sorted(
+            [s for s in itmd.atoms(Dummy) if s not in target], key=idx_sort_key
+        ))
+        return base_expr(itmd / denom, target, contracted)
 
-    def tensor(self, indices=None, lower=None, upper=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        lower = idx[:2]
-        upper = idx[2:]
-        t2 = AntiSymmetricTensor('t3', upper, lower)
-        return e.expr(t2)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t3', indices[2:], indices[:2])
 
 
 class p0_2_oo(registered_intermediate):
     """Occupied Occupied block of the 2nd order contribution of the MP density
     """
     _itmd_type: str = 'mp_density'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j = get_symbols(self.default_idx)
         # additional contracted indices (1o / 2v)
-        contracted = idx_cls().get_generic_indices(n_o=1, n_v=2)
-        k = contracted['occ'][0]
-        a, b = contracted['virt']
+        k, a, b = get_symbols('kab')
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the density
         p0 = (- Rational(1, 2) *
-              t2.expand_itmd(lower=(i, k), upper=(a, b)).sympy *
-              t2.expand_itmd(lower=(j, k), upper=(a, b)).sympy)
-        p0 = e.expr(p0, target_idx=(i, j))
-        self.__cache[idx] = p0
-        return p0
+              t2.expand_itmd(indices=(i, k, a, b), return_sympy=True) *
+              t2.expand_itmd(indices=(j, k, a, b), return_sympy=True))
+        return base_expr(p0, (i, j), (k, a, b))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        i, j = idx
-        p0 = AntiSymmetricTensor('p2', (i,), (j,), 1)
-        return e.expr(p0, sym_tensors=["p2"])
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('p2', (indices[0],), (indices[1],), 1)
 
 
 class p0_2_vv(registered_intermediate):
     """Virtual Virtual block of the 2nd order contribution of the MP density"""
     _itmd_type: str = 'mp_density'
+    _order: int = 2
+    _default_idx: tuple[str] = ('a', 'b')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        a, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        a, b = get_symbols(self.default_idx)
         # additional contracted indices (2o / 1v)
-        contracted = idx_cls().get_generic_indices(n_o=2, n_v=1)
-        i, j = contracted['occ']
-        c = contracted['virt'][0]
+        i, j, c = get_symbols('ijc')
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the density
-        p0 = (Rational(1, 2) * t2.expand_itmd(indices=(i, j, a, c)).sympy *
-              t2.expand_itmd(indices=(i, j, b, c)).sympy)
-        p0 = e.expr(p0, target_idx=(a, b))
-        self.__cache[idx] = p0
-        return p0
+        p0 = (Rational(1, 2) *
+              t2.expand_itmd(indices=(i, j, a, c), return_sympy=True) *
+              t2.expand_itmd(indices=(i, j, b, c), return_sympy=True))
+        return base_expr(p0, (a, b), (i, j, c))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        a, b = idx
-        p0 = AntiSymmetricTensor('p2', (a,), (b,), 1)
-        return e.expr(p0, sym_tensors=["p2"])
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('p2', (indices[0],), (indices[1],), 1)
 
 
 class p0_3_oo(registered_intermediate):
     """Occupied Occupied block of the 2nd order contribution of the MP density
     """
     _itmd_type: str = 'mp_density'
+    _order: int = 3
+    _default_idx: tuple[str] = ('i', 'j')
 
-    def __init__(self):
-        self._order: int = 3
-        self._default_idx: tuple[str] = ('i', 'j')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 2v)
-        contracted = idx_cls().get_generic_indices(n_o=1, n_v=2)
-        k = contracted['occ'][0]
-        a, b = contracted['virt']
+        k, a, b = get_symbols('kab')
         # t amplitude cls
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         td2: t2_2 = self._registry['t_amplitude']['t2_2']
         # build the density
-        p0 = - Rational(1, 2) * t2.expand_itmd(indices=(i, k, a, b)).sympy * \
-            td2.expand_itmd(indices=(j, k, a, b)).sympy
+        p0 = (- Rational(1, 2) *
+              t2.expand_itmd(indices=(i, k, a, b), return_sympy=True) *
+              td2.expand_itmd(indices=(j, k, a, b), return_sympy=True))
         p0 += p0.subs({i: j, j: i}, simultaneous=True)
-        p0 = e.expr(p0, target_idx=(i, j))
-        self.__cache[idx] = p0
-        return p0
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        i, j = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        p0 = AntiSymmetricTensor('p3', (i,), (j,), 1)
-        return e.expr(p0, sym_tensors=["p2"])
+        target = (i, j)
+        p0 = e.expr(p0, target_idx=target).substitute_contracted().sympy
+        contracted = tuple(sorted(
+            [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
+        ))
+        return base_expr(p0, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
 
 
 class p0_3_ov(registered_intermediate):
     """Occupied Occupied block of the 2nd order contribution of the MP density
     """
     _itmd_type: str = 'mp_density'
+    _order: int = 3
+    _default_idx: tuple[str] = ('i', 'a')
 
-    def __init__(self):
-        self._order: int = 3
-        self._default_idx: tuple[str] = ('i', 'a')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, a = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, a = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
-        contracted = idx_cls().get_generic_indices(n_o=2, n_v=2)
-        j, k = contracted['occ']
-        b, c = contracted['virt']
+        j, k, b, c = get_symbols('jkbc')
         # t_amplitude cls instances
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         ts2: t1_2 = self._registry['t_amplitude']['t1_2']
@@ -964,341 +778,284 @@ class p0_3_ov(registered_intermediate):
         ts3: t1_3 = self._registry['t_amplitude']['t1_3']
         # build the density
         # - t^ab_ij(1) t^b_j(2)
-        p0 = - t2.expand_itmd(indices=(i, j, a, b)).sympy * \
-            ts2.expand_itmd(indices=(j, b)).sympy
+        p0 = (- t2.expand_itmd(indices=(i, j, a, b), return_sympy=True) *
+              ts2.expand_itmd(indices=(j, b), return_sympy=True))
         # - 0.25 * t^bc_jk(1) t^abc_ijk(2)
-        p0 -= Rational(1, 4) * t2.expand_itmd(indices=(j, k, b, c)).sympy * \
-            tt2.expand_itmd(indices=(i, j, k, a, b, c)).sympy
+        p0 -= (Rational(1, 4) *
+               t2.expand_itmd(indices=(j, k, b, c), return_sympy=True) *
+               tt2.expand_itmd(indices=(i, j, k, a, b, c), return_sympy=True))
         # + t^a_i(3)
-        p0 += ts3.expand_itmd(indices=(i, a)).sympy
-        p0 = e.expr(p0, target_idx=(i, a))
-        self.__cache[idx] = p0
-        return p0
+        p0 += ts3.expand_itmd(indices=(i, a), return_sympy=True)
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        i, a = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        p0 = AntiSymmetricTensor('p3', (i,), (a,), 1)
-        return e.expr(p0, sym_tensors=["p3"])
+        target = (i, a)
+        p0 = e.expr(p0, target_idx=target).substitute_contracted().sympy
+        contracted = tuple(sorted(
+            [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
+        ))
+        return base_expr(p0, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
 
 
 class p0_3_vv(registered_intermediate):
     """Virtual Virtual block of the 2nd order contribution of the MP density"""
     _itmd_type: str = 'mp_density'
+    _order: int = 3
+    _default_idx: tuple[str] = ('a', 'b')
 
-    def __init__(self):
-        self._order: int = 3
-        self._default_idx: tuple[str] = ('a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self._term_map_cache: dict[tuple, dict] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from sympy import Rational
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        a, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        a, b = get_symbols(self.default_idx)
         # additional contracted indices (2o / 1v)
-        contracted = idx_cls().get_generic_indices(n_o=2, n_v=1)
-        i, j = contracted['occ']
-        c = contracted['virt'][0]
+        i, j, c = get_symbols('ijc')
         # t_amplitude cls instances
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         td2: t2_2 = self._registry['t_amplitude']['t2_2']
         # build the density
-        p0 = Rational(1, 2) * t2.expand_itmd(indices=(i, j, a, c)).sympy * \
-            td2.expand_itmd(indices=(i, j, b, c)).sympy
+        p0 = (Rational(1, 2) *
+              t2.expand_itmd(indices=(i, j, a, c), return_sympy=True) *
+              td2.expand_itmd(indices=(i, j, b, c), return_sympy=True))
         p0 += p0.subs({a: b, b: a}, simultaneous=True)
-        p0 = e.expr(p0, target_idx=(a, b))
-        self.__cache[idx] = p0
-        return p0
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        a, b = self.validate_indices(indices=indices, upper=upper, lower=lower)
-        p0 = AntiSymmetricTensor('p3', (a,), (b,), 1)
-        return e.expr(p0, sym_tensors=["p3"])
+        target = (a, b)
+        p0 = e.expr(p0, target_idx=target).substitute_contracted().sympy
+        contracted = tuple(sorted(
+            [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
+        ))
+        return base_expr(p0, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
 
 
 class t2eri_1(registered_intermediate):
-    """t2eri1 in adcc / pi1 in libadcc."""
+    """t2eri1 in adcc / pi1 in libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'k', 'a')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, k, a = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, k, a = get_symbols(self.default_idx)
         # generate additional contracted indices (2v)
-        b, c = idx_cls().get_generic_indices(n_v=2)['virt']
+        b, c = get_symbols('bc')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        t2eri = t2.expand_itmd(indices=(i, j, b, c)) * eri((k, a, b, c))
-        t2eri = e.expr(t2eri, target_idx=(i, j, k, a))
-        self.__cache[idx] = t2eri
-        return t2eri
+        t2eri = (t2.expand_itmd(indices=(i, j, b, c), return_sympy=True) *
+                 eri((k, a, b, c)))
+        return base_expr(t2eri, (i, j, k, a), (b, c))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        upper = idx[:2]
-        lower = idx[2:]
-        t2eri = AntiSymmetricTensor('t2eri1', upper, lower)
-        return e.expr(t2eri)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2eri1', indices[:2], indices[2:])
 
 
 class t2eri_2(registered_intermediate):
-    """t2eri2 in adcc / pi2 in libadcc."""
+    """t2eri2 in adcc / pi2 in libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'k', 'a')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, k, a = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, k, a = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
-        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
-        b, l = contracted['virt'][0], contracted['occ'][0]  # noqa E741
-        # t2_1 class instance for generating t2_1 amplitudes
+        b, l = get_symbols('bl')  # noqa E741
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        t2eri = t2.expand_itmd(indices=(i, l, a, b)) * eri((l, k, j, b))
-        t2eri = e.expr(t2eri, target_idx=(i, j, k, a))
-        self.__cache[idx] = t2eri
-        return t2eri
+        t2eri = (t2.expand_itmd(indices=(i, l, a, b), return_sympy=True) *
+                 eri((l, k, j, b)))
+        return base_expr(t2eri, (i, j, k, a), (b, l))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        t2eri = NonSymmetricTensor('t2eri2', idx)
-        return e.expr(t2eri)
+    def _build_tensor(self, indices) -> NonSymmetricTensor:
+        return NonSymmetricTensor('t2eri2', indices)
 
 
 class t2eri_3(registered_intermediate):
-    """t2eri3 in adcc / pi3 in libadcc."""
+    """t2eri3 in adcc / pi3 in libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, a, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o)
-        k, l = idx_cls().get_generic_indices(n_o=2)['occ']  # noqa E741
+        k, l = get_symbols('kl')  # noqa E741
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        t2eri = t2.expand_itmd(indices=(k, l, a, b)) * eri((i, j, k, l))
-        t2eri = e.expr(t2eri, target_idx=(i, j, a, b))
-        self.__cache[idx] = t2eri
-        return t2eri
+        t2eri = (t2.expand_itmd(indices=(k, l, a, b), return_sympy=True) *
+                 eri((i, j, k, l)))
+        return base_expr(t2eri, (i, j, a, b), (k, l))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        upper = idx[:2]
-        lower = idx[2:]
-        t2eri = AntiSymmetricTensor('t2eri3', upper, lower)
-        return e.expr(t2eri)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2eri3', indices[:2], indices[2:])
 
 
 class t2eri_4(registered_intermediate):
-    """t2eri4 in adcc / pi4 in libadcc."""
+    """t2eri4 in adcc / pi4 in libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, a, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
-        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
-        k, c = contracted['occ'][0], contracted['virt'][0]
+        k, c = get_symbols('kc')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        t2eri = t2.expand_itmd(indices=(j, k, a, c)) * eri((k, b, i, c))
-        t2eri = e.expr(t2eri, target_idx=(i, j, a, b))
-        self.__cache[idx] = t2eri
-        return t2eri
+        t2eri = (t2.expand_itmd(indices=(j, k, a, c), return_sympy=True) *
+                 eri((k, b, i, c)))
+        return base_expr(t2eri, (i, j, a, b), (k, c))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        t2eri = NonSymmetricTensor('t2eri4', idx)
-        return e.expr(t2eri)
+    def _build_tensor(self, indices) -> NonSymmetricTensor:
+        return NonSymmetricTensor('t2eri4', indices)
 
 
 class t2eri_5(registered_intermediate):
-    """t2eri5 in adcc / pi5 in libadcc."""
+    """t2eri5 in adcc / pi5 in libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'j', 'a', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, j, a, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2v)
-        c, d = idx_cls().get_generic_indices(n_v=2)['virt']
+        c, d = get_symbols('cd')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        t2eri = t2.expand_itmd(indices=(i, j, c, d)).sympy * eri((a, b, c, d))
-        t2eri = e.expr(t2eri, target_idx=(i, j, a, b))
-        self.__cache[idx] = t2eri
-        return t2eri
+        t2eri = (t2.expand_itmd(indices=(i, j, c, d), return_sympy=True) *
+                 eri((a, b, c, d)))
+        return base_expr(t2eri, (i, j, a, b), (c, d))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        upper = idx[:2]
-        lower = idx[2:]
-        t2eri = AntiSymmetricTensor('t2eri5', upper, lower)
-        return e.expr(t2eri)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2eri5', indices[:2], indices[2:])
 
 
 class t2eri_6(registered_intermediate):
-    """t2eri6 in adcc / pi6 in libadcc."""
+    """t2eri6 in adcc / pi6 in libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'a', 'b', 'c')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, a, b, c = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (2o)
-        j, k = idx_cls().get_generic_indices(n_o=2)['occ']
+        j, k = get_symbols('jk')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        t2eri = t2.expand_itmd(indices=(j, k, b, c)).sympy * eri((j, k, i, a))
-        t2eri = e.expr(t2eri, target_idx=(i, a, b, c))
-        self.__cache[idx] = t2eri
-        return t2eri
+        t2eri = (t2.expand_itmd(indices=(j, k, b, c), return_sympy=True) *
+                 eri((j, k, i, a)))
+        return base_expr(t2eri, (i, a, b, c), (j, k))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        upper = idx[:2]
-        lower = idx[2:]
-        t2eri = AntiSymmetricTensor('t2eri6', upper, lower)
-        return e.expr(t2eri)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2eri6', indices[:2], indices[2:])
 
 
 class t2eri_7(registered_intermediate):
-    """t2eri7 in adcc / pi7 in libadcc."""
+    """t2eri7 in adcc / pi7 in libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'a', 'b', 'c')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, a, b, c = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
-        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
-        j, d = contracted['occ'][0], contracted['virt'][0]
+        j, d = get_symbols('jd')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        t2eri = t2.expand_itmd(indices=(i, j, b, d)).sympy * eri((j, c, a, d))
-        t2eri = e.expr(t2eri, target_idx=(i, a, b, c))
-        self.__cache[idx] = t2eri
-        return t2eri
+        t2eri = (t2.expand_itmd(indices=(i, j, b, d), return_sympy=True) *
+                 eri((j, c, a, d)))
+        return base_expr(t2eri, (i, a, b, c), (j, d))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        t2eri = NonSymmetricTensor('t2eri7', idx)
-        return e.expr(t2eri)
+    def _build_tensor(self, indices) -> NonSymmetricTensor:
+        return NonSymmetricTensor('t2eri7', indices)
+
+
+class t2eri_A(registered_intermediate):
+    """pia intermediate in libadc"""
+    _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
+
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, k, a = get_symbols(self.default_idx)
+        # t2eri cls instances for generating the itmd
+        pi1: t2eri_1 = self._registry['misc']['t2eri_1']
+        pi2: t2eri_2 = self._registry['misc']['t2eri_2']
+        # build the itmd
+        pia = (0.5 * pi1.expand_itmd(indices=(i, j, k, a), return_sympy=True)
+               + pi2.expand_itmd(indices=(i, j, k, a), return_sympy=True)
+               - pi2.expand_itmd(indices=(j, i, k, a), return_sympy=True))
+        target = (i, j, k, a)
+        pia = e.expr(pia, target_idx=target).substitute_contracted().sympy
+        contracted = tuple(sorted(
+            [s for s in pia.atoms(Dummy) if s not in target], key=idx_sort_key
+        ))
+        return base_expr(pia, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2eriA', indices[:2], indices[2:])
+
+
+class t2eri_B(registered_intermediate):
+    """pib intermediate in libadc"""
+    _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
+
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, a, b, c = get_symbols(self.default_idx)
+        # t2eri cls instances for generating the itmd
+        pi6: t2eri_6 = self._registry['misc']['t2eri_6']
+        pi7: t2eri_7 = self._registry['misc']['t2eri_7']
+        # build the itmd
+        pib = (-0.5 * pi6.expand_itmd(indices=(i, a, b, c), return_sympy=True)
+               + pi7.expand_itmd(indices=(i, a, b, c), return_sympy=True)
+               - pi7.expand_itmd(indices=(i, a, c, b), return_sympy=True))
+        target = (i, a, b, c)
+        pib = e.expr(pib, target_idx=target).substitute_contracted().sympy
+        contracted = tuple(sorted(
+            [s for s in pib.atoms(Dummy) if s not in target], key=idx_sort_key
+        ))
+        return base_expr(pib, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2eriB', indices[:2], indices[2:])
 
 
 class t2sq(registered_intermediate):
     """t2sq intermediate from adcc and libadc."""
     _itmd_type: str = 'misc'
+    _order: int = 2
+    _default_idx: tuple[str] = ('i', 'a', 'j', 'b')
 
-    def __init__(self):
-        self._order: int = 2
-        self._default_idx: tuple[str] = ('i', 'a', 'j', 'b')
-        self._factored_variants: dict[tuple, e.expr] = {}
-        self.__cache: dict = {}
-
-    def expand_itmd(self, indices=None, upper=None, lower=None) -> e.expr:
-        from .indices import indices as idx_cls
-
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        if (itmd := self.__cache.get(idx, None)) is not None:
-            return itmd
-        i, a, j, b = idx
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, a, j, b = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
-        contracted = idx_cls().get_generic_indices(n_o=1, n_v=1)
-        c = contracted['virt'][0]
-        k = contracted['occ'][0]
+        c, k = get_symbols('ck')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         # build the intermediate
-        itmd = t2.expand_itmd(indices=(i, k, a, c)).sympy * \
-            t2.expand_itmd(indices=(j, k, b, c)).sympy
-        itmd = e.expr(itmd, target_idx=(i, a, j, b))
-        self.__cache[idx] = itmd
-        return itmd
+        itmd = (t2.expand_itmd(indices=(i, k, a, c), return_sympy=True) *
+                t2.expand_itmd(indices=(j, k, b, c), return_sympy=True))
+        return base_expr(itmd, (i, a, j, b), (k, c))
 
-    def tensor(self, indices=None, upper=None, lower=None) -> e.expr:
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
-        upper = idx[:2]
-        lower = idx[2:]
-        itmd = AntiSymmetricTensor('t2sq', upper, lower, 1)
-        return e.expr(itmd)
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        return AntiSymmetricTensor('t2sq', indices[:2], indices[2:], 1)
 
 
 def eri(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:

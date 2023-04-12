@@ -8,6 +8,7 @@ from .misc import (Inputerror, cached_member, transform_to_tuple,
                    process_arguments, validate_input)
 from .func import gen_term_orders
 from .simplify import simplify
+from .expr_container import expr
 
 
 class secular_matrix:
@@ -74,7 +75,7 @@ class secular_matrix:
             # evaluate_deltas should not be necessary here, because norm only
             # contains contracted indices
             res += (norm * matrix).expand()
-        return simplify(res).sympy
+        return simplify(expr(res)).sympy
 
     @process_arguments
     @cached_member
@@ -127,7 +128,7 @@ class secular_matrix:
                 matrix += itmd
             # evaluate deltas should not be necessary here
             res += (norm * matrix).expand()
-        return simplify(res).sympy
+        return simplify(expr(res)).sympy
 
     @process_arguments
     @cached_member
@@ -275,7 +276,7 @@ class secular_matrix:
         # prefactors: I think there is no need for any further prefactors
         #  E = 1/sqrt(l) * 1/sqrt(r) sum_I,J  X_I M_I,J Y_J
         #    -> already included in the mvp function
-        return simplify(left * mvp).sympy
+        return simplify(expr(left * mvp)).sympy
 
     @process_arguments
     @cached_member

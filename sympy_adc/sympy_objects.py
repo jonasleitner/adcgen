@@ -43,12 +43,16 @@ class AntiSymmetricTensor(TensorSymbol):
                 upper, lower = lower, upper  # swap
                 if bra_ket_sym is S.NegativeOne:  # add another -1
                     sign_u += 1
-            # if diagonal block: compare the lowest index of each space
-            elif space_l == space_u and (cls._sort_canonical(lower[0]) <
-                                         cls._sort_canonical(upper[0])):
-                upper, lower = lower, upper  # swap
-                if bra_ket_sym is S.NegativeOne:  # add another -1
-                    sign_u += 1
+            # diagonal block: compare the names of the indices
+            elif space_l == space_u:
+                lower_names = [(int(s.name[1:]) if s.name[1:] else 0,
+                                s.name[0]) for s in lower]
+                upper_names = [(int(s.name[1:]) if s.name[1:] else 0,
+                                s.name[0]) for s in upper]
+                if lower_names < upper_names:
+                    upper, lower = lower, upper  # swap
+                    if bra_ket_sym is S.NegativeOne:  # add another -1
+                        sign_u += 1
         # import all quantities to sympy
         symbol = sympify(symbol)
         upper, lower = Tuple(*upper), Tuple(*lower)
