@@ -162,8 +162,9 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
     #  we only have a single object that has exactly matching indices
     if len(c_data.indices) == 1 and c_data.indices[0] == c_data.target:
         name = c_data.obj_names[0]
-        if name in translate_tensor_names:
-            name = translate_tensor_names[name](c_data.indices[0])
+        if name.split('_')[0] in translate_tensor_names:
+            name = translate_tensor_names[name.split('_')[0]]
+            name = name(c_data.indices[0])
         return name
 
     obj_strings = []
@@ -186,8 +187,8 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
                                f"use in the nested contraction {c_data}. "
                                "Should have been constructed ealier.")
         else:  # contraction of two tensors
-            if name in translate_tensor_names:
-                name = translate_tensor_names[name](indices)
+            if name.split('_')[0] in translate_tensor_names:
+                name = translate_tensor_names[name.split('_')[0]](indices)
 
             if indices:
                 obj_strings.append(name)
@@ -216,6 +217,23 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
 def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
     """Generate a contraction string using the libtensor syntax."""
     from .indices import index_space
+    from collections import Counter
+
+    # TODO: i_oooo(i|j|j|k) -> diag(j, j|l, i_oooo(i|j|l|k))
+    # if indices repeat on a tensor, the dimensionality of the tensor needs
+    # to be reduced using the diag function
+    # -> need to generate another index
+    # option1:
+    #  just use the lowest index that does not occur on the tensor
+    #  -> might give e.g. i as Dummy index which is not very nice
+    # option2:
+    #  extract all indices of the term in generate code and hand them over to
+    #  the function.
+    #  -> choose the lowest index that does not occur in the current term
+    if any(n > 1 for indices in c_data.indices
+           for n in Counter(indices).values()):
+        raise NotImplementedError("Found repeating indices on a object: "
+                                  f"{c_data}. Need to use diag in this case.")
 
     translate_tensor_names = {
         'V': lambda indices: (  # eri
@@ -234,8 +252,8 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
         # TODO: what about transpose?
         name = c_data.obj_names[0]
         indices = c_data.indices[0]
-        if name in translate_tensor_names:
-            name = translate_tensor_names[name](indices)
+        if name.split('_')[0] in translate_tensor_names:
+            name = translate_tensor_names[name.split('_')[0]](indices)
         return f"{name}({'|'.join(s.name for s in indices)})"
 
     if c_data.contracted and c_data.target:  # contract
@@ -267,8 +285,8 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
                                "constructed prior to the current contration "
                                f"{c_data}.")
         else:
-            if name in translate_tensor_names:
-                name = translate_tensor_names[name](indices)
+            if name.split('_')[0] in translate_tensor_names:
+                name = translate_tensor_names[name.split('_')[0]](indices)
 
             if indices:
                 obj_strings.append(
@@ -290,7 +308,7 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
 
 def _einsum_prefactor(pref):
     """Transforms the prefactor of a term to a string for python/einsum."""
-    from sympy import Rational
+    from sympy import Rational, Pow
 
     if pref == int(pref):  # natural numbers
         return str(pref)
@@ -298,13 +316,15 @@ def _einsum_prefactor(pref):
         return str(float(pref))
     elif isinstance(pref, Rational):
         return f"{pref.p} / {pref.q}"
+    elif isinstance(pref, Pow) and pref.args[1] == 0.5:  # sqrt -> import math
+        return f"sqrt({pref.args[0]})"
     else:
         raise NotImplementedError(f"{pref}, {type(pref)}")
 
 
 def _libtensor_prefactor(pref):
     """Transforms the prefactor to string for C++/libtensor."""
-    from sympy import Rational, S
+    from sympy import Rational, S, Pow, Mul
 
     if pref == int(pref) or pref in [S.Half, 0.25]:
         return str(float(pref))
@@ -312,6 +332,10 @@ def _libtensor_prefactor(pref):
         num = float(pref.p)
         denom = float(pref.q)
         return f"{num} / {denom}"
+    elif isinstance(pref, Pow) and pref.args[1] == 0.5:
+        return f"constants::sq{pref.args[0]}"
+    elif isinstance(pref, Mul):
+        return " * ".join(_libtensor_prefactor(p) for p in pref.args)
     else:
         raise NotImplementedError(f"{pref}, {type(pref)}")
 

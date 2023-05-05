@@ -178,6 +178,11 @@ def exploit_perm_sym(expr: e.expr, target_indices: str = None,
         if ',' in target_indices:
             upper, lower = target_indices.split(',')
         else:
+            if bra_ket_sym:
+                raise Inputerror("Target indices need to be separated by a "
+                                 "',' to indicate where to separate them in "
+                                 "upper and lower indices if the target tensor"
+                                 "has bra-ket-symmetry.")
             upper, lower = target_indices, ""
         upper, lower = get_symbols(upper), get_symbols(lower)
         sorted_provided_target = tuple(sorted(upper + lower, key=idx_sort_key))

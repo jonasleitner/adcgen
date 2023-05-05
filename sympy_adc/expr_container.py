@@ -1070,13 +1070,10 @@ class term(container):
             # variants (not all objects could be contracted successfully)
             if len(variant) < len(relevant_objects) - 1:
                 continue
-            sum_scaling = sum(contr.scaling.total for contr in variant)
-            scalings = []
-            for contr in variant:
-                scal = list(contr.scaling)
-                scal.insert(1, sum_scaling)
-                scalings.append(scal)
-            max_scalings.append(max(scalings))
+            tot_scaling_sum = sum(contr.scaling.total for contr in variant)
+            max_scal = list(max(contr.scaling for contr in variant))
+            max_scal.insert(1, tot_scaling_sum)
+            max_scalings.append(max_scal)
         if not max_scalings:
             raise RuntimeError("Could not find a valid contraction scheme for "
                                f"{self} while restricting the maximum tensor "

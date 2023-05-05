@@ -31,37 +31,39 @@ def gen_term_orders(order, term_length, min_order):
 def import_from_sympy_latex(expr_string: str):
     """Function for importing an expression from sympy latex output string.
        Returns an expression container - without any assumptions."""
+    import re
+    from sympy.physics.secondquant import KroneckerDelta, NO, Fd, F
+    from sympy import Pow, sqrt
+    from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
+    from .indices import get_symbols
     from . import expr_container as e
 
     def import_obj(obj_str: str):
-        import re
-        from sympy.physics.secondquant import KroneckerDelta, NO, Fd, F
-        from sympy import Pow
-        from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
-        from .indices import get_symbols
 
         if obj_str.isnumeric():  # prefactor
             return int(obj_str)
-        elif "delta" in obj_str:  # KroneckerDelta
-            idx = obj_str.replace("\\delta_{", "").rstrip("}").split()
+        elif obj_str.startswith("\\sqrt{"):  # sqrt{x} prefactor
+            return sqrt(int(obj_str[:-1].replace("\\sqrt{", "", 1)))
+        elif obj_str.startswith("\\delta_"):  # KroneckerDelta
+            idx = obj_str[:-1].replace("\\delta_{", "", 1).split()
             idx = get_symbols(idx)
             if len(idx) != 2:
                 raise RuntimeError(f"Invalid indices for delta: {idx}.")
             return KroneckerDelta(*idx)
-        elif "\\left(" in obj_str:  # braket
+        elif obj_str.startswith("\\left("):  # braket
             # need to take care of exponent of the braket!
-            splitted = obj_str.split('\\right)')
-            if len(splitted) != 2:
-                raise NotImplementedError(f"Unexpected braket {obj_str}")
-            if splitted[1]:  # exponent != 1
-                exponent = int(splitted[1].lstrip('^{').rstrip('}'))
+            base, exponent = obj_str.rsplit('\\right)', 1)
+            if exponent:  # exponent != "" -> ^{x} -> exponent != 1
+                exponent = int(exponent[:-1].lstrip('^{'))
             else:
                 exponent = 1
-            obj_str = splitted[0].replace("\\left(", "")
+            obj_str = base.replace("\\left(", "", 1)
             return Pow(import_from_sympy_latex(obj_str).sympy, exponent)
-        elif "\\left\\{" in obj_str:  # NO
-            obj_str = \
-                obj_str.replace("\\left\\{", "").replace("\\right\\}", "")
+        elif obj_str.startswith("\\left\\{"):  # NO
+            no, unexpected_stuff = obj_str.rsplit("\\right\\}", 1)
+            if unexpected_stuff:
+                raise NotImplementedError(f"Unexpected NO object: {obj_str}.")
+            obj_str = no.replace("\\left\\{", "", 1)
             return NO(import_from_sympy_latex(obj_str).sympy)
         else:  # tensor or creation/annihilation operator
             obj = []
@@ -91,8 +93,7 @@ def import_from_sympy_latex(expr_string: str):
                 upper, lower = get_symbols(idx[0]), get_symbols(idx[1])
                 base = AntiSymmetricTensor(name, upper, lower)
             else:
-                raise NotImplementedError("Found tensor with 3 index spaces:"
-                                          f" {obj_str}.")
+                raise NotImplementedError(f"Unknown tensor object: {obj_str}")
             if exponent is not None:
                 return Pow(base, exponent)
             else:
@@ -159,7 +160,7 @@ def import_from_sympy_latex(expr_string: str):
 
         if term.startswith("\\frac"):  # fraction
             # remove frac layout and split: \\frac{...}{...}
-            num, denom = term[:-1].replace("\\frac{", "").split("}{")
+            num, denom = term[:-1].replace("\\frac{", "", 1).split("}{")
         else:  # no denominator
             num, denom = term, None
 
