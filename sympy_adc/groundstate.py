@@ -90,8 +90,9 @@ class ground_state:
         return e.sympy
 
     def psi(self, order, braket):
-        """Retuns the ground state wave function. The type of the wave function
-           needs to be specified via the braket string: 'bra' or 'ket'."""
+        """Returns the ground state wave function. The type of the wave
+           function needs to be specified via the braket string: 'bra' or
+           'ket'."""
         # Can't cache ground state wave function!
         # Leads to an error for terms of the form:
         #  |1><2|1>... the two |1> need to have different indices!!
@@ -153,12 +154,10 @@ class ground_state:
     @process_arguments
     @cached_member
     def amplitude(self, order, space, indices):
-        # TODO: properly implement this (explicit denominator + energies)
-        # not working really. The denominator is only represented as symbolic
-        # delta without any indices and therefore it is not possible to
-        # subtract: - E*t properly
-        # atm the subtraction is ommited completely and needs to be done
-        # manually afterwards.
+        """Return the n'th order ground state t-amplitude as defined by
+           Rayleigh-Schrödinger perturbation theory."""
+        from .intermediates import orb_energy
+
         space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
         validate_input(order=order, space=space, indices=indices)
@@ -167,7 +166,7 @@ class ground_state:
 
         n_ov = n_ov_from_space(space)
         if n_ov["n_occ"] != n_ov["n_virt"]:
-            raise Inputerror("Invalid space string for a MP-t amplitude: "
+            raise Inputerror("Invalid space string for a MP t-amplitude: "
                              f"{space}.")
         # if the space is not present at the requested order return 0
         if n_ov["n_occ"] > 2 * order:
@@ -178,10 +177,23 @@ class ground_state:
                 n_ov["n_virt"] != len(idx["virt"]):
             raise Inputerror(f"Provided indices {indices} are not adequate for"
                              f" space {space}.")
+
+        # build the denominator
+        if len(idx['occ']) == 2:  # doubles amplitude: a+b-i-j
+            occ_factor = -1
+            virt_factor = +1
+        else:  # any other amplitude: i-a // i+j+k-a-b-c // ...
+            occ_factor = +1
+            virt_factor = -1
+
+        denom = 0
+        for s in idx['occ']:
+            denom += occ_factor * orb_energy(s)
+        for s in idx['virt']:
+            denom += virt_factor * orb_energy(s)
+
+        # build the bra state: <k|
         bra = 1
-        # need to build a symmetric tensor object to represent the denominator
-        # properly?
-        denom = AntiSymmetricTensor("delta", tuple(), tuple())
         for s in idx["occ"]:
             bra *= Fd(s)
         for s in reversed(idx["virt"]):
@@ -193,13 +205,23 @@ class ground_state:
                     simplify_kronecker_deltas=True)
         # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
         terms = gen_term_orders(order=order, term_length=2, min_order=1)
-        for term in terms:
-            if any(o == 0 for o in term):
+        for o1, o2 in terms:
+            # check if a t-amplitude of order o2 exists with special
+            # treatment of the first order singles amplitude
+            if (n_ov['n_occ'] > 2 * o2) or \
+                    (n_ov['n_occ'] == 1 and o2 == 1 and not self.singles):
                 continue
-            # possibly also only represent E symbolic?
-            # ret -= self.energy(term[0]) * \
-            #     AntiSymmetricTensor(f"t{term[1]}", idx["occ"], idx["virt"])
-        return (ret * denom).expand()
+            if n_ov['n_occ'] == 2:  # doubles... special sign
+                ret += (
+                    self.energy(o1) *
+                    AntiSymmetricTensor(f"t{o2}", idx["virt"], idx["occ"])
+                )
+            else:
+                ret -= (
+                    self.energy(o1) *
+                    AntiSymmetricTensor(f"t{o2}", idx["virt"], idx["occ"])
+                )
+        return ret / denom
 
     def overlap(self, order):
         """Computes the ground state overlap matrix."""
