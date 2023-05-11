@@ -1028,7 +1028,7 @@ class term(container):
             target_indices = sorted(self.target, key=sort_canonical)
             canonical_target = tuple(target_indices)
         else:  # or transform the provided target indices to sympy symbols
-            target_indices = get_symbols(target_indices)
+            target_indices = tuple(get_symbols(target_indices))
             canonical_target = tuple(sorted(target_indices,
                                             key=sort_canonical))
 

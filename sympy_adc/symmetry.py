@@ -239,7 +239,7 @@ class lazy_term_map:
             )
             ret = e.expr(0, **expr.assumptions)
             for term in factored:
-                ret += term
+                ret += term.factor()
             return ret
 
         if sym_factor not in [1, -1]:

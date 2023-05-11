@@ -125,7 +125,9 @@ def reduce_expr(expr):
     result = 0
     for term in chain.from_iterable(factor_denom(sub_expr) for sub_expr in
                                     factor_eri_parts(factored)):
-        result += term
+        # factor the resulting term again, because we can have something like
+        # 2/(4*a + 4*b) * X - 1/(2 * (a + b)) * X
+        result += term.factor()
     print(f"Done. {len(result)} terms remaining.\n")
     print('#'*80)
     return result

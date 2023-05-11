@@ -152,7 +152,7 @@ def exploit_perm_sym(expr: e.expr, target_indices: str = None,
         )
         ret = e.expr(0, **sub_expr.assumptions)
         for term in factored:
-            ret += term
+            ret += term.factor()
         return ret
 
     if not isinstance(expr, e.expr):

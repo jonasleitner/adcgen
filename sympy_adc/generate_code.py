@@ -160,7 +160,7 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
 
     # special case:
     #  we only have a single object that has exactly matching indices
-    if len(c_data.indices) == 1 and c_data.indices[0] == c_data.target:
+    if len(c_data.obj_idx) == 1 and c_data.indices[0] == c_data.target:
         name = c_data.obj_names[0]
         if name.split('_')[0] in translate_tensor_names:
             name = translate_tensor_names[name.split('_')[0]]

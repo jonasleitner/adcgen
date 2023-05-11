@@ -59,12 +59,16 @@ def process_arguments(function):
     from .indices import split_idx_string, index_space
 
     def sort_spaces(spaces):
+        if spaces is None:  # catch default value
+            return None
         # 'hhp,ph' -> 'phh,ph'
         # also works for operator strings: 'acac' -> 'ccaa'
         return ",".join(["".join(sorted(s, reverse=True)) for s in
                          transform_to_tuple(spaces)])
 
     def sort_indices(idx_string):
+        if idx_string is None:  # catch default value
+            return None
         # expects something like: 'ak,ji' -> 'ka,ij'
         sorted_str = []
         for sub_str in transform_to_tuple(idx_string):

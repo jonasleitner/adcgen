@@ -211,7 +211,7 @@ class registered_intermediate:
         )
         itmd = e.expr(0, **itmd.assumptions)
         for term in reduced:
-            itmd += term
+            itmd += term.factor()
 
         print('\n', '-'*80, sep='')
         print(f"Preparing Intermediate: Factoring {factored_itmds}")
