@@ -446,7 +446,7 @@ class eri_orbenergy:
         def bracket_sort_key(bracket):
             bracket_indices = bracket.idx
             rarest_idx = min(bracket_indices, key=lambda s: denom_indices[s])
-            return (len(bracket),
+            return (-len(bracket),
                     denom_indices[rarest_idx],
                     sum(denom_indices[s] for s in bracket_indices))
         denom = sorted(self.denom_brackets, key=bracket_sort_key)

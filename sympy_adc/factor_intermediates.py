@@ -105,7 +105,7 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
         # intermediate terms later
         possible_matches = []
         for itmd_i, itmd_term_data in enumerate(itmd_data):
-            # do all tensors in the eri parti occur at least as often as
+            # do all tensors in the eri part occur at least as often as
             # in the intermediate
             if any(obj_descr[descr] < n for descr, n in
                    itmd_term_data.eri_obj_descriptions.items()):
@@ -120,7 +120,6 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                     if any(bracket_lengths[length] < n for length, n in
                            itmd_bracket_lengths.items()):
                         continue
-                possible_matches.append(itmd_i)
             possible_matches.append(itmd_i)
         if not possible_matches:  # did not find any possible matches
             continue
