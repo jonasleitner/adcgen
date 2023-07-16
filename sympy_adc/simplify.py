@@ -459,7 +459,7 @@ def remove_tensor(expr: e.expr, t_name: str):
         if t_name in ['X', 'Y']:  # are we removing an ADC amplitude?
             if bra_ket_sym is not S.Zero:
                 raise ValueError("ADC amplitude vectors should have "
-                                 "no bra ket szmmetrz.")
+                                 "no bra ket symmetry.")
             term *= 1 / sqrt(len(tensor_sym) + 1)
         # print(f"Before symmetrization the terms reads {term}")
         # - add the tensor indices to the target indices of the term

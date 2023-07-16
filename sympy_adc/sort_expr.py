@@ -91,7 +91,7 @@ def by_tensor_block(expr: e.expr, t_string: str,
     return ret
 
 
-def by_tensor_target_idx(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr]:  # noqa E501
+def by_tensor_target_space(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr]:  # noqa E501
     """Sorts the terms in an expression according to the number and type of
        target indices on a specified tensor, e.g. f_cc Y_ij^ac -> if sorting
        according to Y: oov; if sorting acording to f: none.
@@ -119,6 +119,37 @@ def by_tensor_target_idx(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr
         key = tuple(sorted(key))  # in case of multiple occurences
         if not key:  # did not find a single occurence of the tensor
             key = (f'no_{t_string}',)
+        if key not in ret:
+            ret[key] = 0
+        ret[key] += term
+    return ret
+
+def by_tensor_target_idx(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr]:  # noqa E501
+    """Sorts the terms in an expression according to the target indices on
+       the specified tensor."""
+
+    if not isinstance(t_string, str):
+        raise Inputerror("Tensor name must be provided as string.")
+    expr = expr.expand()
+    if not isinstance(expr, e.expr):
+        expr = e.expr(expr)
+
+    ret = {}
+    for term in expr.terms:
+        key = []
+        target = term.target
+        for obj in term.tensors:
+            if obj.name == t_string:
+                # indices are in canonical order
+                obj_target_idx = "".join(
+                    [s.name for s in obj.idx if s in target]
+                )
+                if not obj_target_idx:
+                    obj_target_idx = "none"
+                key.append(obj_target_idx)
+        key = tuple(sorted(key))  # in case the tensor occurs more than once
+        if not key:  # tensor did not occur in the term
+            key = (f"no_{t_string}",)
         if key not in ret:
             ret[key] = 0
         ret[key] += term

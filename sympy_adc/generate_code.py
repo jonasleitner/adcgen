@@ -2,6 +2,7 @@ from . import expr_container as e
 from .misc import Inputerror
 from .sort_expr import exploit_perm_sym
 from collections import namedtuple
+from .indices import index_space
 
 scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
 mem_scaling = namedtuple('mem_scaling', ['total', 'g', 'v', 'o'])
@@ -138,7 +139,7 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
                     contraction_strings[c_data.obj_idx] = (c_str, c_data)
         contraction_code = "\n".join(contraction_code)
         res_string = (
-            "The scaling in the comments is given as: [comp_scaling] / "
+            "The scaling comment is given as: [comp_scaling] / "
             f"[mem_scaling]\nApply {perm_symmetry} to:\n{contraction_code}"
         )
         ret.append(res_string)
@@ -216,32 +217,33 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
 
 def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
     """Generate a contraction string using the libtensor syntax."""
-    from .indices import index_space
     from collections import Counter
 
-    # TODO: i_oooo(i|j|j|k) -> diag(j, j|l, i_oooo(i|j|l|k))
-    # if indices repeat on a tensor, the dimensionality of the tensor needs
-    # to be reduced using the diag function
-    # -> need to generate another index
-    # option1:
-    #  just use the lowest index that does not occur on the tensor
-    #  -> might give e.g. i as Dummy index which is not very nice
-    # option2:
-    #  extract all indices of the term in generate code and hand them over to
-    #  the function.
-    #  -> choose the lowest index that does not occur in the current term
-    if any(n > 1 for indices in c_data.indices
-           for n in Counter(indices).values()):
-        raise NotImplementedError("Found repeating indices on a object: "
-                                  f"{c_data}. Need to use diag in this case.")
+    def libtensor_object(name: str, indices):
+        # if no index is repeating -> return name(i|j)
+        # else name(i|i) -> diag(i, i|j, name(i|j)
+
+        # get the basic name of the tensor (special case for ERI)
+        if name.split('_')[0] in translate_tensor_names:
+            name = translate_tensor_names[name.split('_')[0]](indices)
+
+        # count indices
+        if not indices:
+            raise ValueError("An object is expected to hold indices. "
+                             f"Found: {name} with indices {indices}.")
+        counted_idx = Counter(indices)
+        # all indices occur exactly once -> everything is fine
+        if all(n == 1 for n in counted_idx.values()):
+            return f"{name}({'|'.join(s.name for s in indices)})"
+        # indices repeat on a tensor -> problem for libtensor
+        raise NotImplementedError("Libtensor can not handle repeating indices"
+                                  " on 1 tensor, i.e., contract(i, tensor) is"
+                                  f" not implemented.\n{c_data}.")
 
     translate_tensor_names = {
         'V': lambda indices: (  # eri
             f"i_{''.join(index_space(s.name)[0] for s in indices)}"
         ),
-        'f': lambda indices: (  # fock
-            f"f_{''.join(index_space(s.name)[0] for s in indices)}"
-        )
     }
 
     # contraction of a single object -> trace/transpose/just add the object
@@ -252,9 +254,7 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
         # TODO: what about transpose?
         name = c_data.obj_names[0]
         indices = c_data.indices[0]
-        if name.split('_')[0] in translate_tensor_names:
-            name = translate_tensor_names[name.split('_')[0]](indices)
-        return f"{name}({'|'.join(s.name for s in indices)})"
+        return libtensor_object(name, indices)
 
     if c_data.contracted and c_data.target:  # contract
         start = f"contract({'|'.join(s.name for s in c_data.contracted)}, "
@@ -268,6 +268,9 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
         start = "dot_product("
         end = ")"
         separator = ", "
+    else:  # neither target nor contracted indices -> a number
+        raise ValueError("Numbers should have been catched ealier: "
+                         f"{c_data}")
 
     obj_strings = []
     factors = []
@@ -285,17 +288,8 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
                                "constructed prior to the current contration "
                                f"{c_data}.")
         else:
-            if name.split('_')[0] in translate_tensor_names:
-                name = translate_tensor_names[name.split('_')[0]](indices)
+            obj_strings.append(libtensor_object(name, indices))
 
-            if indices:
-                obj_strings.append(
-                    f"{name}({'|'.join(s.name for s in indices)})"
-                )
-            else:
-                raise RuntimeError("An object that is no contraction should "
-                                   "hold indices. Did we miss a prefactor?",
-                                   c_data)
     contraction_str = ""
     if factors:
         contraction_str += " * ".join(factors)
