@@ -8,7 +8,7 @@ from .eri_orbenergy import eri_orbenergy
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
 from .symmetry import lazy_term_map
 
-from sympy import S, Dummy, Rational
+from sympy import S, Dummy, Rational, Pow
 
 from collections import namedtuple
 
@@ -399,31 +399,42 @@ class t2_1(registered_intermediate):
                 #   the itmd denominator
                 sub = order_substitutions(dict(zip(t2_eri_idx, eri.idx)))
                 sub_t2_denom = t2_denom.subs(sub)
+                # consider the exponent!
+                # <oo||vv>^2 may be factored twice
+                eri_exp = eri.exponent
                 # - check if we find a matching denominator
                 for bk_idx, bk in enumerate(brackets):
                     # was the braket already removed?
                     if bk_idx in removed_brackets:
                         continue
                     if isinstance(bk, e.expr):
-                        exponent = 1
+                        bk_exponent = 1
                         bk = bk.sympy
                     else:
-                        exponent = bk.exponent
+                        bk_exponent = bk.exponent
                         bk = bk.extract_pow
+                    # found matching bracket in denominator
                     if bk == sub_t2_denom:
-                        # found matching bracket in denominator
-                        # -> lower exponent by 1 (if exponent is 1: remove)
-                        if exponent == 1:
+                        # can possibly factor multiple times, depending
+                        # on the exponent of the eri and the denominator
+                        min_exp = min(eri_exp, bk_exponent)
+                        # are we removing the bracket completely?
+                        if min_exp == bk_exponent:
                             removed_brackets.add(bk_idx)
                         # found matching eri and denominator
                         # replace eri and bracket by a t2_1 tensor
-                        denom_brackets_to_remove.append(bk_idx)
-                        eri_obj_to_remove.append(eri_idx)
+                        denom_brackets_to_remove.extend(
+                            bk_idx for _ in range(min_exp)
+                        )
+                        eri_obj_to_remove.extend(
+                            eri_idx for _ in range(min_exp)
+                        )
                         # can simply use the indices of the eri as target
                         # indices for the tensor
-                        factored_term *= (
+                        factored_term *= Pow(
                             self.tensor(indices=eri.idx, return_sympy=True) /
-                            t2.pref
+                            t2.pref,
+                            min_exp
                         )
             # - remove the matched eri and denominator objects
             denom = term.cancel_denom_brackets(denom_brackets_to_remove)

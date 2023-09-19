@@ -420,7 +420,7 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
 
         if len(unique_obj_i) == 1:  # always the same objects in each variant
             _, rel_variant_indices = unique_obj_i.popitem()
-            min_overlap = None
+            min_overlap = []
         else:
             # multiple different objects -> try to find the one with the
             # lowest overlap to the other variants (so that we can possibly
@@ -474,12 +474,12 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
         # - determine the prefactor of the factored term
         pref = term.pref * variant_data['factor'] / itmd.pref
         # - check if it is possible to factor the itmd another time:
-        #   should be possible if we have a min_overlap of 0:
-        #   -> Currently factoring one of the 0 overlap variants, which means
-        #      there exists at least 1 other variant with no overlap to the
-        #      current variant
-        #   -> Can factor again
-        if min_overlap == 0:
+        #   should be possible if there is a 0 in the min_overlap list:
+        #   -> Currently factoring a variant that has 0 overlap with another
+        #      variant
+        #   -> It should be possible to factor the intermediate in the
+        #      remainder again!
+        if 0 in min_overlap:
             # factor again and ensure that the factored result has the
             # the current assumptions
             remainder = e.expr(

@@ -206,9 +206,16 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
         if contraction_str:
             contraction_str += " * "
         target_str = "".join(s.name for s in c_data.target)
-        # build the einsum contraction string
-        contraction_str += f"einsum('{','.join(idx_strings)}->{target_str}', "
-        contraction_str += f"{', '.join(obj_strings)})"
+        # if we only have a single tensor with correct target indices
+        # -> factor * tensor
+        if len(idx_strings) == 1 and idx_strings[0] == target_str:
+            contraction_str += obj_strings[0]
+        else:
+            # build the einsum contraction string
+            contraction_str += (
+                f"einsum('{','.join(idx_strings)}->{target_str}', "
+            )
+            contraction_str += f"{', '.join(obj_strings)})"
     if not contraction_str:
         raise RuntimeError(f"Could not translate {c_data} to a contraction "
                            "string.")
