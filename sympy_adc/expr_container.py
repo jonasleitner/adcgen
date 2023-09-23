@@ -940,6 +940,14 @@ class term(container):
             contracted = idx.intersection(other_idx)
             target = idx ^ other_idx  # bitwise XOR
 
+            # if it is not possible to determine the target indices
+            # according to the einstein sum_convention it is possible
+            # that target indices occur in contracted
+            # -> remove them from contracted and add them to target
+            if any(i in target_indices for i in contracted):
+                target.update({i for i in contracted if i in target_indices})
+                contracted = {i for i in contracted if i not in target_indices}
+
             # check that the result of the contraction does not violate
             # the max_tensor_dim
             if max_tensor_dim is not None and len(target) > max_tensor_dim:
@@ -1006,6 +1014,7 @@ class term(container):
             return ret
 
         relevant_objects = {}
+        idx_occurences = {}
         n = 0
         for o in self.objects:
             # nonsym_tensor / antisym_tensor / delta
@@ -1013,6 +1022,12 @@ class term(container):
                 if (exp := o.exponent) < 0:
                     raise NotImplementedError("Contractions for divisions not "
                                               f"implemented: {self}.")
+                # count on how many objects (with exponent 1) an index occures
+                for idx in o.idx:
+                    if idx not in idx_occurences:
+                        idx_occurences[idx] = 0
+                    idx_occurences[idx] += exp
+
                 for i in range(n, exp+n):
                     relevant_objects[i] = o
                     n += 1
@@ -1022,6 +1037,12 @@ class term(container):
                 raise NotImplementedError("Contractions not implemented for "
                                           "polynoms, creation and annihilation"
                                           f" operators: {self}.")
+
+        # check that no index occure on more than 2 objects
+        if any(n > 2 for n in idx_occurences.values()):
+            raise Inputerror("Can only optimize contractions for terms where "
+                             "each index occures at most on 2 objects. "
+                             f"Found: {self}")
 
         # use the canonical target indices of the term
         if target_indices is None:
