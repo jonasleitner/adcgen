@@ -169,3 +169,55 @@ def import_from_sympy_latex(expr_string: str):
             sympy_term /= import_term(denom)
         sympy_expr += sympy_term
     return e.expr(sympy_expr)
+
+
+def evaluate_deltas(expr, target_idx=None):
+    """Slightly modified version of the evaluate_deltas function from sympy
+       that takes the target indices of the expr as additional input.
+       Neccessary if the einstein sum convention is not sufficient
+       to determine the target indices in all terms of the expression."""
+    from sympy import Add, Mul
+    import sympy.physics.secondquant
+    from .indices import get_symbols
+
+    if target_idx is None:
+        return sympy.physics.secondquant.evaluate_deltas(expr)
+
+    # convert the target indices to Dummies (if we got a string)
+    target_idx = get_symbols(target_idx)
+
+    accepted_functions = (
+        Add,
+    )
+    if isinstance(expr, accepted_functions):
+        return expr.func(*[evaluate_deltas(arg, target_idx)
+                           for arg in expr.args])
+
+    elif isinstance(expr, Mul):
+        # find all occurrences of kronecker delta
+        deltas = [d for d in expr.args if
+                  isinstance(d, sympy.physics.secondquant.KroneckerDelta)]
+
+        for d in deltas:
+            # If we do something, and there are more deltas, we should recurse
+            # to treat the resulting expression properly
+            if d.killable_index.is_Symbol and \
+                    d.killable_index not in target_idx:
+                # killable is a contracted index
+                expr = expr.subs(d.killable_index, d.preferred_index)
+                if len(deltas) > 1:
+                    return evaluate_deltas(expr, target_idx)
+            elif (d.preferred_index.is_Symbol and
+                  d.preferred_index not in target_idx
+                  and d.indices_contain_equal_information):
+                # preferred is a contracted index
+                expr = expr.subs(d.preferred_index, d.killable_index)
+                if len(deltas) > 1:
+                    return evaluate_deltas(expr, target_idx)
+            else:
+                pass
+
+        return expr
+    # nothing to do, maybe we hit a Symbol or a number
+    else:
+        return expr
