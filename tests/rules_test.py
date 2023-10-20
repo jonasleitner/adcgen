@@ -1,5 +1,5 @@
 from sympy_adc.rules import Rules
-from sympy_adc.expr_container import expr
+from sympy_adc.expr_container import Expr
 from sympy_adc.sympy_objects import AntiSymmetricTensor
 from sympy_adc.indices import get_symbols
 
@@ -28,7 +28,7 @@ class TestRules:
 
     def test_empty(self):
         term = AntiSymmetricTensor('f', (self.i,), (self.j,), 0)
-        term = expr(term)
+        term = Expr(term)
         r = Rules(forbidden_tensor_blocks={})
         new_term = r.apply(term)
         assert (new_term - term).sympy is S.Zero
@@ -39,7 +39,7 @@ class TestRules:
 
     def test_negative(self):
         term = AntiSymmetricTensor('f', (self.i,), (self.a,), 0)
-        term = expr(term)
+        term = Expr(term)
 
         r = Rules(forbidden_tensor_blocks={'V': ['ov', 'oo']})
         new_term = r.apply(term)
@@ -53,7 +53,7 @@ class TestRules:
         term1 *= AntiSymmetricTensor('f', (self.j,), (self.b,))
         term2 = AntiSymmetricTensor('V', (self.i, self.a), (self.j, self.b))
         term2 *= AntiSymmetricTensor('f', (self.i,), (self.j,))
-        terms = expr(term1 + term2)
+        terms = Expr(term1 + term2)
 
         # remove both terms
         r = Rules(forbidden_tensor_blocks={'V': ['oovv'], 'f': ['oo']})

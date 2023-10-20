@@ -6,7 +6,7 @@ from .misc import Inputerror, Singleton
 idx_base = {'occ': 'ijklmno', 'virt': 'abcdefgh', 'general': 'pqrstuvw'}
 
 
-class indices(metaclass=Singleton):
+class Indices(metaclass=Singleton):
     """Book keeping class that manages the indices in an expression.
        This ensures that for every index only a single instance exists,
        which allows to correctly identify equal indices.
@@ -118,7 +118,7 @@ class indices(metaclass=Singleton):
         """Substitute all contracted indices with new, generic indices."""
         from . import expr_container as e
 
-        def substitute_contracted(term: e.term) -> e.expr:
+        def substitute_contracted(term: e.Term) -> e.Expr:
             # count how many indices need to be replaced and get new indices
             old = {}
             for s in term.contracted:
@@ -150,9 +150,9 @@ class indices(metaclass=Singleton):
             return new_term
 
         expr = expr.expand()
-        if not isinstance(expr, e.expr):
-            expr = e.expr(expr)
-        substituted = e.expr(0, **expr.assumptions)
+        if not isinstance(expr, e.Expr):
+            expr = e.Expr(expr)
+        substituted = e.Expr(0, **expr.assumptions)
         for term in expr.terms:
             substituted += substitute_contracted(term)
         return substituted
@@ -236,7 +236,7 @@ def get_symbols(idx: str | list[str] | list[Dummy]) -> list[Dummy]:
     elif all(isinstance(i, Dummy) for i in idx):
         return idx
     elif all(isinstance(i, str) for i in idx):
-        idx_cls = indices()
+        idx_cls = Indices()
         idx = split_idx_string(idx)
         return [
             idx_cls.get_indices(i)[index_space(i)][0] for i in idx
@@ -280,7 +280,7 @@ def minimize_tensor_indices(tensor_indices: tuple,
     """Minimizes the tensor indices using the lowest available non target
        indices. Returns the minimized indices as well as the corresponding
        substitution dict."""
-    from .symmetry import permutation, permutation_product
+    from .symmetry import Permutation, PermutationProduct
 
     for target in target_idx.values():
         if not all(isinstance(s, str) for s in target):
@@ -317,5 +317,5 @@ def minimize_tensor_indices(tensor_indices: tuple,
         perm = {s: min_s, min_s: s}
         for i, other_s in enumerate(tensor_indices):
             tensor_indices[i] = perm.get(other_s, other_s)
-        permutations.append(permutation(s, min_s))
-    return tuple(tensor_indices), permutation_product(permutations)
+        permutations.append(Permutation(s, min_s))
+    return tuple(tensor_indices), PermutationProduct(permutations)

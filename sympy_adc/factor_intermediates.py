@@ -1,28 +1,28 @@
 from . import expr_container as e
 from .misc import Inputerror, cached_property
-from .eri_orbenergy import eri_orbenergy
+from .eri_orbenergy import EriOrbenergy
 from .indices import (order_substitutions, get_symbols, index_space,
                       minimize_tensor_indices)
 from .sympy_objects import AntiSymmetricTensor
-from .symmetry import lazy_term_map
+from .symmetry import LazyTermMap
 from sympy import S, Mul, Rational
 from collections import Counter, defaultdict
 
 
 def factor_intermediates(expr, types_or_names: str | list[str] = None,
-                         max_order: int = None) -> e.expr:
-    from .intermediates import intermediates
+                         max_order: int = None) -> e.Expr:
+    from .intermediates import Intermediates
     from time import perf_counter
 
-    if not isinstance(expr, e.expr):
+    if not isinstance(expr, e.Expr):
         raise Inputerror("The expression to factor needs to be provided "
-                         f"as {e.expr} instance.")
+                         f"as {e.Expr} instance.")
 
     if expr.sympy.is_number:  # nothing to factor
         return expr
 
     # get all intermediates that are about to be factored in the expr
-    itmd = intermediates()
+    itmd = Intermediates()
     if types_or_names is not None:
         if isinstance(types_or_names, str):
             itmd_to_factor = getattr(itmd, types_or_names)
@@ -41,7 +41,7 @@ def factor_intermediates(expr, types_or_names: str | list[str] = None,
           "\n", sep='')
     print(f"Trying to factor intermediates in expr of length {len(expr)}\n")
     for i, term in enumerate(expr.terms):
-        print(f"{i+1}:  {eri_orbenergy(term)}\n")
+        print(f"{i+1}:  {EriOrbenergy(term)}\n")
     print('#'*80)
     # try to factor all requested intermediates
     factored = []
@@ -54,7 +54,7 @@ def factor_intermediates(expr, types_or_names: str | list[str] = None,
         print(f"Done in {perf_counter()-start:.2f}s. {len(expr)} terms remain")
         print('-'*80, '\n')
         for i, term in enumerate(expr.terms):
-            print(f"{i+1: >{len(str(len(expr)+1))}}:  {eri_orbenergy(term)}\n")
+            print(f"{i+1: >{len(str(len(expr)+1))}}:  {EriOrbenergy(term)}\n")
         print('#'*80)
     print("\n\n", '#'*80, "\n", " "*25,
           "INTERMEDIATE FACTORIZATION FINISHED\n", '#'*80, sep='')
@@ -65,13 +65,13 @@ def factor_intermediates(expr, types_or_names: str | list[str] = None,
     print(f"\n{len(expr)} terms in the final result:")
     width = len(str(len(expr)+1))
     for i, term in enumerate(expr.terms):
-        print(f"{i+1: >{width}}: {eri_orbenergy(term)}")
+        print(f"{i+1: >{width}}: {EriOrbenergy(term)}")
     return expr
 
 
-def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
-                              itmd_data: tuple, itmd_term_map: lazy_term_map,
-                              itmd_cls) -> e.expr:
+def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
+                              itmd_data: tuple, itmd_term_map: LazyTermMap,
+                              itmd_cls) -> e.Expr:
     """Function for factoring a long intermediate, i.e., a intermediate that
        consists of more than one term."""
 
@@ -85,16 +85,16 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
     # get the default symbols of the intermediate
     itmd_default_symbols = tuple(get_symbols(itmd_cls.default_idx))
 
-    terms: list[eri_orbenergy] = list(expr.terms)
+    terms: list[EriOrbenergy] = list(expr.terms)
 
     # create a dict where all the found assignments are collected
     # {itmd_indices: {remainder: [(pref, [term_i,])]}}
     found_intermediates = defaultdict(dict)
     for term_i, term in enumerate(terms):
-        term = eri_orbenergy(term).canonicalize_sign()
+        term = EriOrbenergy(term).canonicalize_sign()
         # prescan: check that the term holds the correct tensors and
         #          denominator brackets
-        term_data = factorization_term_data(term)
+        term_data = FactorizationTermData(term)
         # description of all objects in the eri part, exponent implicitly
         # included
         obj_descr = term_data.eri_obj_descriptions
@@ -303,7 +303,7 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
 
     # iterate through the found intermediates and try to factor the itmd
     # -> first only the onces that are complete
-    factored: e.expr = 0
+    factored: e.Expr = 0
     factored_successfully = False  # whether we factored the itmd at least once
     factored_terms = set()  # keep track which terms have already been factored
     for itmd_indices, remainders in found_intermediates.items():
@@ -321,11 +321,11 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
                 # Found complete intermediate -> factor
                 print(f"\nFactoring {itmd_cls.name} in terms:")
                 for term_i in term_list:
-                    print(eri_orbenergy(terms[term_i]))
+                    print(EriOrbenergy(terms[term_i]))
                 new_term = (rem * pref *
                             itmd_cls.tensor(indices=itmd_indices,
                                             return_sympy=True))
-                print(f"result:\n{eri_orbenergy(new_term)}")
+                print(f"result:\n{EriOrbenergy(new_term)}")
 
                 factored += new_term
                 factored_terms.update(term_list)
@@ -362,8 +362,8 @@ def _factor_long_intermediate(expr: e.expr, itmd: list[eri_orbenergy],
     return factored
 
 
-def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
-                               itmd_data, itmd_cls) -> e.expr:
+def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
+                               itmd_data, itmd_cls) -> e.Expr:
     """Function for factoring a short intermediate, i.e., an intermediate that
        consists of a single term."""
 
@@ -375,11 +375,11 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
 
     terms = expr.terms
 
-    factored: e.expr = 0  # factored expression that is returned
+    factored: e.Expr = 0  # factored expression that is returned
     factored_sucessfully = False  # bool to indicate whether we factored
     for term in terms:
-        term = eri_orbenergy(term).canonicalize_sign()
-        data = factorization_term_data(term)
+        term = EriOrbenergy(term).canonicalize_sign()
+        data = FactorizationTermData(term)
         # check if the current term and the itmd are compatible:
         #  - check if all necessary objects occur in the eri part
         obj_descr = data.eri_obj_descriptions
@@ -454,7 +454,7 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
         # now start with factoring
         # - extract the remainder that survives the factorization (excluding
         #   the prefactor)
-        remainder: e.expr = _get_remainder(term, variant_data['eri_i'],
+        remainder: e.Expr = _get_remainder(term, variant_data['eri_i'],
                                            variant_data['denom_i'])
         # - find the itmd indices:
         #   for short itmds it is not necessary to minimize the itmd indices
@@ -482,7 +482,7 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
         if 0 in min_overlap:
             # factor again and ensure that the factored result has the
             # the current assumptions
-            remainder = e.expr(
+            remainder = e.Expr(
                 _factor_short_intermediate(remainder, itmd, itmd_data,
                                            itmd_cls).sympy,
                 **remainder.assumptions
@@ -493,7 +493,7 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
                                          return_sympy=True))
         factored_sucessfully = True
         print(f"\nFactoring {itmd_cls.name} in:\n{term}\n"
-              f"result:\n{eri_orbenergy(factored_term)}")
+              f"result:\n{EriOrbenergy(factored_term)}")
         factored += factored_term
     # if we factored the itmd sucessfully it might be necessary to add
     # the itmd tensor to the sym or antisym tensors
@@ -510,15 +510,15 @@ def _factor_short_intermediate(expr: e.expr, itmd: eri_orbenergy,
     return factored
 
 
-def _get_remainder(term: eri_orbenergy, obj_i: list[int],
-                   denom_i: list[int]) -> e.expr:
+def _get_remainder(term: EriOrbenergy, obj_i: list[int],
+                   denom_i: list[int]) -> e.Expr:
     """Returns the remainding part of the provided term that survives the
        factorization of the itmd, excluding the prefactor!
        Note that the returned remainder can still hold a prefactor of -1,
        because sympy is not maintaining the canonical sign in the denominator.
        """
-    eri: e.expr = term.cancel_eri_objects(obj_i)
-    denom: e.expr = term.cancel_denom_brackets(denom_i)
+    eri: e.Expr = term.cancel_eri_objects(obj_i)
+    denom: e.Expr = term.cancel_denom_brackets(denom_i)
     rem = term.num * eri / denom
     # explicitly set the target indices, because the remainder not necessarily
     # has to contain all of them.
@@ -527,7 +527,7 @@ def _get_remainder(term: eri_orbenergy, obj_i: list[int],
     return rem
 
 
-def _validate_indices(remainder: e.expr, itmd_indices: tuple):
+def _validate_indices(remainder: e.Expr, itmd_indices: tuple):
     """Ensure that the variant generates a valid remainder by checking that
        that all indices that occur in the numerator or denominator of the
        remainder also occur in the ERI part of the remainder.
@@ -538,7 +538,7 @@ def _validate_indices(remainder: e.expr, itmd_indices: tuple):
        indices k and c. They are not allowed to occur anywhere else in the
        term, i.e., also not in the denominator or numerator.
        """
-    remainder = eri_orbenergy(remainder)
+    remainder = EriOrbenergy(remainder)
     required_frac_idx = set(remainder.num.idx) | set(remainder.denom.idx)
     missing_idx = (
         required_frac_idx - (set(remainder.eri.idx) | set(itmd_indices))
@@ -556,13 +556,13 @@ def _validate_indices(remainder: e.expr, itmd_indices: tuple):
         )
 
 
-def _map_on_other_terms(itmd_i: int, remainder: e.expr,
+def _map_on_other_terms(itmd_i: int, remainder: e.Expr,
                         itmd_term_map, itmd_indices: tuple,
                         itmd_default_idx: tuple[str]):
     """Checks on which other itmd_terms the current itmd_term can be mapped if
        the symmetry of the remainder is taken into account. A set of all
        terms, the current term contributes to is returned."""
-    from .symmetry import permutation, permutation_product
+    from .symmetry import Permutation, PermutationProduct
 
     # find the itmd indices that are no target indices of the overall term
     # -> those are available for permutations
@@ -570,7 +570,7 @@ def _map_on_other_terms(itmd_i: int, remainder: e.expr,
     idx_to_permute = {s for s in itmd_indices if s not in target_indices}
     # copy the remainder and set the previously determined
     # indices as target indices
-    rem: e.expr = remainder.copy()
+    rem: e.Expr = remainder.copy()
     rem.set_target_idx(idx_to_permute)
     # create a substitution dict to map the minimal indices to the
     # default indices of the intermediate
@@ -580,8 +580,8 @@ def _map_on_other_terms(itmd_i: int, remainder: e.expr,
     matching_itmd_terms: set[int] = {itmd_i}
     for perms, perm_factor in rem.terms[0].symmetry(only_target=True).items():
         # translate the permutations to the default indices
-        perms = permutation_product(
-            permutation(minimal_to_default[p], minimal_to_default[q])
+        perms = PermutationProduct(
+            Permutation(minimal_to_default[p], minimal_to_default[q])
             for p, q in perms
         )
         # look up the translated symmetry in the term map
@@ -591,7 +591,7 @@ def _map_on_other_terms(itmd_i: int, remainder: e.expr,
     return matching_itmd_terms
 
 
-def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
+def _compare_eri_parts(term: EriOrbenergy, itmd_term: EriOrbenergy,
                        term_data=None, itmd_term_data=None) -> list:
     """Compare the eri parts of two terms and return the substitutions
            that are necessary to transform the itmd_eri."""
@@ -607,10 +607,10 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
 
     # generate term_data if not provided
     if term_data is None:
-        term_data = factorization_term_data(term)
+        term_data = FactorizationTermData(term)
     # generate itmd_data if not provided
     if itmd_term_data is None:
-        itmd_term_data = factorization_term_data(itmd_term)
+        itmd_term_data = FactorizationTermData(itmd_term)
 
     relevant_itmd_data = zip(enumerate(itmd_term_data.eri_pattern),
                              itmd_term_data.eri_obj_indices,
@@ -701,7 +701,7 @@ def _compare_eri_parts(term: eri_orbenergy, itmd_term: eri_orbenergy,
     return valid if valid else None
 
 
-def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
+def _compare_terms(term: EriOrbenergy, itmd_term: EriOrbenergy,
                    term_data=None, itmd_term_data=None) -> None | list:
     """Compare two terms and return a substitution dict that makes the
         itmd_term equal to the term. Also the indices of the objects in the
@@ -747,7 +747,7 @@ def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
         for itmd_denom_i, denom_idx_list in compatible_brackets.items():
             itmd_bk = itmd_brackets[itmd_denom_i]
             # extract base and exponent of the bracket
-            if isinstance(itmd_bk, e.expr):
+            if isinstance(itmd_bk, e.Expr):
                 itmd_bk_exponent = 1
                 itmd_bk = itmd_bk.sympy
             else:  # polynom  -> Pow object
@@ -765,7 +765,7 @@ def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
                     continue
                 bk = brackets[denom_i]
                 # extract the base of the bracket
-                bk = bk.sympy if isinstance(bk, e.expr) else bk.extract_pow
+                bk = bk.sympy if isinstance(bk, e.Expr) else bk.extract_pow
                 if sub_itmd_bk - bk is S.Zero:  # brackets are equal?
                     denom_matches.extend(denom_i for _ in
                                          range(itmd_bk_exponent))
@@ -783,7 +783,7 @@ def _compare_terms(term: eri_orbenergy, itmd_term: eri_orbenergy,
     return variants if variants else None
 
 
-def _compare_remainder(remainder: e.expr, ref_remainder: e.expr,
+def _compare_remainder(remainder: e.Expr, ref_remainder: e.Expr,
                        itmd_indices: tuple) -> int | None:
     """Try to map remainder onto ref_remainder. Return None if it is not
        possible. If the two remainders can be mapped, the required factor (+-1)
@@ -840,11 +840,11 @@ def _compare_remainder(remainder: e.expr, ref_remainder: e.expr,
     return 1 if factored[0].sympy is S.Zero else -1
 
 
-class factorization_term_data:
+class FactorizationTermData:
     """Class that extracts some data needed for the intermediate factorization.
        """
 
-    def __init__(self, term: eri_orbenergy):
+    def __init__(self, term: EriOrbenergy):
         self._term = term
 
     @cached_property

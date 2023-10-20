@@ -7,14 +7,14 @@ from sympy_adc.func import import_from_sympy_latex
 
 @pytest.fixture(scope='session')
 def cls_instances():
-    from sympy_adc.groundstate import Operators, ground_state
-    from sympy_adc.isr import intermediate_states
-    from sympy_adc.secular_matrix import secular_matrix
+    from sympy_adc.groundstate import Operators, GroundState
+    from sympy_adc.isr import IntermediateStates
+    from sympy_adc.secular_matrix import SecularMatrix
 
     mp_op = Operators(variant='mp')
-    mp = ground_state(mp_op, first_order_singles=False)
-    isr_pp = intermediate_states(mp, variant='pp')
-    m_pp = secular_matrix(isr_pp)
+    mp = GroundState(mp_op, first_order_singles=False)
+    isr_pp = IntermediateStates(mp, variant='pp')
+    m_pp = SecularMatrix(isr_pp)
     return {
         'mp': {
             'op': mp_op,

@@ -1,9 +1,9 @@
-from sympy_adc.expr_container import expr
+from sympy_adc.expr_container import Expr
 from sympy_adc.simplify import simplify
 import sympy_adc.sort_expr as sort
 from sympy_adc.reduce_expr import reduce_expr
 from sympy_adc.factor_intermediates import factor_intermediates
-from sympy_adc.eri_orbenergy import eri_orbenergy
+from sympy_adc.eri_orbenergy import EriOrbenergy
 
 from sympy import S
 
@@ -22,12 +22,12 @@ class TestSecularMatrix():
 
         # compute the raw matrix block
         m = cls_instances['mp']['m'].isr_matrix_block(order, block, indices)
-        m = expr(m)
+        m = Expr(m)
         ref_m = ref['m']
         assert simplify(m - ref_m).sympy is S.Zero
 
         # assume a real orbital basis
-        m = expr(m.sympy, real=True).substitute_contracted()
+        m = Expr(m.sympy, real=True).substitute_contracted()
         ref_m = ref['real_m'].make_real()
         assert simplify(m - ref_m).sympy is S.Zero
 
@@ -43,19 +43,19 @@ class TestSecularMatrix():
             block_expr = reduce_expr(block_expr.diagonalize_fock())
             # check that we cancelled all orbital energy numerators
             for term in block_expr.terms:
-                term = eri_orbenergy(term)
+                term = EriOrbenergy(term)
                 print(term)
                 assert term.num.sympy in [S.One, S.Zero]
             # factor intermediates
             block_expr = factor_intermediates(block_expr, max_order=order-1)
             # check that we removed all denominators
             for term in block_expr.terms:
-                term = eri_orbenergy(term)
+                term = EriOrbenergy(term)
                 print(term)
                 assert term.denom.sympy is S.One
             # compare to reference
             ref_block_expr = ref["real_factored_m"]["_".join(delta_sp)]
-            ref_block_expr = expr(ref_block_expr.sympy,
+            ref_block_expr = Expr(ref_block_expr.sympy,
                                   **block_expr.assumptions)
             assert simplify(block_expr - ref_block_expr).sympy is S.Zero
 
@@ -66,7 +66,7 @@ class TestSecularMatrix():
             exploited_perm_sym = sort.exploit_perm_sym(
                 block_expr, target_indices=indices, bra_ket_sym=bra_ket_sym
             )
-            re_expanded_block = expr(0, **block_expr.assumptions)
+            re_expanded_block = Expr(0, **block_expr.assumptions)
             for perm_sym, sub_expr in exploited_perm_sym.items():
                 # ensure that we can reexpand to the original expr
                 re_expanded_block += sub_expr.copy()

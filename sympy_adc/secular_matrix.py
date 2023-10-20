@@ -3,25 +3,25 @@ from sympy import sqrt, S
 
 from math import factorial
 
-from .indices import repeated_indices
+from .indices import repeated_indices, Indices
 from .misc import (Inputerror, cached_member, transform_to_tuple,
                    process_arguments, validate_input)
 from .func import gen_term_orders
 from .simplify import simplify
-from .expr_container import expr
+from .expr_container import Expr
 from .rules import Rules
 
 
-class secular_matrix:
+class SecularMatrix:
     def __init__(self, isr):
-        from .isr import intermediate_states
-        from .indices import indices
-        if not isinstance(isr, intermediate_states):
-            raise Inputerror("Invalid intermediate_states object.")
+        from .isr import IntermediateStates
+
+        if not isinstance(isr, IntermediateStates):
+            raise Inputerror("Invalid intermediate states object.")
         self.isr = isr
         self.gs = isr.gs
         self.h = isr.gs.h
-        self.indices = indices()
+        self.indices = Indices()
 
     def hamiltonian(self, order: int, subtract_gs: bool):
         h = {0: self.h.h0, 1: self.h.h1}
@@ -79,7 +79,7 @@ class secular_matrix:
             # evaluate_deltas should not be necessary here, because norm only
             # contains contracted indices
             res += (norm * matrix).expand()
-        return simplify(expr(res)).sympy
+        return simplify(Expr(res)).sympy
 
     @process_arguments
     @cached_member
@@ -132,7 +132,7 @@ class secular_matrix:
                 matrix += itmd
             # evaluate deltas should not be necessary here
             res += (norm * matrix).expand()
-        return simplify(expr(res)).sympy
+        return simplify(Expr(res)).sympy
 
     @process_arguments
     @cached_member
@@ -280,7 +280,7 @@ class secular_matrix:
         # prefactors: I think there is no need for any further prefactors
         #  E = 1/sqrt(l) * 1/sqrt(r) sum_I,J  X_I M_I,J Y_J
         #    -> already included in the mvp function
-        return simplify(expr(left * mvp)).sympy
+        return simplify(Expr(left * mvp)).sympy
 
     @process_arguments
     @cached_member

@@ -16,10 +16,10 @@ class Rules:
         if self.forbidden_blocks is None:
             return expr
 
-        if not isinstance(expr, e.expr):
-            raise TypeError(f"Expression needs to be provided as {e.expr}")
+        if not isinstance(expr, e.Expr):
+            raise TypeError(f"Expression needs to be provided as {e.Expr}")
 
-        res = e.expr(0, **expr.assumptions)
+        res = e.Expr(0, **expr.assumptions)
         for term in expr.terms:
             # remove the forbidden blocks of tensors
             if any(obj.name in self.forbidden_blocks

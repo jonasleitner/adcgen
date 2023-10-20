@@ -61,18 +61,18 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
                          "options are 'low', 'medium' or 'high'.")
 
     expr = expr.expand()
-    if not isinstance(expr, e.expr):
-        expr = e.expr(expr)
+    if not isinstance(expr, e.Expr):
+        expr = e.Expr(expr)
 
     filtered = Add(*[term.sympy for term in expr.terms if check_term(term)])
-    return e.expr(filtered, **expr.assumptions)
+    return e.Expr(filtered, **expr.assumptions)
 
 
-def find_compatible_terms(terms: list[e.term]):
+def find_compatible_terms(terms: list[e.Term]):
     from itertools import product, combinations
 
     def compare_terms(pattern: dict, other_pattern: dict, target: tuple,
-                      term: e.term, other_term: e.term) -> None | list:
+                      term: e.Term, other_term: e.Term) -> None | list:
         # function to compare two terms that are compatible, i.e., have the
         # same amount of indices in each space, the same amount and type of
         # objects and the same target indices
@@ -170,7 +170,7 @@ def find_compatible_terms(terms: list[e.term]):
                     repeating_idx.append((repeated, *sorted([descr1, descr2])))
         return tuple(sorted(repeating_idx))
 
-    if not all(isinstance(term, e.term) for term in terms):
+    if not all(isinstance(term, e.Term) for term in terms):
         raise Inputerror("Expected terms as a list of term Containers.")
 
     # prefilter terms according to
@@ -242,7 +242,7 @@ def find_compatible_terms(terms: list[e.term]):
     return compatible_terms
 
 
-def simplify(expr: e.expr) -> e.expr:
+def simplify(expr: e.Expr) -> e.Expr:
     """Simplify an expression by renaming indices. The new index names are
        determined by establishing a mapping between the indices in different
        terms. If all indices in two terms share the same pattern (essentially
@@ -250,9 +250,9 @@ def simplify(expr: e.expr) -> e.expr:
        rename the indices in one of the two terms.
        """
 
-    if not isinstance(expr, e.expr):
+    if not isinstance(expr, e.Expr):
         raise Inputerror("The expression to simplify needs to be provided as "
-                         f"{e.expr} object.")
+                         f"{e.Expr} object.")
 
     expr = expr.expand()
 
@@ -273,13 +273,13 @@ def simplify(expr: e.expr) -> e.expr:
     return res
 
 
-def remove_tensor(expr: e.expr, t_name: str):
+def remove_tensor(expr: e.Expr, t_name: str):
     """Removes the given tensor in each term of an expr by reverting the
        contraction.
        """
     from .sympy_objects import AntiSymmetricTensor, NonSymmetricTensor
 
-    def remove(term: e.term, tensor: e.obj, target_indices: dict) -> e.expr:
+    def remove(term: e.Term, tensor: e.Obj, target_indices: dict) -> e.Expr:
         # - get the tensor indices
         indices = list(tensor.idx)
         # print(f"\nRemoving {tensor} with indices {indices}.")
@@ -385,7 +385,7 @@ def remove_tensor(expr: e.expr, t_name: str):
         # print(indices)
         # - apply the index permuations for minimizig the indices
         #   also to the term
-        term: e.expr = term.permute(*perms)
+        term: e.Expr = term.permute(*perms)
         assert term.sympy is not S.Zero
         # - build a new tensor that holds the minimized indices
         #   further minimization might be possible taking the tensor
@@ -395,19 +395,19 @@ def remove_tensor(expr: e.expr, t_name: str):
             bra_ket_sym = tensor.bra_ket_sym
             if tensor.is_amplitude:  # indices = lower, upper
                 n_l = len(tensor.lower)
-                tensor = e.expr(
+                tensor = e.Expr(
                     AntiSymmetricTensor(t_name, indices[n_l:],
                                         indices[:n_l], bra_ket_sym)
                 ).terms[0]
             else:  # indices = upper, lower
                 n_u = len(tensor.upper)
-                tensor = e.expr(
+                tensor = e.Expr(
                     AntiSymmetricTensor(t_name, indices[:n_u],
                                         indices[n_u:], bra_ket_sym)
                 ).terms[0]
         elif isinstance(tensor.sympy, NonSymmetricTensor):
             bra_ket_sym = None
-            tensor = e.expr(
+            tensor = e.Expr(
                 NonSymmetricTensor(tensor.symbol.name, indices)
             ).terms[0]
         else:
@@ -474,11 +474,11 @@ def remove_tensor(expr: e.expr, t_name: str):
         # - reduce the number of terms as much as possible
         return simplify(symmetrized_term)
 
-    def process_term(term: e.term, t_name):
+    def process_term(term: e.Term, t_name):
         # print(f"\nProcessing term {term}")
         # collect all occurences of the desired tensor
         tensors = []
-        remaining_term = e.expr(1, **term.assumptions)
+        remaining_term = e.Expr(1, **term.assumptions)
         for obj in term.objects:
             if obj.name == t_name:
                 tensors.extend(obj for _ in range(obj.exponent))
@@ -500,7 +500,7 @@ def remove_tensor(expr: e.expr, t_name: str):
         tensor = tensors[0]
         if (exponent := tensor.exponent) > 1:  # lower exponent by 1
             base = tensor.extract_pow
-            tensor = e.expr(base, **tensor.assumptions).terms[0].objects[0]
+            tensor = e.Expr(base, **tensor.assumptions).terms[0].objects[0]
             remaining_term *= Pow(base, exponent - 1)
         elif exponent < 1:
             raise NotImplementedError("Did not implement the case of removing "
@@ -530,8 +530,8 @@ def remove_tensor(expr: e.expr, t_name: str):
                     ret[key] += contrib
             return ret
 
-    if not isinstance(expr, e.expr):
-        raise Inputerror(f"The expression needs to be provided as {e.expr} "
+    if not isinstance(expr, e.Expr):
+        raise Inputerror(f"The expression needs to be provided as {e.Expr} "
                          "object.")
     if not isinstance(t_name, str):
         raise Inputerror("Tensor name needs to be provided as string.")

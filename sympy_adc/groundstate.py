@@ -3,20 +3,20 @@ from sympy.physics.secondquant import NO, F, Fd, wicks
 from math import factorial
 
 from .sympy_objects import AntiSymmetricTensor
-from .indices import indices, n_ov_from_space
+from .indices import Indices, n_ov_from_space
 from .misc import (cached_member, Inputerror,
                    process_arguments, transform_to_tuple, validate_input)
 from .simplify import simplify
 from .func import gen_term_orders
-from .expr_container import expr
+from .expr_container import Expr
 from .operators import Operators
 
 
-class ground_state:
+class GroundState:
     def __init__(self, hamiltonian, first_order_singles=False):
         if not isinstance(hamiltonian, Operators):
             raise Inputerror('Invalid hamiltonian.')
-        self.indices = indices()
+        self.indices = Indices()
         self.h = hamiltonian
         self.singles = first_order_singles
 
@@ -39,7 +39,7 @@ class ground_state:
         # option 2: simplify the energy expression and replace the indices with
         #           new, generic indices
         # guess option 2 is nicer, because energy is more readable and shorter
-        e = simplify(expr(e))
+        e = simplify(Expr(e))
         e = self.indices.substitute_with_generic(e)
         print(f"E^({order}) = {e}")
         return e.sympy
@@ -197,7 +197,7 @@ class ground_state:
             res += wicks(i1, keep_only_fully_contracted=True,
                          simplify_kronecker_deltas=True)
         # simplify the result by permuting contracted indices
-        res = simplify(expr(res))
+        res = simplify(Expr(res))
         print(f"Build GS S^({order}) = {res}")
         return res.sympy
 
@@ -238,7 +238,7 @@ class ground_state:
                 d += wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
             res += (norm * d).expand()
-        return simplify(expr(res)).sympy
+        return simplify(Expr(res)).sympy
 
     def norm_factor(self, order):
         """Computes all nth order terms of:

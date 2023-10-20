@@ -143,7 +143,7 @@ def import_from_sympy_latex(expr_string: str):
 
     expr_string = expr_string.strip()
     if not expr_string:
-        return e.expr(0)
+        return e.Expr(0)
 
     terms = split_terms(expr_string)
     if terms[0][0] not in ['+', '-']:
@@ -168,7 +168,7 @@ def import_from_sympy_latex(expr_string: str):
         if denom is not None:
             sympy_term /= import_term(denom)
         sympy_expr += sympy_term
-    return e.expr(sympy_expr)
+    return e.Expr(sympy_expr)
 
 
 def evaluate_deltas(expr, target_idx=None):

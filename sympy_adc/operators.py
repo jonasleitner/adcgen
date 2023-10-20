@@ -1,6 +1,6 @@
 from .misc import (cached_property, process_arguments, cached_member,
                    validate_input)
-from .indices import indices
+from .indices import Indices
 from .rules import Rules
 from .sympy_objects import AntiSymmetricTensor
 
@@ -10,7 +10,7 @@ from sympy.physics.secondquant import Fd, F
 
 class Operators:
     def __init__(self, variant='mp'):
-        self._indices = indices()
+        self._indices = Indices()
         self._variant = variant
 
     @cached_property
@@ -56,7 +56,7 @@ class Operators:
 
     @staticmethod
     def mp_h0():
-        idx_cls = indices()
+        idx_cls = Indices()
         p, q = idx_cls.get_indices('pq')['general']
         f = AntiSymmetricTensor('f', (p,), (q,))
         pq = Fd(p) * F(q)
@@ -66,7 +66,7 @@ class Operators:
 
     @staticmethod
     def mp_h1():
-        idx_cls = indices()
+        idx_cls = Indices()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H1
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
@@ -80,7 +80,7 @@ class Operators:
 
     @staticmethod
     def re_h0():
-        idx_cls = indices()
+        idx_cls = Indices()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H0
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
@@ -103,7 +103,7 @@ class Operators:
 
     @staticmethod
     def re_h1():
-        idx_cls = indices()
+        idx_cls = Indices()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H0
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
@@ -122,3 +122,8 @@ class Operators:
             'V': ['oooo', 'ovov', 'vvvv']
         })
         return h1, rules
+
+    def __eq__(self, other):
+        if isinstance(other, Operators):
+            return self._variant == other._variant
+        return False

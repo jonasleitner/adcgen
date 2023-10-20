@@ -11,7 +11,7 @@ contraction_data = namedtuple('contraction_data',
                                'contracted', 'target', 'scaling'])
 
 
-def generate_code(expr: e.expr, target_indices: str, backend: str,
+def generate_code(expr: e.Expr, target_indices: str, backend: str,
                   bra_ket_sym: int = 0, max_tensor_dim: int = None,
                   optimize_contractions: bool = True) -> str:
     """Transforms an expression to contractions using either einsum (python)
@@ -20,7 +20,7 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
        string in the form '{comp_scaling} / {mem_scaling}'.
        """
 
-    def unoptimized_contraction(term: e.term, target_indices: str):
+    def unoptimized_contraction(term: e.Term, target_indices: str):
         from .indices import index_space, get_symbols
         # construct a contraction_data object for the simulötaneous,
         # unoptimized contraction of all objects of a term.
@@ -62,7 +62,7 @@ def generate_code(expr: e.expr, target_indices: str, backend: str,
         return [contraction_data(tuple(o_idx), tuple(indices), tuple(names),
                                  tuple(contracted), tuple(target), scal)]
 
-    if not isinstance(expr, e.expr):
+    if not isinstance(expr, e.Expr):
         raise Inputerror("The expression needs to be provided as an instance "
                          "of the expr container.")
 

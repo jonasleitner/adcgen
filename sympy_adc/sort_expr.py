@@ -3,12 +3,12 @@ from .misc import Inputerror
 from .indices import index_space, get_symbols, idx_sort_key
 
 
-def by_delta_types(expr: e.expr) -> dict[tuple[str], e.expr]:
+def by_delta_types(expr: e.Expr) -> dict[tuple[str], e.Expr]:
     """Sort the terms in an expression according to the space of the deltas
        contained in the term."""
     expr = expr.expand()
-    if not isinstance(expr, e.expr):
-        expr = e.expr(expr)
+    if not isinstance(expr, e.Expr):
+        expr = e.Expr(expr)
     ret = {}
     for term in expr.terms:
         d_spaces = tuple(sorted([o.space for o in term.deltas
@@ -16,18 +16,18 @@ def by_delta_types(expr: e.expr) -> dict[tuple[str], e.expr]:
         if not d_spaces:
             d_spaces = ('none',)
         if d_spaces not in ret:
-            ret[d_spaces] = e.expr(0, **term.assumptions)
+            ret[d_spaces] = e.Expr(0, **term.assumptions)
         ret[d_spaces] += term
     return ret
 
 
-def by_delta_indices(expr: e.expr) -> dict[tuple[str], e.expr]:
+def by_delta_indices(expr: e.Expr) -> dict[tuple[str], e.Expr]:
     """Sort the terms in an expression according to the indices on the
        KroneckerDeltas in the term."""
     from .indices import extract_names
     expr = expr.expand()
-    if not isinstance(expr, e.expr):
-        expr = e.expr(expr)
+    if not isinstance(expr, e.Expr):
+        expr = e.Expr(expr)
     ret = {}
     for term in expr.terms:
         d_idx = tuple(sorted(
@@ -37,13 +37,13 @@ def by_delta_indices(expr: e.expr) -> dict[tuple[str], e.expr]:
         if not d_idx:
             d_idx = ('none',)
         if d_idx not in ret:
-            ret[d_idx] = e.expr(0, **term.assumptions)
+            ret[d_idx] = e.Expr(0, **term.assumptions)
         ret[d_idx] += term
     return ret
 
 
-def by_tensor_block(expr: e.expr, t_string: str,
-                    bra_ket_sym: int = None) -> dict[tuple[str], e.expr]:
+def by_tensor_block(expr: e.Expr, t_string: str,
+                    bra_ket_sym: int = None) -> dict[tuple[str], e.Expr]:
     """Sorts the terms in an expression according to the blocks of a tensor,
        e.g. collect all terms that define the 'oo' block of the density matrix.
        If the desired tensor occures more than once in a term, the sorted list
@@ -52,8 +52,8 @@ def by_tensor_block(expr: e.expr, t_string: str,
     if not isinstance(t_string, str):
         raise Inputerror("Tensor name must be provided as string.")
     expr = expr.expand()
-    if not isinstance(expr, e.expr):
-        expr = e.expr(expr)
+    if not isinstance(expr, e.Expr):
+        expr = e.Expr(expr)
     # ckeck that there is no contradiction with the bra_ket symmetry and
     # set the symmetry in the expr if it is not already set
     if bra_ket_sym is not None:
@@ -86,12 +86,12 @@ def by_tensor_block(expr: e.expr, t_string: str,
         if not blocks:
             blocks = ("none",)
         if blocks not in ret:
-            ret[blocks] = e.expr(0, **term.assumptions)
+            ret[blocks] = e.Expr(0, **term.assumptions)
         ret[blocks] += term
     return ret
 
 
-def by_tensor_target_space(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr]:  # noqa E501
+def by_tensor_target_space(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Expr]:  # noqa E501
     """Sorts the terms in an expression according to the number and type of
        target indices on a specified tensor, e.g. f_cc Y_ij^ac -> if sorting
        according to Y: oov; if sorting acording to f: none.
@@ -100,8 +100,8 @@ def by_tensor_target_space(expr: e.expr, t_string: str) -> dict[tuple[str], e.ex
     if not isinstance(t_string, str):
         raise Inputerror("Tensor name must be provided as string.")
     expr = expr.expand()
-    if not isinstance(expr, e.expr):
-        expr = e.expr(expr)
+    if not isinstance(expr, e.Expr):
+        expr = e.Expr(expr)
 
     ret = {}
     for term in expr.terms:
@@ -124,15 +124,15 @@ def by_tensor_target_space(expr: e.expr, t_string: str) -> dict[tuple[str], e.ex
         ret[key] += term
     return ret
 
-def by_tensor_target_idx(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr]:  # noqa E501
+def by_tensor_target_idx(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Expr]:  # noqa E501
     """Sorts the terms in an expression according to the target indices on
        the specified tensor."""
 
     if not isinstance(t_string, str):
         raise Inputerror("Tensor name must be provided as string.")
     expr = expr.expand()
-    if not isinstance(expr, e.expr):
-        expr = e.expr(expr)
+    if not isinstance(expr, e.Expr):
+        expr = e.Expr(expr)
 
     ret = {}
     for term in expr.terms:
@@ -156,8 +156,8 @@ def by_tensor_target_idx(expr: e.expr, t_string: str) -> dict[tuple[str], e.expr
     return ret
 
 
-def exploit_perm_sym(expr: e.expr, target_indices: str = None,
-                     bra_ket_sym: int = 0) -> dict[tuple, e.expr]:
+def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
+                     bra_ket_sym: int = 0) -> dict[tuple, e.Expr]:
     """Reduces the number of terms in an expression by exploiting its
        symmetry, i.e., splits the expression in sub expressions that
        are assigned to specific permutations. Applying those permutations
@@ -170,30 +170,30 @@ def exploit_perm_sym(expr: e.expr, target_indices: str = None,
        ph/ph block of the secular matrix with ij-ab sym.
        """
     from .sympy_objects import AntiSymmetricTensor
-    from .eri_orbenergy import eri_orbenergy
+    from .eri_orbenergy import EriOrbenergy
     from .simplify import simplify
     from .reduce_expr import factor_eri_parts, factor_denom
     from itertools import chain
     from sympy import S
     from collections import defaultdict
 
-    def simplify_terms_with_denom(sub_expr: e.expr):
+    def simplify_terms_with_denom(sub_expr: e.Expr):
         factored = chain.from_iterable(
             factor_denom(sub_e) for sub_e in factor_eri_parts(sub_expr)
         )
-        ret = e.expr(0, **sub_expr.assumptions)
+        ret = e.Expr(0, **sub_expr.assumptions)
         for term in factored:
             ret += term.factor()
         return ret
 
-    if not isinstance(expr, e.expr):
+    if not isinstance(expr, e.Expr):
         raise Inputerror("Expression needs to be provided as expr instance.")
 
     if expr.sympy.is_number:
         return {tuple(): expr}
 
-    expr: e.expr = expr.expand()
-    terms: list[e.term] = expr.terms
+    expr: e.Expr = expr.expand()
+    terms: list[e.Term] = expr.terms
 
     # check that each term in the expr contains the same target indices
     ref_target = terms[0].target
@@ -227,14 +227,14 @@ def exploit_perm_sym(expr: e.expr, target_indices: str = None,
     # if no target indices have been provided all indices are in upper
     # -> bra ket sym is irrelevant
     tensor = AntiSymmetricTensor('x', upper, lower, bra_ket_sym)
-    symmetry = e.expr(tensor).terms[0].symmetry()
+    symmetry = e.Expr(tensor).terms[0].symmetry()
 
     # prefilter the terms according to the contained objects (name, space, exp)
     # and if a denominator is present -> number and length of the brackets
     filtered_terms = defaultdict(list)
     has_denom: list[bool] = []
     for term_i, term in enumerate(terms):
-        term = eri_orbenergy(term)
+        term = EriOrbenergy(term)
         has_denom.append(not term.denom.is_number)
         eri_descr: tuple[str] = tuple(sorted(
             o.description(include_target_idx=False)
@@ -276,7 +276,7 @@ def exploit_perm_sym(expr: e.expr, target_indices: str = None,
         for term_i in term_idx_list:
             if term_i in removed_terms:
                 continue
-            term: e.expr = terms[term_i]
+            term: e.Expr = terms[term_i]
             found_sym = []
             for perms, factor in symmetry.items():
                 # apply the permutations to the current term

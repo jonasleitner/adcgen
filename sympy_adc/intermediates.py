@@ -1,12 +1,12 @@
 from .indices import (
     get_symbols, index_space, order_substitutions, idx_sort_key
 )
-from .indices import indices as idx_cls
+from .indices import Indices as idx_cls
 from .misc import Inputerror, Singleton, cached_property, cached_member
 from . import expr_container as e
-from .eri_orbenergy import eri_orbenergy
+from .eri_orbenergy import EriOrbenergy
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
-from .symmetry import lazy_term_map
+from .symmetry import LazyTermMap
 
 from sympy import S, Dummy, Rational, Pow
 
@@ -16,9 +16,9 @@ from collections import namedtuple
 base_expr = namedtuple('base_expr', ['expr', 'target', 'contracted'])
 
 
-class intermediates(metaclass=Singleton):
+class Intermediates(metaclass=Singleton):
     def __init__(self):
-        self._registered: dict = registered_intermediate()._registry
+        self._registered: dict = RegisteredIntermediate()._registry
         self._available: dict = {
             name: obj for objects in self._registered.values()
             for name, obj in objects.items()
@@ -45,7 +45,7 @@ class intermediates(metaclass=Singleton):
                                  "available.")
 
 
-class registered_intermediate:
+class RegisteredIntermediate:
     _registry: dict[str, dict[str]] = {}
 
     def __init_subclass__(cls):
@@ -145,7 +145,7 @@ class registered_intermediate:
                              f"{expanded_itmd.expr}.")
 
         if not return_sympy:
-            itmd = e.expr(itmd, target_idx=idx)
+            itmd = e.Expr(itmd, target_idx=idx)
         return itmd
 
     def tensor(self, indices: str = None, upper: str = None, lower: str = None,
@@ -160,10 +160,10 @@ class registered_intermediate:
         else:
             if isinstance(tensor, AntiSymmetricTensor):
                 if tensor.bra_ket_sym is S.One:  # bra ket symmetry
-                    return e.expr(tensor, sym_tensors=[tensor.symbol.name])
+                    return e.Expr(tensor, sym_tensors=[tensor.symbol.name])
                 elif tensor.bra_ket_sym is S.NegativeOne:  # bra ket anisym
-                    return e.expr(tensor, antisym_tensors=[tensor.symbol.name])
-            return e.expr(tensor)
+                    return e.Expr(tensor, antisym_tensors=[tensor.symbol.name])
+            return e.Expr(tensor)
 
     @cached_property
     def tensor_symmetry(self) -> dict:
@@ -173,7 +173,7 @@ class registered_intermediate:
 
     @cached_member
     def itmd_term_map(self,
-                      factored_itmds: tuple[str] = tuple()) -> lazy_term_map:
+                      factored_itmds: tuple[str] = tuple()) -> LazyTermMap:
         """Returns a map that lazily determines which permutation of target
            indices map terms in the intermediate definition onto other terms.
            Since the form (and order of terms) depends on the previsously
@@ -182,10 +182,10 @@ class registered_intermediate:
            """
         # - load the appropriate version of the intermediate
         itmd = self._prepare_itmd(factored_itmds)
-        return lazy_term_map(itmd)
+        return LazyTermMap(itmd)
 
     @cached_member
-    def _prepare_itmd(self, factored_itmds: list[str] = tuple()) -> e.expr:
+    def _prepare_itmd(self, factored_itmds: list[str] = tuple()) -> e.Expr:
         """"Generate the default variant of the intermediate, simplify it
             as much as possible and factor all given intermediates in the
             provided order."""
@@ -205,11 +205,11 @@ class registered_intermediate:
 
         # build the base version of the itmd and simplify it
         # - factor eri and denominator
-        itmd: e.expr = self.expand_itmd().expand().make_real()
+        itmd: e.Expr = self.expand_itmd().expand().make_real()
         reduced = chain.from_iterable(
             factor_denom(sub_expr) for sub_expr in factor_eri_parts(itmd)
         )
-        itmd = e.expr(0, **itmd.assumptions)
+        itmd = e.Expr(0, **itmd.assumptions)
         for term in reduced:
             itmd += term.factor()
 
@@ -217,7 +217,7 @@ class registered_intermediate:
         print(f"Preparing Intermediate: Factoring {factored_itmds}")
 
         if factored_itmds:
-            available = intermediates().available
+            available = Intermediates().available
             # iterate through factored_itmds and factor them one after another
             # in the simplified base itmd
             for i, it in enumerate(factored_itmds):
@@ -232,18 +232,18 @@ class registered_intermediate:
         print('-'*80)
         return itmd
 
-    def factor_itmd(self, expr: e.expr, factored_itmds: tuple[str] = tuple(),
-                    max_order: int = None) -> e.expr:
+    def factor_itmd(self, expr: e.Expr, factored_itmds: tuple[str] = tuple(),
+                    max_order: int = None) -> e.Expr:
         """Factors the intermediate in a given expression assuming a
            real orbital basis."""
 
         from .factor_intermediates import (_factor_long_intermediate,
                                            _factor_short_intermediate,
-                                           factorization_term_data)
+                                           FactorizationTermData)
 
-        if not isinstance(expr, e.expr):
+        if not isinstance(expr, e.Expr):
             raise TypeError("Expr to factor needs to be provided as "
-                            f"{e.expr} instance.")
+                            f"{e.Expr} instance.")
         if not expr.real:
             raise NotImplementedError("Intermediates only implemented for "
                                       "a real orbital basis.")
@@ -290,7 +290,7 @@ class registered_intermediate:
 
         # build a new expr that only contains the relevant terms
         remainder = 0
-        to_factor = e.expr(0, **expr.assumptions)
+        to_factor = e.Expr(0, **expr.assumptions)
         for term, is_relevant in zip(terms, term_is_relevant):
             if is_relevant:
                 to_factor += term
@@ -300,9 +300,9 @@ class registered_intermediate:
         # - prepare the itmd for factorization and extract data to speed
         #   up the later comparison
         itmd_expr = self._prepare_itmd(factored_itmds=factored_itmds)
-        itmd = tuple(eri_orbenergy(term).canonicalize_sign()
+        itmd = tuple(EriOrbenergy(term).canonicalize_sign()
                      for term in itmd_expr.terms)
-        itmd_data = tuple(factorization_term_data(term) for term in itmd)
+        itmd_data = tuple(FactorizationTermData(term) for term in itmd)
 
         # factor the intermediate in the expr
         if len(itmd) == 1:  # short intermediate that consists of a single term
@@ -324,7 +324,7 @@ class registered_intermediate:
 # INTERMEDIATE DEFINITIONS:
 
 
-class t2_1(registered_intermediate):
+class t2_1(RegisteredIntermediate):
     """First order MP doubles amplitude."""
     _itmd_type: str = 't_amplitude'  # type has to be a class variable
     _order: int = 1
@@ -343,14 +343,14 @@ class t2_1(registered_intermediate):
         # build the tensor
         return AntiSymmetricTensor('t1', indices[2:], indices[:2])
 
-    def factor_itmd(self, expr: e.expr, factored_itmds: list[str] = None,
+    def factor_itmd(self, expr: e.Expr, factored_itmds: list[str] = None,
                     max_order: int = None):
         """Factors the t2_1 intermediate in an expression assuming a real
            orbital basis."""
 
-        if not isinstance(expr, e.expr):
+        if not isinstance(expr, e.Expr):
             raise Inputerror("Expr to factor needs to be an instance of "
-                             f"{e.expr}.")
+                             f"{e.Expr}.")
         if not expr.real:
             raise NotImplementedError("Intermediates only implemented for a "
                                       "real orbital basis.")
@@ -365,8 +365,8 @@ class t2_1(registered_intermediate):
 
         # prepare the itmd and extract information
         t2 = self.expand_itmd().make_real()
-        t2 = eri_orbenergy(t2).canonicalize_sign()
-        t2_eri: e.obj = t2.eri.objects[0]
+        t2 = EriOrbenergy(t2).canonicalize_sign()
+        t2_eri: e.Obj = t2.eri.objects[0]
         t2_eri_descr: str = t2_eri.description(include_exponent=False,
                                                include_target_idx=False)
         t2_denom = t2.denom.sympy
@@ -376,7 +376,7 @@ class t2_1(registered_intermediate):
 
         factored = 0
         for term in expr.terms:
-            term = eri_orbenergy(term)  # split the term
+            term = EriOrbenergy(term)  # split the term
 
             if term.denom.sympy.is_number:  # term needs to have a denominator
                 factored += term.expr
@@ -407,7 +407,7 @@ class t2_1(registered_intermediate):
                     # was the braket already removed?
                     if bk_idx in removed_brackets:
                         continue
-                    if isinstance(bk, e.expr):
+                    if isinstance(bk, e.Expr):
                         bk_exponent = 1
                         bk = bk.sympy
                     else:
@@ -442,12 +442,12 @@ class t2_1(registered_intermediate):
             # - collect the remaining objects in the term and add to result
             factored_term *= term.pref * eri * term.num / denom
             print(f"\nFactoring {self.name} in:\n{term}\nresult:\n"
-                  f"{eri_orbenergy(factored_term)}")
+                  f"{EriOrbenergy(factored_term)}")
             factored += factored_term
         return factored
 
 
-class t1_2(registered_intermediate):
+class t1_2(RegisteredIntermediate):
     """Second order MP singles amplitude."""
     _itmd_type: str = "t_amplitude"
     _order: int = 2
@@ -476,7 +476,7 @@ class t1_2(registered_intermediate):
         return AntiSymmetricTensor('t2', (indices[1],), (indices[0],))
 
 
-class t2_2(registered_intermediate):
+class t2_2(RegisteredIntermediate):
     """Second order MP doubles amplitude."""
     _itmd_type: str = 't_amplitude'
     _order: int = 2
@@ -510,7 +510,7 @@ class t2_2(registered_intermediate):
         return AntiSymmetricTensor('t2', indices[2:], indices[:2])
 
 
-class t3_2(registered_intermediate):
+class t3_2(RegisteredIntermediate):
     """Second order MP triples amplitude."""
     _itmd_type: str = 't_amplitude'
     _order: int = 2
@@ -552,7 +552,7 @@ class t3_2(registered_intermediate):
         return AntiSymmetricTensor('t2', indices[3:], indices[:3])
 
 
-class t4_2(registered_intermediate):
+class t4_2(RegisteredIntermediate):
     """Second order MP quadruple amplitudes in a factorized form that avoids
        the construction of the quadruples denominator."""
     _itmd_type: str = 't_amplitude'
@@ -569,7 +569,7 @@ class t4_2(registered_intermediate):
         # build the t4_2 amplitude
         # (1 - P_ac - P_ad - P_bc - P_bd + P_ac P_bd) (1 - P_jk - P_jl)
         #  t_ij^ab t_kl^cd
-        base: e.expr = (
+        base: e.Expr = (
             t2.expand_itmd(indices=(i, j, a, b)) *
             t2.expand_itmd(indices=(k, l, c, d), return_sympy=True)
         )
@@ -587,7 +587,7 @@ class t4_2(registered_intermediate):
         return AntiSymmetricTensor('t2', indices[4:], indices[:4])
 
 
-class t1_3(registered_intermediate):
+class t1_3(RegisteredIntermediate):
     """Third order MP single amplitudes."""
     _itmd_type: str = 't_amplitude'
     _order: int = 3
@@ -617,7 +617,7 @@ class t1_3(registered_intermediate):
         # -> substitute_contracted indices to minimize the number of contracted
         #    indices
         target = (i, a)
-        itmd = e.expr(itmd, target_idx=target).substitute_contracted().sympy
+        itmd = e.Expr(itmd, target_idx=target).substitute_contracted().sympy
         contracted = tuple(sorted(
             [s for s in itmd.atoms(Dummy) if s not in target], key=idx_sort_key
         ))
@@ -627,7 +627,7 @@ class t1_3(registered_intermediate):
         return AntiSymmetricTensor('t3', (indices[1],), (indices[0],))
 
 
-class t2_3(registered_intermediate):
+class t2_3(RegisteredIntermediate):
     """Third order MP double amplitudes."""
     _itmd_type: str = 't_amplitude'
     _order: int = 3
@@ -681,7 +681,7 @@ class t2_3(registered_intermediate):
                  _t2_1.expand_itmd(indices=(k, l, c, d), return_sympy=True))
         # minimize the number of contracted indices
         target = (i, j, a, b)
-        itmd = e.expr(itmd, target_idx=target).substitute_contracted().sympy
+        itmd = e.Expr(itmd, target_idx=target).substitute_contracted().sympy
         contracted = contracted = tuple(sorted(
             [s for s in itmd.atoms(Dummy) if s not in target], key=idx_sort_key
         ))
@@ -691,7 +691,7 @@ class t2_3(registered_intermediate):
         return AntiSymmetricTensor('t3', indices[2:], indices[:2])
 
 
-class p0_2_oo(registered_intermediate):
+class p0_2_oo(RegisteredIntermediate):
     """Occupied Occupied block of the 2nd order contribution of the MP density
     """
     _itmd_type: str = 'mp_density'
@@ -715,7 +715,7 @@ class p0_2_oo(registered_intermediate):
         return AntiSymmetricTensor('p2', (indices[0],), (indices[1],), 1)
 
 
-class p0_2_vv(registered_intermediate):
+class p0_2_vv(RegisteredIntermediate):
     """Virtual Virtual block of the 2nd order contribution of the MP density"""
     _itmd_type: str = 'mp_density'
     _order: int = 2
@@ -738,7 +738,7 @@ class p0_2_vv(registered_intermediate):
         return AntiSymmetricTensor('p2', (indices[0],), (indices[1],), 1)
 
 
-class p0_3_oo(registered_intermediate):
+class p0_3_oo(RegisteredIntermediate):
     """Occupied Occupied block of the 2nd order contribution of the MP density
     """
     _itmd_type: str = 'mp_density'
@@ -760,7 +760,7 @@ class p0_3_oo(registered_intermediate):
         p0 += p0.subs({i: j, j: i}, simultaneous=True)
 
         target = (i, j)
-        p0 = e.expr(p0, target_idx=target).substitute_contracted().sympy
+        p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
         contracted = tuple(sorted(
             [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
         ))
@@ -770,7 +770,7 @@ class p0_3_oo(registered_intermediate):
         return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
 
 
-class p0_3_ov(registered_intermediate):
+class p0_3_ov(RegisteredIntermediate):
     """Occupied Occupied block of the 2nd order contribution of the MP density
     """
     _itmd_type: str = 'mp_density'
@@ -799,7 +799,7 @@ class p0_3_ov(registered_intermediate):
         p0 += ts3.expand_itmd(indices=(i, a), return_sympy=True)
 
         target = (i, a)
-        p0 = e.expr(p0, target_idx=target).substitute_contracted().sympy
+        p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
         contracted = tuple(sorted(
             [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
         ))
@@ -809,7 +809,7 @@ class p0_3_ov(registered_intermediate):
         return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
 
 
-class p0_3_vv(registered_intermediate):
+class p0_3_vv(RegisteredIntermediate):
     """Virtual Virtual block of the 2nd order contribution of the MP density"""
     _itmd_type: str = 'mp_density'
     _order: int = 3
@@ -830,7 +830,7 @@ class p0_3_vv(registered_intermediate):
         p0 += p0.subs({a: b, b: a}, simultaneous=True)
 
         target = (a, b)
-        p0 = e.expr(p0, target_idx=target).substitute_contracted().sympy
+        p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
         contracted = tuple(sorted(
             [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
         ))
@@ -840,7 +840,7 @@ class p0_3_vv(registered_intermediate):
         return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
 
 
-class t2eri_1(registered_intermediate):
+class t2eri_1(RegisteredIntermediate):
     """t2eri1 in adcc / pi1 in libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -862,7 +862,7 @@ class t2eri_1(registered_intermediate):
         return AntiSymmetricTensor('t2eri1', indices[:2], indices[2:])
 
 
-class t2eri_2(registered_intermediate):
+class t2eri_2(RegisteredIntermediate):
     """t2eri2 in adcc / pi2 in libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -883,7 +883,7 @@ class t2eri_2(registered_intermediate):
         return NonSymmetricTensor('t2eri2', indices)
 
 
-class t2eri_3(registered_intermediate):
+class t2eri_3(RegisteredIntermediate):
     """t2eri3 in adcc / pi3 in libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -905,7 +905,7 @@ class t2eri_3(registered_intermediate):
         return AntiSymmetricTensor('t2eri3', indices[:2], indices[2:])
 
 
-class t2eri_4(registered_intermediate):
+class t2eri_4(RegisteredIntermediate):
     """t2eri4 in adcc / pi4 in libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -927,7 +927,7 @@ class t2eri_4(registered_intermediate):
         return NonSymmetricTensor('t2eri4', indices)
 
 
-class t2eri_5(registered_intermediate):
+class t2eri_5(RegisteredIntermediate):
     """t2eri5 in adcc / pi5 in libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -949,7 +949,7 @@ class t2eri_5(registered_intermediate):
         return AntiSymmetricTensor('t2eri5', indices[:2], indices[2:])
 
 
-class t2eri_6(registered_intermediate):
+class t2eri_6(RegisteredIntermediate):
     """t2eri6 in adcc / pi6 in libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -971,7 +971,7 @@ class t2eri_6(registered_intermediate):
         return AntiSymmetricTensor('t2eri6', indices[:2], indices[2:])
 
 
-class t2eri_7(registered_intermediate):
+class t2eri_7(RegisteredIntermediate):
     """t2eri7 in adcc / pi7 in libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -993,7 +993,7 @@ class t2eri_7(registered_intermediate):
         return NonSymmetricTensor('t2eri7', indices)
 
 
-class t2eri_A(registered_intermediate):
+class t2eri_A(RegisteredIntermediate):
     """pia intermediate in libadc"""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -1010,7 +1010,7 @@ class t2eri_A(registered_intermediate):
                + pi2.expand_itmd(indices=(i, j, k, a), return_sympy=True)
                - pi2.expand_itmd(indices=(j, i, k, a), return_sympy=True))
         target = (i, j, k, a)
-        pia = e.expr(pia, target_idx=target).substitute_contracted().sympy
+        pia = e.Expr(pia, target_idx=target).substitute_contracted().sympy
         contracted = tuple(sorted(
             [s for s in pia.atoms(Dummy) if s not in target], key=idx_sort_key
         ))
@@ -1020,7 +1020,7 @@ class t2eri_A(registered_intermediate):
         return AntiSymmetricTensor('t2eriA', indices[:2], indices[2:])
 
 
-class t2eri_B(registered_intermediate):
+class t2eri_B(RegisteredIntermediate):
     """pib intermediate in libadc"""
     _itmd_type: str = 'misc'
     _order: int = 2
@@ -1037,7 +1037,7 @@ class t2eri_B(registered_intermediate):
                + pi7.expand_itmd(indices=(i, a, b, c), return_sympy=True)
                - pi7.expand_itmd(indices=(i, a, c, b), return_sympy=True))
         target = (i, a, b, c)
-        pib = e.expr(pib, target_idx=target).substitute_contracted().sympy
+        pib = e.Expr(pib, target_idx=target).substitute_contracted().sympy
         contracted = tuple(sorted(
             [s for s in pib.atoms(Dummy) if s not in target], key=idx_sort_key
         ))
@@ -1047,7 +1047,7 @@ class t2eri_B(registered_intermediate):
         return AntiSymmetricTensor('t2eriB', indices[:2], indices[2:])
 
 
-class t2sq(registered_intermediate):
+class t2sq(RegisteredIntermediate):
     """t2sq intermediate from adcc and libadc."""
     _itmd_type: str = 'misc'
     _order: int = 2

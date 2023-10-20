@@ -3,7 +3,7 @@ from .indices import index_space, minimize_tensor_indices
 from sympy import Dummy, Rational, diff, S
 
 
-def derivative(expr: e.expr, t_string: str):
+def derivative(expr: e.Expr, t_string: str):
     """Computes the derivative of an expression with respect to a tensor.
        The derivative is separated block whise, e.g, terms that contribute to
        the derivative w.r.t. the oooo ERI block are separated from terms that
@@ -15,8 +15,8 @@ def derivative(expr: e.expr, t_string: str):
         raise TypeError("Tensor name needs to be provided as str.")
 
     expr = expr.expand()
-    if not isinstance(expr, e.expr):  # ensure expr is in a container
-        expr = e.expr(expr)
+    if not isinstance(expr, e.Expr):  # ensure expr is in a container
+        expr = e.Expr(expr)
 
     # create some Dummy Symbol. Replace the tensor with the Symbol and
     # compute the derivative with respect to the Symbol. Afterwards
@@ -29,7 +29,7 @@ def derivative(expr: e.expr, t_string: str):
         objects = term.objects
         # - find all occurences of the desired tensor
         tensor_obj = []
-        remaining_obj = e.expr(1, **term.assumptions)
+        remaining_obj = e.Expr(1, **term.assumptions)
         for obj in objects:
             if obj.name == t_string:
                 tensor_obj.append(obj)
@@ -66,7 +66,7 @@ def derivative(expr: e.expr, t_string: str):
             #   a prefactor of -1 that we need to move to the deriv_contrib.
             #   Also the indices might be further minimized due to the
             #   symmetry of the tensor obj
-            obj: e.term = obj.permute(*perms).terms[0]
+            obj: e.Term = obj.permute(*perms).terms[0]
             if (factor := obj.prefactor) < 0:
                 deriv_contrib *= factor
             # - Apply the symmetry of the removed tensor to the remaining
@@ -96,6 +96,6 @@ def derivative(expr: e.expr, t_string: str):
             #   -> sort the derivative block whise.
             space = obj.space
             if space not in derivative:
-                derivative[space] = e.expr(0, **assumptions)
+                derivative[space] = e.Expr(0, **assumptions)
             derivative[space] += symmetrized_deriv_contrib
     return derivative

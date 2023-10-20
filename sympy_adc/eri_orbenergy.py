@@ -3,7 +3,7 @@ from . import expr_container as e
 from sympy import Pow, S, Mul, Basic
 
 
-class eri_orbenergy:
+class EriOrbenergy:
     """Class that holds term, split in numerator, denominator and a remainder:
        (e_i + e_j) / (e_i + e_j - e_a + e_b) * eri1 * eri2
        The remainder is assumed to contain any tensors/deltas, but the orbital
@@ -11,10 +11,10 @@ class eri_orbenergy:
 
     def __init__(self, term):
         # ensure the input consists of a single term either as term or expr
-        if not isinstance(term, e.term) or not len(term) == 1:
+        if not isinstance(term, e.Term) or not len(term) == 1:
             Inputerror("Expected a single term as input.")
         # factor the term to ensure all prefactors are in the numerator
-        term: e.expr = term.factor()  # returns an expr
+        term: e.Expr = term.factor()  # returns an expr
 
         # split the term in num, denom and eri
         term = term.terms[0].split_orb_energy()
@@ -27,7 +27,7 @@ class eri_orbenergy:
         if len(eri) != 1:
             raise Inputerror("Remainder/ERI part should consist of a single "
                              f"term. Got {eri} from term {term}.")
-        self._eri: e.term = eri.terms[0]
+        self._eri: e.Term = eri.terms[0]
 
         # numerator can essentially be anything: a or a+b
         # extract the prefactor with the smallest abs value from the numerator
@@ -50,7 +50,7 @@ class eri_orbenergy:
         elif self._pref is S.One:  # nothing to factor
             self._num = term['num']
         else:
-            self._num: e.expr = \
+            self._num: e.Expr = \
                 (term['num'].factor(self._pref) / self._pref).doit()
         # ensure that the numerator is what we expect
         self._validate_num()
@@ -72,7 +72,7 @@ class eri_orbenergy:
             # check that each bracket consists of terms that each contain
             # a single epsilon and possibly a prefactor of -1
             for bracket in self.denom_brackets:
-                if not isinstance(bracket, (e.expr, e.polynom)):
+                if not isinstance(bracket, (e.Expr, e.Polynom)):
                     raise TypeError(f"Invalid bracket {bracket} in "
                                     f"{self._denom}.")
                 for term in bracket.terms:
@@ -119,15 +119,15 @@ class eri_orbenergy:
                                      f"{self._num}.")
 
     @property
-    def denom(self) -> e.expr:
+    def denom(self) -> e.Expr:
         return self._denom
 
     @property
-    def eri(self) -> e.term:
+    def eri(self) -> e.Term:
         return self._eri
 
     @property
-    def num(self) -> e.expr:
+    def num(self) -> e.Expr:
         return self._num
 
     @property
@@ -135,14 +135,14 @@ class eri_orbenergy:
         return self._pref
 
     @property
-    def denom_brackets(self) -> tuple[e.polynom] | tuple[e.expr]:
+    def denom_brackets(self) -> tuple[e.Polynom] | tuple[e.Expr]:
         if len(self.denom) != 1 or self.denom.sympy.is_number:
             return (self.denom,)
         else:  # denom consists of brackets
             return self.denom.terms[0].objects
 
     def copy(self):
-        return eri_orbenergy(self.expr)
+        return EriOrbenergy(self.expr)
 
     @property
     def expr(self):
@@ -158,13 +158,13 @@ class eri_orbenergy:
         brackets = self.denom_brackets
         bracket_data = []
         for bk in brackets:
-            exponent = 1 if isinstance(bk, e.expr) else bk.exponent
+            exponent = 1 if isinstance(bk, e.Expr) else bk.exponent
             bracket_data.append(f"{len(bk)}-{exponent}")
         # reverse sorting -> longest braket will be listed first
         bracket_data = "_".join(sorted(bracket_data, reverse=True))
         return f"{len(brackets)}_{bracket_data}"
 
-    def cancel_denom_brackets(self, braket_idx_list) -> e.expr:
+    def cancel_denom_brackets(self, braket_idx_list) -> e.Expr:
         """Cancels brakets by index in the denominator, i.e., the exponent
            is lowered by 1, or the braket is completely removed if a exponent
            of 0 is reached. The new denominator is returned and the original
@@ -174,7 +174,7 @@ class eri_orbenergy:
         denom = list(self.denom_brackets)
         for idx, n in Counter(braket_idx_list).items():
             braket = denom[idx]
-            if isinstance(braket, e.expr):
+            if isinstance(braket, e.Expr):
                 exponent = 1
                 base = braket.sympy
             else:
@@ -186,9 +186,9 @@ class eri_orbenergy:
                 denom[idx] = Pow(base, new_exp)
         new_denom = Mul(*(bk if isinstance(bk, Basic) else bk.sympy
                           for bk in denom if bk is not None))
-        return e.expr(new_denom, **self.denom.assumptions)
+        return e.Expr(new_denom, **self.denom.assumptions)
 
-    def cancel_eri_objects(self, obj_idx_list) -> e.expr:
+    def cancel_eri_objects(self, obj_idx_list) -> e.Expr:
         """Cancels objects in the eri part by index, i.e., the exponent is
            lowered by 1 for each time the object index is provided. If a final
            exponent of 0 is reached, the object is removed entirely.
@@ -204,7 +204,7 @@ class eri_orbenergy:
                 objects[idx] = Pow(obj.extract_pow, new_exp)
         new_eri = Mul(*(obj if isinstance(obj, Basic) else obj.sympy
                         for obj in objects if obj is not None))
-        return e.expr(new_eri, **self.eri.assumptions)
+        return e.Expr(new_eri, **self.eri.assumptions)
 
     def denom_eri_sym(self, eri_sym: dict = None, **kwargs):
         """Apply all Symmetries of the ERI's to the denominator. If the
@@ -268,7 +268,7 @@ class eri_orbenergy:
         elif additional_pref is S.One:  # nothing to factor
             self._num = num
         else:
-            self._num: e.expr = (
+            self._num: e.Expr = (
                 (num.factor(additional_pref) / additional_pref).doit()
             )
         self._validate_num()
@@ -281,7 +281,7 @@ class eri_orbenergy:
            and prefactor."""
         from .indices import index_space
 
-        def adjust_sign(expr: e.expr | e.polynom) -> bool:
+        def adjust_sign(expr: e.Expr | e.Polynom) -> bool:
             # function that extracts the sign of the occupied and virtual
             # indices in a term.
 
@@ -333,7 +333,7 @@ class eri_orbenergy:
             denom = 1
             for bracket in self.denom_brackets:
                 if adjust_sign(bracket):
-                    if isinstance(bracket, e.expr):
+                    if isinstance(bracket, e.Expr):
                         exponent = 1
                         base = bracket.sympy
                     else:
@@ -341,23 +341,23 @@ class eri_orbenergy:
                         base = bracket.extract_pow
                     if exponent % 2:
                         self._pref *= -1
-                    bracket = e.expr(Pow(-1*base, exponent),
+                    bracket = e.Expr(Pow(-1*base, exponent),
                                      **bracket.assumptions)
                 denom *= bracket
             self._denom = denom
         return self
 
-    def cancel_orb_energy_frac(self) -> e.expr:
+    def cancel_orb_energy_frac(self) -> e.Expr:
         """Try to cancel numerator and denominator."""
         from collections import Counter
 
-        def multiply(expr_list: list[e.expr]) -> int | e.expr:
+        def multiply(expr_list: list[e.Expr]) -> int | e.Expr:
             res = 1
             for term in expr_list:
                 res *= term
             return res
 
-        def cancel(num: e.expr, denom: list, pref) -> e.expr:
+        def cancel(num: e.Expr, denom: list, pref) -> e.Expr:
             num = num.copy()  # avoid in place modification
             cancelled_result = None
             for bracket_i, bracket in enumerate(denom):
@@ -399,20 +399,20 @@ class eri_orbenergy:
                 #    in the bracket match
                 #  - all orbital energies in the numerator have an exponent
                 #    of 1
-                if isinstance(bracket, e.expr):
+                if isinstance(bracket, e.Expr):
                     exponent = 1
                     base = bracket.sympy
                 else:  # polynom
                     exponent = bracket.exponent
                     base = bracket.extract_pow
-                print(f"Cancelling: {e.expr(base)}")
+                print(f"Cancelling: {e.Expr(base)}")
                 num -= base
                 # build the new denominator -> lower bracket exponent by 1
                 if exponent == 1:
                     new_denom = denom[:bracket_i] + denom[bracket_i+1:]
                 else:
                     new_denom = denom[:]
-                    new_denom[bracket_i] = e.expr(
+                    new_denom[bracket_i] = e.Expr(
                         Pow(base, exponent-1), **bracket.assumptions
                     )
                 # result <- 1/new_denom + new_num/denom

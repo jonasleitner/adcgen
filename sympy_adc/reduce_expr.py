@@ -1,5 +1,5 @@
 from . import expr_container as e
-from .eri_orbenergy import eri_orbenergy
+from .eri_orbenergy import EriOrbenergy
 from .misc import Inputerror
 from collections import defaultdict
 from sympy import S
@@ -13,8 +13,8 @@ def reduce_expr(expr):
        fractions."""
     from itertools import chain
 
-    if not isinstance(expr, e.expr):
-        raise Inputerror(f"Expr to reduce needs to be an instance of {e.expr}")
+    if not isinstance(expr, e.Expr):
+        raise Inputerror(f"Expr to reduce needs to be an instance of {e.Expr}")
     if not expr.real:
         raise NotImplementedError("Intermediates only implemented for a real "
                                   "orbital basis.")
@@ -31,7 +31,7 @@ def reduce_expr(expr):
     #    and reduce the number of terms by factoring the ERI in each term.
     start = time.perf_counter()
     print("Expanding intermediates... ")
-    expanded_expr: list[e.expr] = []
+    expanded_expr: list[e.Expr] = []
     for term_i, term in enumerate(expr.terms):
         print('#'*80)
         print(f"Expanding term {term_i+1} of {len(expr)}: {term}... ", end='',
@@ -51,7 +51,7 @@ def reduce_expr(expr):
                 raise ValueError(f"Invalid substitutions {sub} for "
                                  f"{equal_eri}")
             term[j] = sub_equal_eri
-            print(f"\n{j+1}: {eri_orbenergy(sub_equal_eri.terms[0]).eri}")
+            print(f"\n{j+1}: {EriOrbenergy(sub_equal_eri.terms[0]).eri}")
         print('-'*80)
         print(f"Found {len(term)} different ERI Structures")
         expanded_expr.extend(term)
@@ -72,11 +72,11 @@ def reduce_expr(expr):
     unique_compatible_eri = find_compatible_eri_parts(unique_terms)
     n = 1
     n_eri_denom = 0
-    factored: e.expr = 0
+    factored: e.Expr = 0
     # - factor eri again
     for i, compatible_eri_subs in unique_compatible_eri.items():
         temp = expanded_expr[i]
-        eri = eri_orbenergy(expanded_expr[i].terms[0]).eri
+        eri = EriOrbenergy(expanded_expr[i].terms[0]).eri
         print("\n", '#'*80, sep='')
         print(f"ERI {n} of {len(unique_compatible_eri)}: {eri}")
         n += 1
@@ -94,7 +94,7 @@ def reduce_expr(expr):
                                    "allow factorization to a single term:\n"
                                    f"{term}")
             # symmetrize the numerator and cancel the orbital energy fraction
-            term = eri_orbenergy(term)
+            term = EriOrbenergy(term)
             print('-'*80)
             print(f"ERI/Denom {j}: {term}\n")
             print("Permuting numerator... ", flush=True, end='')
@@ -104,11 +104,11 @@ def reduce_expr(expr):
             term = term.cancel_orb_energy_frac()
             print("Done.")
 
-            if not all(eri_orbenergy(t).num.sympy.is_number
+            if not all(EriOrbenergy(t).num.sympy.is_number
                        for t in term.terms):
                 print("\nNUMERATOR NOT CANCELLED COMPLETELY:")
                 for t in term.terms:
-                    print(eri_orbenergy(t))
+                    print(EriOrbenergy(t))
 
             factored += term
         n_eri_denom += j + 1
@@ -133,23 +133,23 @@ def reduce_expr(expr):
     return result
 
 
-def factor_eri_parts(expr: e.expr) -> list[e.expr]:
+def factor_eri_parts(expr: e.Expr) -> list[e.Expr]:
     """Factors the eri's of an expression."""
 
     if len(expr) == 1:  # trivial case
         return [expr]
 
     terms = expr.terms
-    ret: list[e.expr] = []
+    ret: list[e.Expr] = []
     for i, compatible_eri_subs in find_compatible_eri_parts(terms).items():
-        temp = e.expr(terms[i].sympy, **expr.assumptions)
+        temp = e.Expr(terms[i].sympy, **expr.assumptions)
         for other_i, sub in compatible_eri_subs.items():
             temp += terms[other_i].subs(sub)
         ret.append(temp)
     return ret
 
 
-def find_compatible_eri_parts(term_list: list[e.term]) -> dict[int, dict]:
+def find_compatible_eri_parts(term_list: list[e.Term]) -> dict[int, dict]:
     """Determines the necessary substitutions to make the ERI parts of terms
        identical to each other - so they can be factored easily.
        Does not modify any of the terms, but returns a dict that connects
@@ -159,13 +159,13 @@ def find_compatible_eri_parts(term_list: list[e.term]) -> dict[int, dict]:
     if len(term_list) == 1:  # trivial: only a single eri
         return {0: {}}
 
-    # dont use eri_orbenergy class, but rather only do whats necessary to
+    # dont use EriOrbenergy class, but rather only do whats necessary to
     # extract the eri part of the terms
-    eri_parts: list[e.term] = []
+    eri_parts: list[e.Term] = []
     for term in term_list:
         assumptions = term.assumptions
         assumptions['target_idx'] = term.target
-        eris = e.expr(1, **assumptions)
+        eris = e.Expr(1, **assumptions)
         for o in term.objects:
             if not o.type == 'prefactor' and not o.contains_only_orb_energies:
                 eris *= o
@@ -174,30 +174,30 @@ def find_compatible_eri_parts(term_list: list[e.term]) -> dict[int, dict]:
     return find_compatible_terms(eri_parts)
 
 
-def factor_denom(expr: e.expr, eri_sym: dict = None) -> list[e.expr]:
+def factor_denom(expr: e.Expr, eri_sym: dict = None) -> list[e.Expr]:
     """Factor the orbital energy denominators of an expr."""
 
     if len(expr) == 1:  # trivial case: single term
         return [expr]
 
-    terms: tuple[e.term] = expr.terms
+    terms: tuple[e.Term] = expr.terms
     compatible_denoms = find_compatible_denom(terms, eri_sym=eri_sym)
-    ret: list[e.expr] = []
+    ret: list[e.Expr] = []
     for i, compatible_denom_perms in compatible_denoms.items():
-        temp = e.expr(terms[i].sympy, **expr.assumptions)
+        temp = e.Expr(terms[i].sympy, **expr.assumptions)
         for other_i, perms in compatible_denom_perms.items():
             temp += terms[other_i].permute(*perms)
         ret.append(temp)
     return ret
 
 
-def find_compatible_denom(terms: list[e.term],
+def find_compatible_denom(terms: list[e.Term],
                           eri_sym: dict = None) -> dict[int, dict]:
     if len(terms) == 1:  # trivial case: single term
         return {0: {}}
 
-    terms: list[eri_orbenergy] = [
-        eri_orbenergy(term).canonicalize_sign(only_denom=True)
+    terms: list[EriOrbenergy] = [
+        EriOrbenergy(term).canonicalize_sign(only_denom=True)
         for term in terms
     ]
 
@@ -216,7 +216,7 @@ def find_compatible_denom(terms: list[e.term],
         for i, term_i in enumerate(term_idx_list):
             if term_i in matched:
                 continue
-            term: eri_orbenergy = terms[term_i]
+            term: EriOrbenergy = terms[term_i]
             identical_denom[term_i] = []
             for other_i in range(i+1, len(term_idx_list)):
                 other_term_i = term_idx_list[other_i]
@@ -247,8 +247,8 @@ def find_compatible_denom(terms: list[e.term],
                 if other_term_i in matched:
                     continue
 
-                other_term: eri_orbenergy = terms[other_term_i]
-                other_denom: e.expr = other_term.denom
+                other_term: EriOrbenergy = terms[other_term_i]
+                other_denom: e.Expr = other_term.denom
 
                 # find all valid permutations
                 if other_term_i not in permutations:

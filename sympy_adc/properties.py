@@ -1,16 +1,16 @@
 from .func import gen_term_orders
-from .indices import extract_names, indices, n_ov_from_space
+from .indices import extract_names, Indices, n_ov_from_space
 from .misc import (Inputerror, cached_member, transform_to_tuple,
                    process_arguments, validate_input)
 from .simplify import simplify
 from sympy.physics.secondquant import wicks
 from sympy import sqrt, S, sympify
 from math import factorial
-from .expr_container import expr
+from .expr_container import Expr
 from .rules import Rules
 
 
-class properties:
+class Properties:
     """Class for computing ISR properties. The class takes two different ISR
        as arguments - the second is optional. If only one is given, the
        standard ISR properties may be computed by calling the appropriate
@@ -21,24 +21,29 @@ class properties:
        """
 
     def __init__(self, l_isr, r_isr=None):
-        from .isr import intermediate_states
-        from .secular_matrix import secular_matrix
+        from .isr import IntermediateStates
+        from .secular_matrix import SecularMatrix
 
-        if not isinstance(l_isr, intermediate_states) or r_isr is not None \
-                and not isinstance(r_isr, intermediate_states):
-            raise Inputerror("Provided ISR must be intermediate_states.")
+        if not isinstance(l_isr, IntermediateStates) or r_isr is not None \
+                and not isinstance(r_isr, IntermediateStates):
+            raise Inputerror("Provided ISR must be of type "
+                             f"{IntermediateStates}.")
         self.l_isr = l_isr
         self.r_isr = self.l_isr if r_isr is None else r_isr
-        self.l_m = secular_matrix(l_isr)
-        self.r_m = self.l_m if r_isr is None else secular_matrix(r_isr)
-        # Check if both ground states are equal. Currently this only means
+        self.l_m = SecularMatrix(l_isr)
+        self.r_m = self.l_m if r_isr is None else SecularMatrix(r_isr)
+        # Check if both ground states are compatible. Currently this only means
         # to check that either None ot both have singles enabled.
         self.gs = l_isr.gs
         if self.gs.singles != self.r_isr.gs.singles:
             raise Inputerror("Both ISR need to share the same GS, "
                              "i.e. neither or both have singles enabled.")
+        # also check that both isr use the same hamiltonian
+        if l_isr.gs.h != r_isr.gs.h:
+            raise Inputerror("The Operator of left and right isr has to be "
+                             "equal")
         self.h = l_isr.gs.h
-        self.indices = indices()
+        self.indices = Indices()
 
     def operator(self, order, opstring, subtract_gs=True):
         """Returns a operator - defined by opstring. For instance, a one
@@ -125,7 +130,7 @@ class properties:
                 expec += wicks(i1, keep_only_fully_contracted=True,
                                simplify_kronecker_deltas=True)
             res += (norm * expec).expand()
-        return simplify(expr(res)).sympy
+        return simplify(Expr(res)).sympy
 
     @process_arguments
     @cached_member
@@ -247,7 +252,7 @@ class properties:
                 trans_mom += wicks(i1, keep_only_fully_contracted=True,
                                    simplify_kronecker_deltas=True)
             res += (norm * trans_mom).expand()
-        return simplify(expr(res)).sympy
+        return simplify(Expr(res)).sympy
 
     @process_arguments
     @cached_member

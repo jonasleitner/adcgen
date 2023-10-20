@@ -4,22 +4,22 @@ from sympy import latex, Rational, S, Mul, sympify
 from math import factorial
 
 from .indices import (
-    n_ov_from_space, repeated_indices, indices, extract_names
+    n_ov_from_space, repeated_indices, Indices, extract_names
 )
 from .misc import (cached_member, Inputerror, transform_to_tuple,
                    validate_input, process_arguments)
 from .simplify import simplify
 from .func import gen_term_orders
-from .groundstate import ground_state
-from .expr_container import expr
+from .groundstate import GroundState
+from .expr_container import Expr
 
 
-class intermediate_states:
+class IntermediateStates:
     def __init__(self, mp, variant="pp"):
-        if not isinstance(mp, ground_state):
+        if not isinstance(mp, GroundState):
             raise Inputerror("Invalid ground state object.")
         self.gs = mp
-        self.indices = indices()
+        self.indices = Indices()
 
         variants = {
             "pp": ["ph", "hp"],
@@ -252,7 +252,7 @@ class intermediate_states:
         # It should be valid to simplifiy the result by permuting contracted
         # indices before returning -> should lower the overall size of the
         # final expression
-        res = simplify(expr(res))
+        res = simplify(Expr(res))
         print(f"Build overlap {block} S_{indices}^({order}) = {res}")
         return res.sympy
 

@@ -1,14 +1,14 @@
 from .indices import idx_sort_key, index_space
 from . import expr_container as e
 from .misc import cached_member, cached_property, Inputerror
-from .eri_orbenergy import eri_orbenergy
+from .eri_orbenergy import EriOrbenergy
 from sympy.physics.secondquant import Dummy
 from sympy import S
 from collections import defaultdict
 from itertools import chain, combinations
 
 
-class permutation(tuple):
+class Permutation(tuple):
     """A Permutation operator that permutes the two provided indices.
        The provided indices are sorted according to their name."""
 
@@ -26,7 +26,7 @@ class permutation(tuple):
         return f"P_{self[0].name}{self[1].name}"
 
 
-class permutation_product(tuple):
+class PermutationProduct(tuple):
     """Product of permutation operators. The current implementation assumes
        that permutations act within an index space. This allows to sort"""
 
@@ -96,7 +96,7 @@ class permutation_product(tuple):
         return ret
 
 
-class lazy_term_map:
+class LazyTermMap:
     """Class for lazy evaluation of the term map of an expression, i.e.,
        which terms can be mapped onto each other when target indices are
        permuted.
@@ -105,9 +105,9 @@ class lazy_term_map:
        be treated correctly!
        """
 
-    def __init__(self, expr: e.expr):
+    def __init__(self, expr: e.Expr):
         self._expr = expr
-        self._terms: tuple[e.term] = expr.terms  # init all term objects
+        self._terms: tuple[e.Term] = expr.terms  # init all term objects
         self._term_map = {}  # {(perms, factor): {i: other_i}}
 
     def evaluate(self):
@@ -122,7 +122,7 @@ class lazy_term_map:
 
         # if we put all indices in lower no assumptions are important
         tensor = AntiSymmetricTensor('x', tuple(), self.target_indices)
-        tensor = e.expr(tensor).terms[0]
+        tensor = e.Expr(tensor).terms[0]
         for sym in tensor.symmetry().items():
             self[sym]
         return self._term_map
@@ -137,10 +137,10 @@ class lazy_term_map:
         # symmetries
         permutations, factor = symmetry
         splitted = list(
-            permutation_product.split_in_separable_parts(permutations).items()
+            PermutationProduct.split_in_separable_parts(permutations).items()
         )
         # also check the sorted version before inverting
-        if not isinstance(permutations, permutation_product):
+        if not isinstance(permutations, PermutationProduct):
             permutations = tuple(chain.from_iterable(
                 [val for _, val in sorted(splitted)]
             ))
@@ -193,7 +193,7 @@ class lazy_term_map:
         filtered_terms = defaultdict(list)
         for term_i, term in enumerate(self._terms):
             # split the term in pref, orbital energy frac and remainder
-            term = eri_orbenergy(term)
+            term = EriOrbenergy(term)
             # get the description of all objects in the remainder (eri) part
             # don't include target indices in the description since thats
             # what we want to probe the expr for (contracted permutations
@@ -219,7 +219,7 @@ class lazy_term_map:
             if len(term_i_list) > 1
         )
 
-    def probe_symmetry(self, permutations: permutation_product,
+    def probe_symmetry(self, permutations: PermutationProduct,
                        sym_factor: int) -> dict:
         """Probes which terms can be mapped onto each other if the given
            Symmetry, which is defined by the given permutations and the
@@ -230,14 +230,14 @@ class lazy_term_map:
         from .reduce_expr import factor_eri_parts, factor_denom
         from .simplify import simplify
 
-        def simplify_with_denom(expr: e.expr) -> e.expr:
+        def simplify_with_denom(expr: e.Expr) -> e.Expr:
             if expr.sympy.is_number:  # trivial
                 return expr
 
             factored = chain.from_iterable(
                 factor_denom(sub_e) for sub_e in factor_eri_parts(expr)
             )
-            ret = e.expr(0, **expr.assumptions)
+            ret = e.Expr(0, **expr.assumptions)
             for term in factored:
                 ret += term.factor()
             return ret
@@ -260,8 +260,8 @@ class lazy_term_map:
             # antisymmetric with respect to the given symmetry
             relevant_terms = []
             for term_i in term_i_list:
-                term: e.term = self._terms[term_i]
-                perm_term: e.expr = term.permute(*permutations)
+                term: e.Term = self._terms[term_i]
+                perm_term: e.Expr = term.permute(*permutations)
                 # check that the permutations are valid
                 if perm_term.sympy is S.Zero and term.sympy is not S.Zero:
                     continue
