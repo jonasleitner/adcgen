@@ -12,6 +12,20 @@ class TestRules:
     i, j = get_symbols('ij')
     a, b = get_symbols('ab')
 
+    def test_eq(self):
+        r1 = Rules()
+        r2 = Rules()
+        assert r1 == r2
+
+        r2 = Rules(forbidden_tensor_blocks={})
+        assert r1 == r2
+
+        r2 = Rules(forbidden_tensor_blocks={'f': ('oo',)})
+        assert r1 != r2
+
+        r1 = Rules(forbidden_tensor_blocks={'f': ('vv',)})
+        assert r1 != r2
+
     def test_empty(self):
         term = AntiSymmetricTensor('f', (self.i,), (self.j,), 0)
         term = expr(term)

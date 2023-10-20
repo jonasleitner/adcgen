@@ -9,6 +9,7 @@ from .misc import (Inputerror, cached_member, transform_to_tuple,
 from .func import gen_term_orders
 from .simplify import simplify
 from .expr_container import expr
+from .rules import Rules
 
 
 class secular_matrix:
@@ -24,8 +25,11 @@ class secular_matrix:
 
     def hamiltonian(self, order: int, subtract_gs: bool):
         h = {0: self.h.h0, 1: self.h.h1}
-        h = h.get(order, 0)
-        return h - self.gs.energy(order) if subtract_gs else h
+        h, rules = h.get(order, (0, Rules()))
+        if subtract_gs:
+            return h - self.gs.energy(order), rules
+        else:
+            return h, rules
 
     @process_arguments
     @cached_member
@@ -61,7 +65,7 @@ class secular_matrix:
             )
             matrix = 0
             for (bra_order, op_order, ket_order) in orders_M:
-                operator = self.hamiltonian(op_order, subtract_gs)
+                operator, rules = self.hamiltonian(op_order, subtract_gs)
                 if operator == 0:
                     continue
                 itmd = (self.isr.precursor(order=bra_order, space=bra_space,
@@ -111,7 +115,7 @@ class secular_matrix:
             )
             matrix = 0
             for (bra_order, op_order, ket_order) in orders_M:
-                operator = self.hamiltonian(op_order, subtract_gs)
+                operator, rules = self.hamiltonian(op_order, subtract_gs)
                 if operator == 0:
                     continue
                 itmd = (self.isr.intermediate_state(order=bra_order,

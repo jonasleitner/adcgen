@@ -1,5 +1,4 @@
 import pytest
-from collections import namedtuple
 import pathlib
 import json
 
@@ -8,16 +7,25 @@ from sympy_adc.func import import_from_sympy_latex
 
 @pytest.fixture(scope='session')
 def cls_instances():
-    from sympy_adc.groundstate import Hamiltonian, ground_state
+    from sympy_adc.groundstate import Operators, ground_state
     from sympy_adc.isr import intermediate_states
     from sympy_adc.secular_matrix import secular_matrix
 
-    instances = namedtuple('instances', ['h', 'gs', 'isr_pp', 'm_pp'])
-    h = Hamiltonian()
-    gs = ground_state(h, first_order_singles=False)
-    isr_pp = intermediate_states(gs, variant='pp')
+    mp_op = Operators(variant='mp')
+    mp = ground_state(mp_op, first_order_singles=False)
+    isr_pp = intermediate_states(mp, variant='pp')
     m_pp = secular_matrix(isr_pp)
-    return instances(h, gs, isr_pp, m_pp)
+    return {
+        'mp': {
+            'op': mp_op,
+            'gs': mp,
+            'isr': isr_pp,
+            'm': m_pp
+        },
+        're': {
+            'op': Operators(variant='re'),
+        }
+    }
 
 
 @pytest.fixture(scope='session')
@@ -42,5 +50,7 @@ def reference_data() -> dict[int, dict]:
     path_to_data = pathlib.Path(__file__).parent / 'reference_data'
     for jsonfile in path_to_data.glob('*.json'):
         data = json.load(open(jsonfile), object_hook=hook)
-        cache[jsonfile.name.rstrip('.json')] = import_data_strings(data)
+        name = jsonfile.name.split('.json')  # remove .json extension
+        assert len(name) == 2
+        cache[name[0]] = import_data_strings(data)
     return cache

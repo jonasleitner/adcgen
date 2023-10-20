@@ -7,6 +7,7 @@ from sympy.physics.secondquant import wicks
 from sympy import sqrt, S, sympify
 from math import factorial
 from .expr_container import expr
+from .rules import Rules
 
 
 class properties:
@@ -52,9 +53,16 @@ class properties:
         # to reduce the overhead.
         validate_input(order=order, opstring=opstring)
 
-        d = self.h.operator(opstring=opstring) if order == 0 else sympify(0)
-        return d - self.gs.expectation_value(order=order, opstring=opstring) \
-            if subtract_gs else d
+        if order == 0:
+            d, rules = self.h.operator(opstring=opstring)
+        else:
+            d, rules = sympify(0), Rules()
+
+        if subtract_gs:
+            e0 = self.gs.expectation_value(order=order, opstring=opstring)
+            return d - e0, rules
+        else:
+            return d, rules
 
     @process_arguments
     @cached_member
@@ -102,12 +110,13 @@ class properties:
             )
             expec = 0
             for term in orders_d:
+                op, rules = self.operator(term[1], opstring, subtract_gs)
                 i1 = (left_pref * right_pref * left_ampl *
                       self.l_isr.intermediate_state(order=term[0],
                                                     space=block[0],
                                                     braket='bra',
                                                     indices=left_idx) *
-                      self.operator(term[1], opstring, subtract_gs) *
+                      op *
                       self.r_isr.intermediate_state(order=term[2],
                                                     space=block[1],
                                                     braket='ket',

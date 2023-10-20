@@ -21,7 +21,7 @@ class TestSecularMatrix():
         ref = reference_data[f"m_{block_key}_isr"][order]
 
         # compute the raw matrix block
-        m = cls_instances.m_pp.isr_matrix_block(order, block, indices)
+        m = cls_instances['mp']['m'].isr_matrix_block(order, block, indices)
         m = expr(m)
         ref_m = ref['m']
         assert simplify(m - ref_m).sympy is S.Zero

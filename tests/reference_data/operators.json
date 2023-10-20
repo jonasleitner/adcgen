@@ -1,0 +1,13 @@
+{
+    "mp": {
+        "h0": "{f^{p}_{q}} {a^\\dagger_{p}} a_{q}",
+        "h1": "- {V^{pi3}_{qi3}} {a^\\dagger_{p}} a_{q} + \\frac{{V^{pq}_{rs}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{s} a_{r}}{4}"
+    },
+    "re": {
+        "h0": "- {V^{pi3}_{qi3}} {a^\\dagger_{p}} a_{q} + \\frac{{V^{pq}_{rs}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{s} a_{r}}{4} + {f^{p}_{q}} {a^\\dagger_{p}} a_{q}",
+        "h1": "- {V^{pi3}_{qi3}} {a^\\dagger_{p}} a_{q} + \\frac{{V^{pq}_{rs}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{s} a_{r}}{4} + {f^{p}_{q}} {a^\\dagger_{p}} a_{q}"
+    },
+    "ca": "{d^{p1}_{q1}} {a^\\dagger_{p1}} a_{q1}",
+    "ccaa": "\\frac{{d^{p1q1}_{r1s1}} {a^\\dagger_{p1}} {a^\\dagger_{q1}} a_{s1} a_{r1}}{4}",
+    "cccaaa": "\\frac{{d^{p1q1r1}_{s1t1u1}} {a^\\dagger_{p1}} {a^\\dagger_{q1}} {a^\\dagger_{r1}} a_{u1} a_{t1} a_{s1}}{36}"
+}

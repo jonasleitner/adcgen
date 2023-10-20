@@ -16,7 +16,7 @@ class TestGroundState():
         ref = reference_data["mp_1p_dm"][order]
 
         # compute the expectation value
-        expec = cls_instances.gs.expectation_value(order, operator)
+        expec = cls_instances['mp']['gs'].expectation_value(order, operator)
         expec = expr(expec)
         ref_expec = ref['expec_val']
         assert simplify(ref_expec - expec).sympy is S.Zero

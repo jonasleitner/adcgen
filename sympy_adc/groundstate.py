@@ -4,62 +4,17 @@ from math import factorial
 
 from .sympy_objects import AntiSymmetricTensor
 from .indices import indices, n_ov_from_space
-from .misc import (cached_member, cached_property, Inputerror,
+from .misc import (cached_member, Inputerror,
                    process_arguments, transform_to_tuple, validate_input)
 from .simplify import simplify
 from .func import gen_term_orders
 from .expr_container import expr
-
-
-class Hamiltonian:
-    def __init__(self):
-        self.indices = indices()
-
-    @cached_property
-    def h0(self):
-        p, q = self.indices.get_indices('pq')['general']
-        f = AntiSymmetricTensor('f', (p,), (q,))
-        pq = Fd(p) * F(q)
-        h0 = f * pq
-        print("H0 = ", latex(h0))
-        return h0
-
-    @cached_property
-    def h1(self):
-        p, q, r, s = self.indices.get_indices('pqrs')['general']
-        # get an occ index for 1 particle part of H1
-        occ = self.indices.get_generic_indices(n_o=1)['occ'][0]
-        v1 = AntiSymmetricTensor('V', (p, occ), (q, occ))
-        pq = Fd(p) * F(q)
-        v2 = AntiSymmetricTensor('V', (p, q), (r, s))
-        pqsr = Fd(p) * Fd(q) * F(s) * F(r)
-        h1 = -v1 * pq + Rational(1, 4) * v2 * pqsr
-        print("H1 = ", latex(h1))
-        return h1
-
-    @process_arguments
-    @cached_member
-    def operator(self, opstring):
-        """Constructs an arbitrary operator. The amount of creation (c) and
-           annihilation (a) operators must be given by opstring. For example
-           'ccaa' will return a two particle operator.
-           """
-        validate_input(opstring=opstring)
-        n_create = opstring.count('c')
-        idx = self.indices.get_generic_indices(n_g=len(opstring))["general"]
-        create = idx[:n_create]
-        annihilate = idx[n_create:]
-
-        pref = Rational(1, factorial(len(create)) * factorial(len(annihilate)))
-        d = AntiSymmetricTensor('d', create, annihilate)
-        op = Mul(*[Fd(s) for s in create]) * \
-            Mul(*[F(s) for s in reversed(annihilate)])
-        return pref * d * op
+from .operators import Operators
 
 
 class ground_state:
     def __init__(self, hamiltonian, first_order_singles=False):
-        if not isinstance(hamiltonian, Hamiltonian):
+        if not isinstance(hamiltonian, Operators):
             raise Inputerror('Invalid hamiltonian.')
         self.indices = indices()
         self.h = hamiltonian
@@ -72,7 +27,7 @@ class ground_state:
 
         validate_input(order=order)
 
-        h = self.h.h0 if order == 0 else self.h.h1
+        h, rules = self.h.h0 if order == 0 else self.h.h1
         bra = self.psi(order=0, braket="bra")
         ket = self.psi(order=0, braket='ket') if order == 0 else \
             self.psi(order=order-1, braket='ket')
@@ -200,7 +155,8 @@ class ground_state:
             bra *= F(s)
 
         # construct <k|H1|psi^(n-1)>
-        ret = bra * self.h.h1 * self.psi(order-1, "ket")
+        h1, rules = self.h.h1
+        ret = bra * h1 * self.psi(order-1, "ket")
         ret = wicks(ret, keep_only_fully_contracted=True,
                     simplify_kronecker_deltas=True)
         # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
@@ -265,6 +221,8 @@ class ground_state:
         # better to generate twice orders for length 2 than once for length 3
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
         res = 0
+        # get the operator
+        op, rules = self.h.operator(opstring=opstring)
         # iterate over all norm*d combinations of n'th order
         for norm_term in orders:
             norm = self.norm_factor(norm_term[0])
@@ -276,9 +234,7 @@ class ground_state:
             )
             d = 0
             for term in orders_d:
-                i1 = (wfn[term[0]]['bra'] *
-                      self.h.operator(opstring=opstring) *
-                      wfn[term[1]]['ket'])
+                i1 = wfn[term[0]]['bra'] * op * wfn[term[1]]['ket']
                 d += wicks(i1, keep_only_fully_contracted=True,
                            simplify_kronecker_deltas=True)
             res += (norm * d).expand()
