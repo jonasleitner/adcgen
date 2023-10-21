@@ -1,0 +1,20 @@
+{
+  "0": {
+    "bra": "1",
+    "ket": "1"
+  },
+  "1": {
+    "bra": {
+      "with_singles": "- {t1cc^{a}_{i}} \\left\\{a_{a} {a^\\dagger_{i}}\\right\\} + \\frac{{t1cc^{ab}_{ij}} \\left\\{a_{a} a_{b} {a^\\dagger_{i}} {a^\\dagger_{j}}\\right\\}}{4}",
+      "no_singles": "\\frac{{t1cc^{ab}_{ij}} \\left\\{a_{a} a_{b} {a^\\dagger_{i}} {a^\\dagger_{j}}\\right\\}}{4}"
+    },
+    "ket": {
+      "with_singles": "{t1^{a}_{i}} \\left\\{{a^\\dagger_{a}} a_{i}\\right\\} + \\frac{{t1^{ab}_{ij}} \\left\\{{a^\\dagger_{a}} {a^\\dagger_{b}} a_{i} a_{j}\\right\\}}{4}",
+      "no_singles": "\\frac{{t1^{ab}_{ij}} \\left\\{{a^\\dagger_{a}} {a^\\dagger_{b}} a_{i} a_{j}\\right\\}}{4}"
+    }
+  },
+  "2": {
+    "bra": "- {t2cc^{a}_{i}} \\left\\{a_{a} {a^\\dagger_{i}}\\right\\} + \\frac{{t2cc^{ab}_{ij}} \\left\\{a_{a} a_{b} {a^\\dagger_{i}} {a^\\dagger_{j}}\\right\\}}{4} + \\frac{{t2cc^{abc}_{ijk}} \\left\\{a_{a} a_{b} a_{c} {a^\\dagger_{i}} {a^\\dagger_{j}} {a^\\dagger_{k}}\\right\\}}{36} + \\frac{{t2cc^{abcd}_{ijkl}} \\left\\{a_{a} a_{b} a_{c} a_{d} {a^\\dagger_{i}} {a^\\dagger_{j}} {a^\\dagger_{k}} {a^\\dagger_{l}}\\right\\}}{576}",
+    "ket": "{t2^{a}_{i}} \\left\\{{a^\\dagger_{a}} a_{i}\\right\\} + \\frac{{t2^{ab}_{ij}} \\left\\{{a^\\dagger_{a}} {a^\\dagger_{b}} a_{i} a_{j}\\right\\}}{4} - \\frac{{t2^{abc}_{ijk}} \\left\\{{a^\\dagger_{a}} {a^\\dagger_{b}} {a^\\dagger_{c}} a_{i} a_{j} a_{k}\\right\\}}{36} + \\frac{{t2^{abcd}_{ijkl}} \\left\\{{a^\\dagger_{a}} {a^\\dagger_{b}} {a^\\dagger_{c}} {a^\\dagger_{d}} a_{i} a_{j} a_{k} a_{l}\\right\\}}{576}"
+  }
+}

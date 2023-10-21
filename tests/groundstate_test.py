@@ -18,6 +18,29 @@ class TestGroundState():
         e = cls_instances[variant]['gs'].energy(order)
         assert (ref - e).substitute_contracted().sympy is S.Zero
 
+    @pytest.mark.parametrize('braket', ['bra', 'ket'])
+    def test_psi(self, order, braket, cls_instances, reference_data):
+        # load the reference data
+        ref = reference_data['gs_psi'][order][braket]
+        if order == 1:
+            ref, ref_with_singles = ref['no_singles'], ref['with_singles']
+            # additionaly compare the wfn with singles
+            mp_psi = Expr(
+                cls_instances['mp']['gs_with_singles'].psi(order, braket)
+            )
+            re_psi = Expr(
+                cls_instances['re']['gs_with_singles'].psi(order, braket)
+            )
+            assert (mp_psi - re_psi).substitute_contracted().sympy is S.Zero
+            assert ((mp_psi - ref_with_singles).substitute_contracted().sympy
+                    is S.Zero)
+
+        # the wfn should not depend on the variant
+        mp_psi = Expr(cls_instances['mp']['gs'].psi(order, braket))
+        re_psi = Expr(cls_instances['re']['gs'].psi(order, braket))
+        assert (mp_psi - re_psi).substitute_contracted().sympy is S.Zero
+        assert (mp_psi - ref).substitute_contracted().sympy is S.Zero
+
     @pytest.mark.parametrize('operator', ['ca'])
     def test_expectation_value(self, order: int, operator: str, cls_instances,
                                reference_data):

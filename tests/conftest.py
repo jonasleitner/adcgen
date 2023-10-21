@@ -14,19 +14,23 @@ def cls_instances():
     mp_op = Operators(variant='mp')
     re_op = Operators(variant='re')
     mp = GroundState(mp_op, first_order_singles=False)
+    mp_singles = GroundState(mp_op, first_order_singles=True)
     re = GroundState(re_op, first_order_singles=False)
+    re_singles = GroundState(re_op, first_order_singles=True)
     isr_pp = IntermediateStates(mp, variant='pp')
     m_pp = SecularMatrix(isr_pp)
     return {
         'mp': {
             'op': mp_op,
             'gs': mp,
+            'gs_with_singles': mp_singles,
             'isr': isr_pp,
             'm': m_pp
         },
         're': {
             'op': re_op,
             'gs': re,
+            'gs_with_singles': re_singles
         }
     }
 
