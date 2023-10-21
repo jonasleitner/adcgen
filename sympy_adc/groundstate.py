@@ -1,5 +1,5 @@
 from sympy import Rational, latex, sympify, Mul, S
-from sympy.physics.secondquant import NO, F, Fd, wicks
+from sympy.physics.secondquant import NO, F, Fd
 from math import factorial
 
 from .sympy_objects import AntiSymmetricTensor
@@ -7,7 +7,7 @@ from .indices import Indices, n_ov_from_space
 from .misc import (cached_member, Inputerror,
                    process_arguments, transform_to_tuple, validate_input)
 from .simplify import simplify
-from .func import gen_term_orders
+from .func import gen_term_orders, wicks
 from .expr_container import Expr
 from .operators import Operators
 
@@ -33,7 +33,7 @@ class GroundState:
             self.psi(order=order-1, braket='ket')
         e = bra * h * ket
         e = wicks(e, keep_only_fully_contracted=True,
-                  simplify_kronecker_deltas=True)
+                  simplify_kronecker_deltas=True, rules=rules)
         # option 1: return the not simplified energy -> will give a lot more
         #           terms later on
         # option 2: simplify the energy expression and replace the indices with
@@ -158,7 +158,7 @@ class GroundState:
         h1, rules = self.h.h1
         ret = bra * h1 * self.psi(order-1, "ket")
         ret = wicks(ret, keep_only_fully_contracted=True,
-                    simplify_kronecker_deltas=True)
+                    simplify_kronecker_deltas=True, rules=rules)
         # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
         terms = gen_term_orders(order=order, term_length=2, min_order=1)
         for o1, o2 in terms:
@@ -236,7 +236,7 @@ class GroundState:
             for term in orders_d:
                 i1 = wfn[term[0]]['bra'] * op * wfn[term[1]]['ket']
                 d += wicks(i1, keep_only_fully_contracted=True,
-                           simplify_kronecker_deltas=True)
+                           simplify_kronecker_deltas=True, rules=rules)
             res += (norm * d).expand()
         return simplify(Expr(res)).sympy
 

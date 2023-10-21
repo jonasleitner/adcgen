@@ -1,13 +1,12 @@
-from .func import gen_term_orders
+from .func import gen_term_orders, wicks
 from .indices import extract_names, Indices, n_ov_from_space
 from .misc import (Inputerror, cached_member, transform_to_tuple,
                    process_arguments, validate_input)
 from .simplify import simplify
-from sympy.physics.secondquant import wicks
-from sympy import sqrt, S, sympify
-from math import factorial
 from .expr_container import Expr
 from .rules import Rules
+from sympy import sqrt, S, sympify
+from math import factorial
 
 
 class Properties:
@@ -128,7 +127,7 @@ class Properties:
                                                     indices=right_idx) *
                       right_ampl)
                 expec += wicks(i1, keep_only_fully_contracted=True,
-                               simplify_kronecker_deltas=True)
+                               simplify_kronecker_deltas=True, rules=rules)
             res += (norm * expec).expand()
         return simplify(Expr(res)).sympy
 
@@ -244,13 +243,14 @@ class Properties:
             )
             trans_mom = 0
             for term in orders_d:
+                op, rules = self.operator(term[1], opstring, subtract_gs)
                 i1 = (pref * ampl *
                       isr.intermediate_state(order=term[0], space=space,
                                              braket='bra', indices=idx) *
-                      self.operator(term[1], opstring, subtract_gs) *
+                      op *
                       mp[term[2]])
                 trans_mom += wicks(i1, keep_only_fully_contracted=True,
-                                   simplify_kronecker_deltas=True)
+                                   simplify_kronecker_deltas=True, rules=rules)
             res += (norm * trans_mom).expand()
         return simplify(Expr(res)).sympy
 

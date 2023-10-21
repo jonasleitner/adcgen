@@ -1,4 +1,5 @@
 from .misc import Inputerror
+from .rules import Rules
 
 
 def gen_term_orders(order, term_length, min_order):
@@ -221,3 +222,27 @@ def evaluate_deltas(expr, target_idx=None):
     # nothing to do, maybe we hit a Symbol or a number
     else:
         return expr
+
+
+def wicks(expr, rules: Rules = None, keep_only_fully_contracted: bool = False,
+          simplify_kronecker_deltas: bool = False):
+    """Wrapper function that forwards the wicks call to the sympy
+       implementation. If some rules are provided, they are applied to the
+       resulting expression before returning."""
+
+    import sympy.physics.secondquant
+    from .expr_container import Expr
+
+    expr = sympy.physics.secondquant.wicks(
+        expr, simplify_kronecker_deltas=simplify_kronecker_deltas,
+        keep_only_fully_contracted=keep_only_fully_contracted
+    )
+
+    if rules is None:
+        return expr
+    elif not isinstance(rules, Rules):
+        raise TypeError(f"Rules needs to be of type {Rules}")
+    elif rules.is_empty:  # nothing to do
+        return expr
+
+    return rules.apply(Expr(expr)).sympy
