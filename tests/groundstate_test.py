@@ -9,6 +9,15 @@ import pytest
 
 @pytest.mark.parametrize('order', [0, 1, 2])
 class TestGroundState():
+    @pytest.mark.parametrize('variant', ['mp', 're'])
+    def test_energy(self, order, variant, cls_instances, reference_data):
+        # load the reference data
+        ref = reference_data[variant + "_energy"][order]
+
+        # compute the energy
+        e = cls_instances[variant]['gs'].energy(order)
+        assert (ref - e).substitute_contracted().sympy is S.Zero
+
     @pytest.mark.parametrize('operator', ['ca'])
     def test_expectation_value(self, order: int, operator: str, cls_instances,
                                reference_data):

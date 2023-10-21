@@ -12,7 +12,9 @@ def cls_instances():
     from sympy_adc.secular_matrix import SecularMatrix
 
     mp_op = Operators(variant='mp')
+    re_op = Operators(variant='re')
     mp = GroundState(mp_op, first_order_singles=False)
+    re = GroundState(re_op, first_order_singles=False)
     isr_pp = IntermediateStates(mp, variant='pp')
     m_pp = SecularMatrix(isr_pp)
     return {
@@ -23,7 +25,8 @@ def cls_instances():
             'm': m_pp
         },
         're': {
-            'op': Operators(variant='re'),
+            'op': re_op,
+            'gs': re,
         }
     }
 
