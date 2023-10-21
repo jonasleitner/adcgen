@@ -12,7 +12,7 @@ class TestGroundState():
     @pytest.mark.parametrize('variant', ['mp', 're'])
     def test_energy(self, order, variant, cls_instances, reference_data):
         # load the reference data
-        ref = reference_data[variant + "_energy"][order]
+        ref = reference_data["gs_energy"][variant][order]
 
         # compute the energy
         e = cls_instances[variant]['gs'].energy(order)
