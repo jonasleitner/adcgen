@@ -38,7 +38,7 @@ class Properties:
             raise Inputerror("Both ISR need to share the same GS, "
                              "i.e. neither or both have singles enabled.")
         # also check that both isr use the same hamiltonian
-        if l_isr.gs.h != r_isr.gs.h:
+        if self.l_isr.gs.h != self.r_isr.gs.h:
             raise Inputerror("The Operator of left and right isr has to be "
                              "equal")
         self.h = l_isr.gs.h
