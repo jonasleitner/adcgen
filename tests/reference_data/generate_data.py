@@ -1,7 +1,9 @@
 from sympy_adc.operators import Operators
 from sympy_adc.groundstate import GroundState
 from sympy_adc.expr_container import Expr
+from sympy_adc.reduce_expr import factor_eri_parts, factor_denom
 
+import itertools
 import json
 import argparse
 
@@ -93,6 +95,38 @@ class Generator:
                     results[order][braket] = str(
                         Expr(mp.psi(order, braket)).substitute_contracted()
                     )
+        write_json(results, outfile)
+
+    def gen_amplitude(self):
+
+        def simplify_mp(ampl):
+            res = 0
+            for term in itertools.chain.from_iterable(
+                            factor_denom(sub_expr)
+                            for sub_expr in factor_eri_parts(ampl)):
+                res += term.factor()
+            return res
+
+        outfile = "amplitude.json"
+
+        spaces = {1: [('ph', 'ia'), ('pphh', 'ijab')],
+                  2: [('ph', 'ia'), ('pphh', 'ijab'), ('ppphhh', 'ijkabc'),
+                      ('pppphhhh', 'ijklabcd')]}
+
+        results = {}
+        for variant in ['mp']:
+            results[variant] = {}
+            for order in [1, 2]:
+                results[variant][order] = {}
+                for sp, idx in spaces[order]:
+                    ampl = self.gs[variant].amplitude(order, sp, idx)
+                    # no einstein sum convention -> need to set target idx!
+                    ampl = Expr(ampl, target_idx=idx).substitute_contracted()
+                    if variant == 'mp':
+                        ampl = simplify_mp(ampl)
+                    else:
+                        raise NotImplementedError()
+                    results[variant][order][sp] = str(ampl)
         write_json(results, outfile)
 
 

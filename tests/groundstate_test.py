@@ -1,9 +1,11 @@
 from sympy_adc.expr_container import Expr
 from sympy_adc.simplify import simplify, remove_tensor
 from sympy_adc import sort_expr as sort
+from sympy_adc.reduce_expr import factor_eri_parts, factor_denom
 
 from sympy import S
 
+import itertools
 import pytest
 
 
@@ -40,6 +42,40 @@ class TestGroundState():
         re_psi = Expr(cls_instances['re']['gs'].psi(order, braket))
         assert (mp_psi - re_psi).substitute_contracted().sympy is S.Zero
         assert (mp_psi - ref).substitute_contracted().sympy is S.Zero
+
+    @pytest.mark.parametrize('variant', ['mp'])
+    def test_amplitude(self, order, variant, cls_instances, reference_data):
+
+        def simplify_mp(ampl):
+            res = 0
+            for term in itertools.chain.from_iterable(
+                            factor_denom(sub_expr)
+                            for sub_expr in factor_eri_parts(ampl)):
+                res += term.factor()
+            return res
+
+        if order == 0:  # there are no zeroth order amplitudes
+            pytest.skip()
+
+        spaces = {1: [('ph', 'ia'), ('pphh', 'ijab')],
+                  2: [('ph', 'ia'), ('pphh', 'ijab'), ('ppphhh', 'ijkabc'),
+                      ('pppphhhh', 'ijklabcd')]}
+
+        # load the reference data
+        ref = reference_data['amplitude'][variant][order]
+
+        for sp, idx in spaces[order]:
+            # compute the amplitude
+            ampl = cls_instances[variant]['gs'].amplitude(order, sp, idx)
+            # no einstein sum convention -> set target idx
+            ampl = Expr(ampl, target_idx=idx)
+            if variant == 'mp':
+                ampl = simplify_mp(
+                    (ampl - ref[sp].sympy).substitute_contracted()
+                )
+            else:
+                raise NotImplementedError()
+            assert ampl.sympy is S.Zero
 
     @pytest.mark.parametrize('operator', ['ca'])
     def test_expectation_value(self, order: int, operator: str, cls_instances,
