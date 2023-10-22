@@ -43,7 +43,7 @@ class TestGroundState():
         assert (mp_psi - re_psi).substitute_contracted().sympy is S.Zero
         assert (mp_psi - ref).substitute_contracted().sympy is S.Zero
 
-    @pytest.mark.parametrize('variant', ['mp'])
+    @pytest.mark.parametrize('variant', ['mp', 're'])
     def test_amplitude(self, order, variant, cls_instances, reference_data):
 
         def simplify_mp(ampl):
@@ -54,7 +54,11 @@ class TestGroundState():
                 res += term.factor()
             return res
 
-        if order == 0:  # there are no zeroth order amplitudes
+        # - there are no zeroth order amplitudes
+        # - only tests for first order re amplitudes
+        if order == 0 or (variant == 're' and order != 1):
+            # How to permanently skip invalid combinations (order == 0)
+            # https://github.com/pytest-dev/pytest/issues/3730
             pytest.skip()
 
         spaces = {1: [('ph', 'ia'), ('pphh', 'ijab')],
@@ -71,6 +75,10 @@ class TestGroundState():
             ampl = Expr(ampl, target_idx=idx)
             if variant == 'mp':
                 ampl = simplify_mp(
+                    (ampl - ref[sp].sympy).substitute_contracted()
+                )
+            elif variant == 're':
+                ampl = simplify(
                     (ampl - ref[sp].sympy).substitute_contracted()
                 )
             else:

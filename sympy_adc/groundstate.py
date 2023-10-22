@@ -106,11 +106,24 @@ class GroundState:
         print(f"Build gs({order}) {braket} = ", latex(psi))
         return psi
 
-    @process_arguments
-    @cached_member
     def amplitude(self, order, space, indices):
         """Return the n'th order ground state t-amplitude as defined by
            Rayleigh-Schrödinger perturbation theory."""
+        variant = self.h._variant
+        if variant == 'mp':
+            return self.mp_amplitude(order, space, indices)
+        elif variant == 're':
+            return self.re_amplitude(order, space, indices)
+        else:
+            raise NotImplementedError("Amplitudes not implemented for "
+                                      f"{self.h._variant}")
+
+    @process_arguments
+    @cached_member
+    def mp_amplitude(self, order, space, indices):
+        """Computes the n'th order t-amplitude for the given space as computed
+           according to the MP amplitude equation, i.e., for a diagonal
+           0th order Hamiltonian."""
         from .intermediates import orb_energy
 
         space = transform_to_tuple(space)
@@ -171,13 +184,81 @@ class GroundState:
                 ret += (
                     self.energy(o1) *
                     AntiSymmetricTensor(f"t{o2}", idx["virt"], idx["occ"])
-                )
+                ).expand()
             else:
                 ret -= (
                     self.energy(o1) *
                     AntiSymmetricTensor(f"t{o2}", idx["virt"], idx["occ"])
-                )
+                ).expand()
         return ret / denom
+
+    @process_arguments
+    @cached_member
+    def re_amplitude(self, order, space, indices):
+        """Compute the n'th order amplitude for the given space according to
+           the RE amplitude equation, which should be valid for an arbitrary
+           0th order Hamiltonian.
+           """
+        # <Phi_k|0|n> + <Phi_k|1|n-1> - sum_{m=0}^n E^{(m)} t_k^{(n-m)} = 0
+
+        # NOTE: Currently the implementation is general and should work for
+        #       arbitrary 0th order Hamiltonians.
+        #       Performance can be improved if the block structure
+        #       of the RE hamiltonian is taken into account before evaluting
+        #       wicks theorem! (Currently its done afterwards)
+
+        # validate the input
+        n_ov = n_ov_from_space(space)
+        if n_ov['n_occ'] != n_ov['n_virt']:
+            raise Inputerror(f"Invalid space for a RE t-amplitude: {space}.")
+        if n_ov['n_occ'] > 2 * order:  # space not present at the order
+            return 0
+
+        # get the target indices and validate
+        idx = self.indices.get_indices(indices)
+        if (n_ov['n_occ'] and 'occ' not in idx) or \
+                (n_ov['n_virt'] and 'virt' not in idx) or\
+                n_ov['n_occ'] != len(idx['occ']) or \
+                n_ov['n_virt'] != len(idx['virt']):
+            raise Inputerror(f"Indices {indices} are not valid for space "
+                             f"{space}.")
+
+        # - build <Phi_k|
+        bra = 1
+        if 'occ' in idx:
+            bra *= Mul(*(Fd(s) for s in idx['occ']))
+        if 'virt' in idx:
+            bra *= Mul(*(F(s) for s in reversed(idx['virt'])))
+
+        # - compute (<Phi_k|0|n> + <Phi_k|1|n-1>)
+        h0, rule = self.h.h0
+        term = bra * h0 * self.psi(order, 'ket')
+        res = wicks(term, keep_only_fully_contracted=True, rules=rule,
+                    simplify_kronecker_deltas=True)
+
+        h1, rule = self.h.h1
+        term = bra * h1 * self.psi(order - 1, 'ket')
+        res += wicks(term, keep_only_fully_contracted=True, rules=rule,
+                     simplify_kronecker_deltas=True)
+
+        # - subtract sum_{m=0}^n E^{(m)} t_k^{(n-m)}
+        for e_order, t_order in gen_term_orders(order, 2, 0):
+            # check if a t amplitude of order t_order exists
+            # special treatment of first order singles
+            if n_ov['n_occ'] > 2 * t_order or \
+                    (n_ov['n_occ'] == 1 and t_order == 1 and not self.singles):
+                continue
+            if n_ov['n_occ'] == 2:  # doubles -> different sign!
+                res += (
+                    self.energy(e_order) *
+                    AntiSymmetricTensor(f"t{t_order}", idx['virt'], idx['occ'])
+                ).expand()
+            else:
+                res -= (
+                    self.energy(e_order) *
+                    AntiSymmetricTensor(f"t{t_order}", idx['virt'], idx['occ'])
+                ).expand()
+        return res
 
     def overlap(self, order):
         """Computes the ground state overlap matrix."""

@@ -2,6 +2,7 @@ from sympy_adc.operators import Operators
 from sympy_adc.groundstate import GroundState
 from sympy_adc.expr_container import Expr
 from sympy_adc.reduce_expr import factor_eri_parts, factor_denom
+from sympy_adc.simplify import simplify
 
 import itertools
 import json
@@ -32,7 +33,7 @@ class Generator:
             generators = [m for m in generators
                           if any(name in m for name in self.names)]
         for m in generators:  # run all remaining generators
-            print(f"Running {m} ... ", end='')
+            print(f"Running {m} ... ", end='', flush=True)
             mute_and_run(getattr(self, m))
             print("Done")
 
@@ -114,9 +115,12 @@ class Generator:
                       ('pppphhhh', 'ijklabcd')]}
 
         results = {}
-        for variant in ['mp']:
+        for variant in ['mp', 're']:
             results[variant] = {}
             for order in [1, 2]:
+                if variant == 're' and order == 2:
+                    # TODO: add them when I know how they should look like
+                    continue
                 results[variant][order] = {}
                 for sp, idx in spaces[order]:
                     ampl = self.gs[variant].amplitude(order, sp, idx)
@@ -125,7 +129,7 @@ class Generator:
                     if variant == 'mp':
                         ampl = simplify_mp(ampl)
                     else:
-                        raise NotImplementedError()
+                        ampl = simplify(ampl)
                     results[variant][order][sp] = str(ampl)
         write_json(results, outfile)
 
