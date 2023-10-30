@@ -274,6 +274,9 @@ def simplify(expr: e.Expr) -> e.Expr:
 
 
 def simplify_unitary(expr: e.Expr, t_name: str) -> e.Expr:
+    """Simplifies an expression that contains unitary tensors by applying
+       U_pq * U_pr * Remainder = delta_qr * Remainder,
+       where the Remainder does not contain the index p."""
     from itertools import combinations
 
     def simplify_term_unitary(term: e.Term) -> e.Term:
