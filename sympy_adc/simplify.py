@@ -273,6 +273,73 @@ def simplify(expr: e.Expr) -> e.Expr:
     return res
 
 
+def simplify_unitary(expr: e.Expr, t_name: str) -> e.Expr:
+    from itertools import combinations
+
+    def simplify_term_unitary(term: e.Term) -> e.Term:
+        obj = term.objects
+        # collect the indices of all unitary tensors in the term
+        unitary_tensors = [i for i, o in enumerate(obj) if o.name == t_name
+                           for _ in range(o.exponent)]
+
+        # only implemented for 2 dimensional unitary tensors
+        if any(len(obj[i].idx) != 2 for i in unitary_tensors):
+            raise NotImplementedError("Did only implement the case of 2D "
+                                      f"unitary tensors. Found {t_name} in "
+                                      f"{term}")
+
+        # need at least 2 unitary tensors
+        if len(unitary_tensors) < 2:
+            return term
+
+        # find the target indices
+        target = term.target
+        idx_counter = Counter(term.idx)
+
+        # iterate over all pairs and look for matching contracted indices
+        # that do only occur on the two unitary tensors we want to simplify
+        for (i1, i2) in combinations(unitary_tensors, 2):
+            idx1 = obj[i1].idx
+            idx2 = obj[i2].idx
+            # U_pq U_pr = delta_qr
+            if idx1[0] == idx2[0] and idx1[0] not in target and \
+                    idx_counter[idx1[0]] == 2:
+                delta = KroneckerDelta(idx1[1], idx2[1])
+            # U_qp U_rp = delta_qr
+            elif idx1[1] == idx2[1] and idx1[1] not in target and \
+                    idx_counter[idx1[1]] == 2:
+                delta = KroneckerDelta(idx1[0], idx2[0])
+            else:  # no matching indices
+                continue
+
+            # lower the exponent of the 2 unitary tensors and
+            # add the created delta to the term
+            new_term = e.Expr(delta, **term.assumptions)
+            if i1 == i2:
+                new_term *= Pow(obj[i1].extract_pow, obj[i1].exponent - 2)
+            else:
+                new_term *= Pow(obj[i1].extract_pow, obj[i1].exponent - 1)
+                new_term *= Pow(obj[i2].extract_pow, obj[i2].exponent - 1)
+
+            # add remaining objects
+            for i, o in enumerate(obj):
+                if i == i1 or i == i2:
+                    continue
+                else:
+                    new_term *= o
+            return simplify_term_unitary(new_term.terms[0])
+        # could not find simplification -> return
+        return term
+
+    if not isinstance(expr, e.Expr):
+        raise TypeError(f"Expr needs to be provided as {e.Expr}.")
+
+    res = e.Expr(0, **expr.assumptions)
+    for term in expr.terms:
+        res += simplify_term_unitary(term)
+    return res
+
+
 def remove_tensor(expr: e.Expr, t_name: str):
     """Removes the given tensor in each term of an expr by reverting the
        contraction.

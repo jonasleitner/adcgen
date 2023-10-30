@@ -57,7 +57,8 @@ class TestGroundState():
         # - there are no zeroth order amplitudes
         # - only tests for first order re amplitudes
         if order == 0 or (variant == 're' and order != 1):
-            # How to permanently skip invalid combinations (order == 0)
+            # TODO:
+            # How to permanently skip invalid combinations (order == 0):
             # https://github.com/pytest-dev/pytest/issues/3730
             pytest.skip()
 
