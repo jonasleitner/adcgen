@@ -1591,27 +1591,35 @@ class Obj(Container):
             name = self.name
             if name == 'V':  # ERI
                 tex_string = f"\\langle {upper}\\vert\\vert {lower}\\rangle"
-            # t-amplitude
-            elif name[0] == 't' and name[1:].replace('c', '').isnumeric():
-                if 'c' in name[1:]:
-                    order = name[1:].replace('c', '')
-                    tex_string = "{t^{" + upper + "}_{" + lower + "}}^{(" + \
-                        order + ")\\ast}"
-                else:
-                    order = name[1:]
-                    tex_string = "{t^{" + upper + "}_{" + lower + "}}^{(" + \
-                        order + ")}"
-            else:  # arbitrary other tensor and ADC-amplitudes
-                if name == 'e':  # orbital energies as epsilon
+            elif name == 'f':  # fock matrix: only lower indices
+                tex_string = "f_{" + upper + lower + "}"
+            else:  # arbitrary other tensor and amplitudes
+                order_str = ""
+                # t-amplitudes
+                if name[0] == 't' and name[1:].replace('c', '').isnumeric():
+                    if 'c' in name[1:]:
+                        order = name[1:].replace('c', '')
+                    else:
+                        order = name[1:]
+                    name = "{t"
+                    order_str = "}^{(" + order + ")}"
+                elif name == 'e':  # orbital energies as epsilon
                     name = "\\varepsilon"
+                elif name[0] == 'p' and name[1:].isnumeric():  # mp densities
+                    order = name[1:]
+                    name = "{\\rho"
+                    order_str = "}^{(" + order + ")}"
+
                 tex_string = name
                 if upper is not None:
                     tex_string += "^{" + upper + "}"
                 if lower is not None:
                     tex_string += "_{" + lower + "}"
+                tex_string += order_str
+
             if (exp := self.exponent) != 1:
                 if name == 'V':  # ERI
-                    tex_string += "{" + exp + "}"
+                    tex_string += "^{" + str(exp) + "}"
                 else:
                     tex_string = f"\\bigl({tex_string}\\bigr)^{{{exp}}}"
             return tex_string

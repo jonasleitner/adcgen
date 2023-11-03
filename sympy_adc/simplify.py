@@ -2,6 +2,7 @@ from .indices import (index_space, get_symbols, order_substitutions,
                       get_lowest_avail_indices, minimize_tensor_indices)
 from .misc import Inputerror
 from . import expr_container as e
+
 from sympy import Add, Pow, S, Dummy, KroneckerDelta, sqrt, Rational
 from collections import Counter, defaultdict
 
@@ -273,10 +274,12 @@ def simplify(expr: e.Expr) -> e.Expr:
     return res
 
 
-def simplify_unitary(expr: e.Expr, t_name: str) -> e.Expr:
+def simplify_unitary(expr: e.Expr, t_name: str,
+                     evaluate_deltas: bool = False) -> e.Expr:
     """Simplifies an expression that contains unitary tensors by applying
        U_pq * U_pr * Remainder = delta_qr * Remainder,
        where the Remainder does not contain the index p."""
+    from sympy.physics.secondquant import evaluate_deltas
     from itertools import combinations
 
     def simplify_term_unitary(term: e.Term) -> e.Term:
@@ -290,6 +293,10 @@ def simplify_unitary(expr: e.Expr, t_name: str) -> e.Expr:
             raise NotImplementedError("Did only implement the case of 2D "
                                       f"unitary tensors. Found {t_name} in "
                                       f"{term}")
+
+        # TODO: if we have a AntiSymmetricTensor as unitary tensor
+        #   -> what kind of bra ket symmetry is possible?
+        #   throw an error if it is set to +-1?
 
         # need at least 2 unitary tensors
         if len(unitary_tensors) < 2:
@@ -340,6 +347,10 @@ def simplify_unitary(expr: e.Expr, t_name: str) -> e.Expr:
     res = e.Expr(0, **expr.assumptions)
     for term in expr.terms:
         res += simplify_term_unitary(term)
+
+    # evaluate the generated deltas if requested
+    if evaluate_deltas:
+        res = e.Expr(evaluate_deltas(res.sympy), **res.assumptions)
     return res
 
 
