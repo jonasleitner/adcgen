@@ -44,14 +44,14 @@ class TestSecularMatrix():
             # check that we cancelled all orbital energy numerators
             for term in block_expr.terms:
                 term = EriOrbenergy(term)
-                print(term)
+                # print(term)
                 assert term.num.sympy in [S.One, S.Zero]
             # factor intermediates
             block_expr = factor_intermediates(block_expr, max_order=order-1)
             # check that we removed all denominators
             for term in block_expr.terms:
                 term = EriOrbenergy(term)
-                print(term)
+                # print(term)
                 assert term.denom.sympy is S.One
             # compare to reference
             ref_block_expr = ref["real_factored_m"]["_".join(delta_sp)]

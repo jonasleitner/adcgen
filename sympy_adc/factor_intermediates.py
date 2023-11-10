@@ -219,7 +219,7 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                 # denominator of the remainder, that do not occur in the eri
                 # part or the itmd indices. This avoids factoring an
                 # itmd using invalid contracted itmd indices that are only
-                # partially removed from the term, e.g., m, a contracted itmd
+                # partially removed from the term, e.g., m - a contracted itmd
                 # index occurs in both, denominator and eri part, but is only
                 # removed in the eri part, because the itmd has no denominator.
                 _validate_indices(remainder, itmd_indices)
@@ -249,6 +249,14 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                              Rational(1, len(matching_itmd_terms)) /
                              itmd[itmd_i].pref)
 
+                # - compute the factor that the term should have if we want
+                #   to factor the current variant with a prefactor of 1
+                #   (required for factoring mixed prefactors)
+                unit_factorization_pref = (
+                    itmd[itmd_i].pref * variant_data['factor']
+                    * len(matching_itmd_terms)
+                )
+
                 # - assign the found match to an intermediate
                 #   (try to build complete intermediates)
                 assigned = False
@@ -267,7 +275,7 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                     prefactor *= factor
                     # iterator over all previously initialized intermediates
                     # and try to add to one of them
-                    for pref, term_list in itmd_list:
+                    for pref, term_list, unit_factors in itmd_list:
                         # check if:
                         #  - the current term is already assigned to
                         #    some itmd term (cant assign the same term
@@ -283,6 +291,10 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                         # -> can add
                         for itmd_j in matching_itmd_terms:
                             term_list[itmd_j] = term_i
+                        # add the factor which the term should have to factor
+                        # the current intermediate variant with a prefactor
+                        # of 1
+                        unit_factors[term_i] = unit_factorization_pref
                         assigned = True
                         break
                     # either was possible to add to an intermediate or not
@@ -294,9 +306,10 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                     else:  # remainder is equal to another already found one
                         remainder = matching_remainder
                     found_intermediates[itmd_indices][remainder].append(
-                        (prefactor, [term_i if itmd_j in matching_itmd_terms
-                                     else None
-                                     for itmd_j in range(itmd_length)])
+                        (prefactor,
+                         [term_i if itmd_j in matching_itmd_terms else None
+                          for itmd_j in range(itmd_length)],
+                         {term_i: unit_factorization_pref})
                     )
     print("\nDONE COLLECTING INTERMEDIATES:")
     print(found_intermediates)
@@ -311,35 +324,45 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
             # new nested list of itmd that were not complete or
             # already used to factor another itmd
             remaining_itmds = []
-            for pref, term_list in itmd_list:
+            for pref, term_list, unit_factors in itmd_list:
                 # only look for complete intermediates with all terms available
                 # -> all itmd_terms found and all terms not already factored
                 if any(term_i is None or term_i in factored_terms
                        for term_i in term_list):
-                    remaining_itmds.append((pref, term_list))
+                    remaining_itmds.append((pref, term_list, unit_factors))
                     continue
                 # Found complete intermediate -> factor
                 print(f"\nFactoring {itmd_cls.name} in terms:")
                 for term_i in term_list:
                     print(EriOrbenergy(terms[term_i]))
-                new_term = (rem * pref *
-                            itmd_cls.tensor(indices=itmd_indices,
-                                            return_sympy=True))
+
+                new_term = _build_factored_term(rem, pref, itmd_cls,
+                                                itmd_indices)
                 print(f"result:\n{EriOrbenergy(new_term)}")
 
                 factored += new_term
                 factored_terms.update(term_list)
                 factored_successfully = True
-            # use None instead of empty list if we could factor all itmds
+            # add a list of all intermediates that were not all terms
+            # were available to factor the intermediate
             if not remaining_itmds:
                 remaining_itmds = None
             found_intermediates[itmd_indices][rem] = remaining_itmds
+
+    # go again through the remaining itmd variants and try to build more
+    # complete variants by allowing mixed prefactors, i.e.,
+    # add a term that belongs to a variant with prefactor 1
+    # to the nearly complete variant with prefactor 2. To compensate
+    # for this, additional terms are added to the result.
+    factored, factored_mixed_pref_successfully = _factor_mixed_prefactors(
+        factored, terms, found_intermediates, factored_terms, itmd_cls
+    )
+    factored_successfully |= factored_mixed_pref_successfully
+
     # TODO:
     # go again through the remaining itmds and see if we can factor another
     # intermediate by filling up some terms, e.g. if we found 5 out of 6 terms
     # it still makes sense to factor the itmd
-    # also try to mix and match the prefactors, e.g. we found 4 terms with
-    # prefactor 1 and 2 terms with prefactor 1/2 -> factor again
 
     # Currently everything is just added to the result
     for term_i, term in enumerate(terms):
@@ -488,9 +511,9 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
                 **remainder.assumptions
             )
         # - build the new term including the itmd
-        factored_term = (pref * remainder *
-                         itmd_cls.tensor(indices=itmd_indices,
-                                         return_sympy=True))
+        factored_term = _build_factored_term(remainder, pref, itmd_cls,
+                                             itmd_indices)
+
         factored_sucessfully = True
         print(f"\nFactoring {itmd_cls.name} in:\n{term}\n"
               f"result:\n{EriOrbenergy(factored_term)}")
@@ -508,6 +531,145 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
                     name not in (antisym_t := factored.antisym_tensors):
                 factored.set_antisym_tensors(antisym_t + (name,))
     return factored
+
+
+def _factor_mixed_prefactors(factored: e.Expr, terms: list[e.Term],
+                             found_intermediates: dict, factored_terms: set,
+                             itmd_cls):
+    """Tries to factor an intermediate by filling missing terms in a
+       variant with terms that belong to other variants with different
+       prefactors. Additional terms are added to the result to
+       compensate for the adjustment of the prefactors."""
+
+    factored_successfully = False
+    for itmd_indices, remainders in found_intermediates.items():
+        for rem, itmd_list in remainders.items():
+            # possibly we don't have any itmd left -> None
+            if itmd_list is None:
+                continue
+            n_variants = len(itmd_list)
+            remaining_itmds = []
+            # because of the term map a term can correspond to
+            # multiple intermediate terms!
+            # -> start with a given incomplete variant and try
+            #    to fill the missing parts with other variants
+            # -> term_i needs to be unique, but each term_i can
+            #    occur multiple times
+            for i, (pref, term_list, unit_factors) in enumerate(itmd_list):
+                # update the term_list, because some terms might have already
+                # been used to factor complete intermediates
+                # also update the unit_factors
+                term_list = [None if term_i is None or term_i in factored_terms
+                             else term_i for term_i in term_list]
+                unit_factors = {term_i: f for term_i, f in unit_factors.items()
+                                if term_i in term_list}
+                prefactors = [None if term_i is None else pref
+                              for term_i in term_list]
+                n_missing_terms = term_list.count(None)
+                # skip empty intermediates, where no terms are available
+                if n_missing_terms == len(term_list):
+                    continue
+
+                # loop over the upper triangle and try to fill the itmd
+                for j in range(i, n_variants):
+                    other_pref, other_term_list, other_unit_factors = itmd_list[j]
+                    available = {}
+                    for itmd_i, term_i in enumerate(other_term_list):
+                        # check if the other term is still available
+                        # and if we don't already use the term in the
+                        # variant we want to complete
+                        if term_i is None or term_i in term_list \
+                                or term_i in factored_terms:
+                            continue
+                        if term_i not in available:
+                            available[term_i] = []
+                        available[term_i].append(itmd_i)
+
+                    for term_i, itmd_i_list in available.items():
+                        # ensure that all the positions are vacant
+                        if any(term_list[itmd_i] is not None for itmd_i
+                               in itmd_i_list):
+                            continue
+                        assert len(itmd_i_list) <= n_missing_terms
+                        for itmd_i in itmd_i_list:  # fill the missing pos
+                            term_list[itmd_i] = term_i
+                            prefactors[itmd_i] = other_pref
+                            n_missing_terms -= 1
+
+                        unit_factors[term_i] = other_unit_factors[term_i]
+
+                        # check if we are done and completed the itmd
+                        if n_missing_terms == 0:
+                            break
+                    if n_missing_terms == 0:
+                        break
+
+                # could not fill up the intermediate with other prefactors
+                # -> keep the filled up state so we may try to
+                #    factor it as incomplete intermediate
+                if n_missing_terms:
+                    remaining_itmds.append(
+                        (prefactors, term_list, unit_factors)
+                    )
+                    continue
+                # found a complete intermediate with mixed prefactors!!
+
+                # check how many terms share a common prefactor
+                most_common_pref, count = sorted(
+                    Counter(prefactors).items(), key=lambda x: x[1]
+                )[-1]
+
+                # if not enough terms share a common prefactor
+                # -> don't factor! will not give a shorter expression
+                if count < 0.6 * len(term_list):
+                    continue
+
+                terms_to_add = {}
+                for p, term_i in zip(prefactors, term_list):
+                    if p == most_common_pref or term_i in terms_to_add:
+                        continue
+                    terms_to_add[term_i] = p
+
+                # for all terms that don't have the most common prefactor:
+                # determine extension that needs to be added to the term
+                # to factor the intermediate
+                print("\nAdding terms:")
+                for term_i, p in terms_to_add.items():
+                    desired_pref = most_common_pref * unit_factors[term_i]
+                    term = EriOrbenergy(terms[term_i]).canonicalize_sign()
+                    extension_pref = term.pref - desired_pref
+                    term = extension_pref * term.num * term.eri / term.denom
+                    print(EriOrbenergy(term))
+                    factored += term
+
+                print(f"\nFactoring {itmd_cls.name} with mixed prefs in:")
+                for term_i in term_list:
+                    print(EriOrbenergy(terms[term_i]))
+
+                # build the factored intermediate and add to the term
+                new_term = _build_factored_term(rem, most_common_pref,
+                                                itmd_cls, itmd_indices)
+                print(f"result:\n{EriOrbenergy(new_term)}")
+                factored += new_term
+
+                factored_terms.update(term_list)
+                factored_successfully = True
+            # add a list of all filled up variants back to
+            # found_intermediates so we can try to factor incomplete
+            # variants later
+            if not remaining_itmds:
+                remaining_itmds = None
+            found_intermediates[itmd_indices][rem] = remaining_itmds
+    return factored, factored_successfully
+
+
+def _build_factored_term(remainder: e.Expr, pref, itmd_cls,
+                         itmd_indices) -> e.Expr:
+    tensor = itmd_cls.tensor(indices=itmd_indices, return_sympy=True)
+    # resolve the Zero placeholder for residuals
+    if tensor.symbol.name == "Zero":
+        return e.Expr(0, **remainder.assumptions)
+    return remainder * pref * tensor
 
 
 def _get_remainder(term: EriOrbenergy, obj_i: list[int],

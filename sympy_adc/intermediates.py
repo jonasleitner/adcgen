@@ -691,6 +691,49 @@ class t2_3(RegisteredIntermediate):
         return AntiSymmetricTensor('t3', indices[2:], indices[:2])
 
 
+class t2_1_re_residual(RegisteredIntermediate):
+    """Residual of the first order REPT doubles amplitudes.
+    """
+    _itmd_type: str = 're_residual'
+    _order: int = 2  # according to MP the maximum order of the residual is 2
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, a, b = get_symbols(self.default_idx)
+        # additional contracted indices
+        k, l, c, d = get_symbols('klcd')
+        # t2_1 class instance
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+
+        # (1 - P_ij)(1 - P_ab) <ic||ka> t_jk^bc
+        base = eri([i, c, k, a]) * t2.tensor(indices=[j, k, b, c])
+        itmd = (base.sympy - base.copy().permute((i, j)).sympy
+                - base.copy().permute((a, b)).sympy
+                + base.copy().permute((i, j), (a, b)))
+        # (1 - P_ab) f_ac t_ij^bc
+        base = fock([a, c]) * t2.tensor(indices=[i, j, b, c])
+        itmd += base.sympy - base.copy().permute((a, b)).sympy
+        # (1 - P_ij) f_jk t_ik^ab
+        base = fock([j, k]) * t2.tensor(indices=[i, k, a, b])
+        itmd += base.sympy - base.copy().permute((i, j)).sympy
+        # - 0.5 * <ab||cd> t_ij^cd
+        itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
+                 t2.tensor(indices=(i, j, c, d), return_sympy=True))
+        # -0.5 * <ij||kl> t_kl^ab
+        itmd -= (Rational(1, 2) * eri((i, j, k, l)) *
+                 t2.tensor(indices=(k, l, a, b), return_sympy=True))
+        # + <ij||ab>
+        itmd += eri((i, j, a, b))
+        target = (i, j, a, b)
+        contracted = (k, l, c, d)
+        return base_expr(itmd, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        # placeholder for 0, will be replaced in factor_intermediate
+        return AntiSymmetricTensor("Zero", indices[:2], indices[2:])
+
+
 class p0_2_oo(RegisteredIntermediate):
     """Occupied Occupied block of the 2nd order contribution of the MP density
     """
@@ -1077,6 +1120,17 @@ def eri(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:
     if len(idx) != 4:
         raise Inputerror(f'4 indices required to build a ERI. Got: {idx}.')
     return AntiSymmetricTensor('V', idx[:2], idx[2:])
+
+
+def fock(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:
+    """Builds an electron repulsion integral using the provided indices.
+       Indices may be provided as list of sympy symbols or as string."""
+
+    idx = get_symbols(idx)
+    if len(idx) != 2:
+        raise Inputerror('2 indices required to build a Fock matrix element.'
+                         f'Got: {idx}.')
+    return AntiSymmetricTensor('f', idx[:1], idx[1:])
 
 
 def orb_energy(idx: str | Dummy) -> NonSymmetricTensor:
