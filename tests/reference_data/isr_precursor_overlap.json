@@ -1,0 +1,9 @@
+{
+  "pp": {
+    "ph,ph": {
+      "0": "\\delta_{a b} \\delta_{i j}",
+      "1": "0",
+      "2": "- \\frac{\\delta_{a b} {t1^{a3a4}_{ii3}} {t1cc^{a3a4}_{ji3}}}{2} - \\frac{\\delta_{i j} {t1^{aa3}_{i3j3}} {t1cc^{ba3}_{i3j3}}}{2} + {t1^{aa3}_{ii3}} {t1cc^{ba3}_{ji3}}"
+    }
+  }
+}

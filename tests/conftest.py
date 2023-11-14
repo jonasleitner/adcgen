@@ -18,19 +18,21 @@ def cls_instances():
     re = GroundState(re_op, first_order_singles=False)
     re_singles = GroundState(re_op, first_order_singles=True)
     isr_pp = IntermediateStates(mp, variant='pp')
+    isr_re_pp = IntermediateStates(re, variant='pp')
     m_pp = SecularMatrix(isr_pp)
     return {
         'mp': {
             'op': mp_op,
             'gs': mp,
             'gs_with_singles': mp_singles,
-            'isr': isr_pp,
+            'isr_pp': isr_pp,
             'm': m_pp
         },
         're': {
             'op': re_op,
             'gs': re,
-            'gs_with_singles': re_singles
+            'gs_with_singles': re_singles,
+            'isr_pp': isr_re_pp
         }
     }
 

@@ -1,0 +1,18 @@
+{
+  "pp": {
+    "ph": {
+      "0": {
+        "bra": "- \\left\\{a_{a} {a^\\dagger_{i}}\\right\\}",
+        "ket": "\\left\\{{a^\\dagger_{a}} a_{i}\\right\\}"
+      },
+      "1": {
+        "bra": "- \\frac{{t1cc^{a3b3}_{i3j3}} \\left\\{a_{a} {a^\\dagger_{i}}\\right\\} \\left\\{a_{a3} a_{b3} {a^\\dagger_{i3}} {a^\\dagger_{j3}}\\right\\}}{4}",
+        "ket": "\\frac{{t1^{a4b4}_{j4k4}} \\left\\{{a^\\dagger_{a}} a_{i}\\right\\} \\left\\{{a^\\dagger_{a4}} {a^\\dagger_{b4}} a_{j4} a_{k4}\\right\\}}{4}"
+      },
+      "2": {
+        "bra": "- {t2^{a}_{i}} + {t2cc^{a5}_{k5}} \\left\\{a_{a} {a^\\dagger_{i}}\\right\\} \\left\\{a_{a5} {a^\\dagger_{k5}}\\right\\} - \\frac{{t2cc^{a5b5}_{k5l5}} \\left\\{a_{a} {a^\\dagger_{i}}\\right\\} \\left\\{a_{a5} a_{b5} {a^\\dagger_{k5}} {a^\\dagger_{l5}}\\right\\}}{4} - \\frac{{t2cc^{a5b5c5}_{k5l5m5}} \\left\\{a_{a} {a^\\dagger_{i}}\\right\\} \\left\\{a_{a5} a_{b5} a_{c5} {a^\\dagger_{k5}} {a^\\dagger_{l5}} {a^\\dagger_{m5}}\\right\\}}{36} - \\frac{{t2cc^{a5b5c5d5}_{k5l5m5n5}} \\left\\{a_{a} {a^\\dagger_{i}}\\right\\} \\left\\{a_{a5} a_{b5} a_{c5} a_{d5} {a^\\dagger_{k5}} {a^\\dagger_{l5}} {a^\\dagger_{m5}} {a^\\dagger_{n5}}\\right\\}}{576}",
+        "ket": "{t2^{e9}_{l10}} \\left\\{{a^\\dagger_{a}} a_{i}\\right\\} \\left\\{{a^\\dagger_{e9}} a_{l10}\\right\\} + \\frac{{t2^{e9f9}_{l10m10}} \\left\\{{a^\\dagger_{a}} a_{i}\\right\\} \\left\\{{a^\\dagger_{e9}} {a^\\dagger_{f9}} a_{l10} a_{m10}\\right\\}}{4} - \\frac{{t2^{e9f9g9}_{l10m10n10}} \\left\\{{a^\\dagger_{a}} a_{i}\\right\\} \\left\\{{a^\\dagger_{e9}} {a^\\dagger_{f9}} {a^\\dagger_{g9}} a_{l10} a_{m10} a_{n10}\\right\\}}{36} + \\frac{{t2^{e9f9g9h9}_{l10m10n10o10}} \\left\\{{a^\\dagger_{a}} a_{i}\\right\\} \\left\\{{a^\\dagger_{e9}} {a^\\dagger_{f9}} {a^\\dagger_{g9}} {a^\\dagger_{h9}} a_{l10} a_{m10} a_{n10} a_{o10}\\right\\}}{576} - {t2cc^{a}_{i}}"
+      }
+    }
+  }
+}

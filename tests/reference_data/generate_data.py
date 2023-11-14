@@ -1,5 +1,6 @@
 from sympy_adc.operators import Operators
 from sympy_adc.groundstate import GroundState
+from sympy_adc.isr import IntermediateStates
 from sympy_adc.expr_container import Expr
 from sympy_adc.reduce_expr import factor_eri_parts, factor_denom
 from sympy_adc.simplify import simplify
@@ -17,11 +18,13 @@ class Generator:
         mp = GroundState(mp_op, first_order_singles=False)
         mp_with_singles = GroundState(mp_op, first_order_singles=True)
         re = GroundState(re_op, first_order_singles=False)
+        isr_pp = IntermediateStates(mp, variant='pp')
         self.op = {'mp': mp_op,
                    're': re_op}
         self.gs = {'mp': mp,
                    're': re,
                    'mp_with_singles': mp_with_singles}
+        self.isr = {'pp': isr_pp}
 
         self.names = names
 
@@ -131,6 +134,41 @@ class Generator:
                     else:
                         ampl = simplify(ampl)
                     results[variant][order][sp] = str(ampl)
+        write_json(results, outfile)
+
+    def gen_precursor(self):
+        outfile = "isr_precursor.json"
+
+        to_generate = {'pp': {('ph', 'ia'): [0, 1, 2]}}
+
+        results = {}
+        for variant, spaces in to_generate.items():
+            results[variant] = {}
+            isr = self.isr[variant]
+            for (sp, indices), orders in spaces.items():
+                results[variant][sp] = {}
+                for o in orders:
+                    results[variant][sp][o] = {}
+                    bra = Expr(isr.precursor(o, sp, 'bra', indices))
+                    ket = Expr(isr.precursor(o, sp, 'ket', indices))
+                    results[variant][sp][o]['bra'] = str(bra)
+                    results[variant][sp][o]['ket'] = str(ket)
+        write_json(results, outfile)
+
+    def gen_precursor_overlap(self):
+        outfile = "isr_precursor_overlap.json"
+
+        to_generate = {'pp': {('ph,ph', 'ia,jb'): [0, 1, 2]}}
+
+        results = {}
+        for variant, blocks in to_generate.items():
+            results[variant] = {}
+            isr = self.isr[variant]
+            for (b, indices), orders in blocks.items():
+                results[variant][b] = {}
+                for o in orders:
+                    res = Expr(isr.overlap_precursor(o, b, indices))
+                    results[variant][b][o] = str(res)
         write_json(results, outfile)
 
 
