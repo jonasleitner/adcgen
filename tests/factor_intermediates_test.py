@@ -1,5 +1,6 @@
 from sympy_adc.factor_intermediates import factor_intermediates
 from sympy_adc.func import import_from_sympy_latex
+from sympy_adc.simplify import simplify
 
 from sympy import S
 
@@ -41,7 +42,67 @@ class TestFactorIntermediates:
         ref = t * t * t2 * remainder * 2
         assert (res.sympy - ref.sympy) is S.Zero
 
+    def test_long_intermediate_complete(self):
+        # rather easy, but also fast example: eri * t2_2 amplitude
+        # - no intersection of the indices -> t2_2 consists of 6 terms
+        test = import_from_sympy_latex(
+            r"- \frac{{V^{cd}_{ef}} {V^{ij}_{ab}} {V^{kl}_{ef}}}{2 \left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{e}} + {e_{f}} - {e_{k}} - {e_{l}}\right)} "  # noqa E501
+            r"+ \frac{{V^{ij}_{ab}} {V^{ke}_{mc}} {V^{lm}_{de}}}{\left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{d}} + {e_{e}} - {e_{l}} - {e_{m}}\right)} "  # noqa E501
+            r"- \frac{{V^{ij}_{ab}} {V^{km}_{de}} {V^{le}_{mc}}}{\left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{d}} + {e_{e}} - {e_{k}} - {e_{m}}\right)} "  # noqa E501
+            r"- \frac{{V^{ij}_{ab}} {V^{ke}_{md}} {V^{lm}_{ce}}}{\left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{c}} + {e_{e}} - {e_{l}} - {e_{m}}\right)} "  # noqa E501
+            r"+ \frac{{V^{ij}_{ab}} {V^{km}_{ce}} {V^{le}_{md}}}{\left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{c}} + {e_{e}} - {e_{k}} - {e_{m}}\right)} "  # noqa E501
+            r"- \frac{{V^{ij}_{ab}} {V^{kl}_{mn}} {V^{mn}_{cd}}}{2 \left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{c}} + {e_{d}} - {e_{m}} - {e_{n}}\right)}"  # noqa E501
+        ).make_real()
+        test.set_target_idx('ijklabcd')
+
+        # ensure that the same result is obtained indepent of the
+        # factored intermediates
+        res = factor_intermediates(test, types_or_names='t2_2')
+        res2 = factor_intermediates(test, types_or_names=['t2_1', 't2_2'])
+        res3 = factor_intermediates(test,
+                                    types_or_names=['t2_1', 't1_2', 't2_2'])
+        assert simplify(res - res2).sympy is S.Zero
+        assert simplify(res - res3).sympy is S.Zero
+
+        ref = import_from_sympy_latex("{V^{ab}_{ij}} {t2^{cd}_{kl}}")
+        ref.make_real()
+        ref.set_target_idx('ijklabcd')
+        assert simplify(res - ref).sympy is S.Zero
+
+        # - occupied indices intersect -> t2_2 consists of 4 terms
+        test = import_from_sympy_latex(
+            r"- \frac{{V^{cd}_{ef}} {V^{ij}_{ab}} {V^{ij}_{ef}}}{2 \left({e_{c}} + {e_{d}} - {e_{i}} - {e_{j}}\right) \left({e_{e}} + {e_{f}} - {e_{i}} - {e_{j}}\right)} "  # noqa E501
+            r"+ \frac{2 {V^{ie}_{kc}} {V^{ij}_{ab}} {V^{jk}_{de}}}{\left({e_{c}} + {e_{d}} - {e_{i}} - {e_{j}}\right) \left({e_{d}} + {e_{e}} - {e_{j}} - {e_{k}}\right)} "  # noqa E501
+            r"+ \frac{2 {V^{ij}_{ab}} {V^{ik}_{ce}} {V^{je}_{kd}}}{\left({e_{c}} + {e_{d}} - {e_{i}} - {e_{j}}\right) \left({e_{c}} + {e_{e}} - {e_{i}} - {e_{k}}\right)} "  # noqa E501
+            r"- \frac{{V^{ij}_{ab}} {V^{ij}_{kl}} {V^{kl}_{cd}}}{2 \left({e_{c}} + {e_{d}} - {e_{i}} - {e_{j}}\right) \left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right)}"  # noqa E501
+        ).make_real()
+        test.set_target_idx('abcd')
+
+        ref = import_from_sympy_latex("{V^{ab}_{ij}} {t2^{cd}_{ij}}")
+        ref.make_real()
+        ref.set_target_idx('abcd')
+
+        res = factor_intermediates(test, types_or_names='t2_2')
+        assert simplify(res - ref).sympy is S.Zero
+
+        # - occ and virt intersect -> t2_2 consists of 3 terms
+        test = import_from_sympy_latex(
+            r"- \frac{{V^{ab}_{cd}} {V^{ij}_{ab}} {V^{ij}_{cd}}}{2 \left({e_{a}} + {e_{b}} - {e_{i}} - {e_{j}}\right) \left({e_{c}} + {e_{d}} - {e_{i}} - {e_{j}}\right)} "  # noqa E501
+            r"+ \frac{4 {V^{ij}_{ab}} {V^{ik}_{ac}} {V^{jc}_{kb}}}{\left({e_{a}} + {e_{b}} - {e_{i}} - {e_{j}}\right) \left({e_{a}} + {e_{c}} - {e_{i}} - {e_{k}}\right)} "  # noqa E501
+            r"- \frac{{V^{ij}_{ab}} {V^{ij}_{kl}} {V^{kl}_{ab}}}{2 \left({e_{a}} + {e_{b}} - {e_{i}} - {e_{j}}\right) \left({e_{a}} + {e_{b}} - {e_{k}} - {e_{l}}\right)}"   # noqa E501
+        ).make_real()
+        test.set_target_idx([])
+
+        ref = import_from_sympy_latex("{V^{ab}_{ij}} {t2^{ab}_{ij}}")
+        ref.make_real()
+        ref.set_target_idx([])
+
+        res = factor_intermediates(test, types_or_names='t2_2')
+        assert simplify(res - ref).sympy is S.Zero
+
     def test_long_intermediate_mixed_prefs(self):
+        import pytest
+        pytest.skip("not implemented")
         # test expression to factor the re_t2_1_residual
         test = (
             r"\frac{\delta_{i j} {V^{kl}_{bc}} {t1^{ac}_{kl}}}{2}"

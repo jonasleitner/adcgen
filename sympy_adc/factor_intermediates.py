@@ -6,7 +6,8 @@ from .indices import (order_substitutions, get_symbols, index_space,
 from .sympy_objects import AntiSymmetricTensor
 from .symmetry import LazyTermMap
 from sympy import S, Mul, Rational
-from collections import Counter, defaultdict
+from collections import Counter
+from itertools import product
 
 
 def factor_intermediates(expr, types_or_names: str | list[str] = None,
@@ -87,9 +88,8 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
 
     terms: list[EriOrbenergy] = list(expr.terms)
 
-    # create a dict where all the found assignments are collected
-    # {itmd_indices: {remainder: [(pref, [term_i,])]}}
-    found_intermediates = defaultdict(dict)
+    # class that manages the found itmd variants
+    intermediate_variants = LongItmdVariants(itmd_length)
     for term_i, term in enumerate(terms):
         term = EriOrbenergy(term).canonicalize_sign()
         # prescan: check that the term holds the correct tensors and
@@ -226,13 +226,15 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
 
                 # check if we already found another variant that gives the
                 # same itmd_indices and remainder (an identical result that
-                # only might differ in contracted itmd_indices)
+                # only differs in contracted itmd_indices)
                 if itmd_indices not in found_remainders:
                     found_remainders[itmd_indices] = []
                 if any(_compare_remainder(remainder, found_rem, itmd_indices)
                        is not None
                        for found_rem in found_remainders[itmd_indices]):
                     continue  # go to the next variant
+                else:
+                    found_remainders[itmd_indices].append(remainder)
 
                 # - check if the current itmd_term can be mapped onto other
                 #   itmd terms
@@ -257,118 +259,47 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                     * len(matching_itmd_terms)
                 )
 
-                # - assign the found match to an intermediate
-                #   (try to build complete intermediates)
-                assigned = False
-                matching_remainder = None
-                for rem, itmd_list in found_intermediates[itmd_indices].items():  # noqa E501
-                    # check if the remainders are compatible
-                    factor = _compare_remainder(remainder=remainder,
-                                                ref_remainder=rem,
-                                                itmd_indices=itmd_indices)
-                    if factor is None:  # not compatible
-                        continue
+                # - add the match to the pool where intermediate variants
+                #   are build from
+                intermediate_variants.add(
+                    term_i=term_i, itmd_indices=itmd_indices,
+                    matching_itmd_terms=matching_itmd_terms,
+                    remainder=remainder, prefactor=prefactor,
+                    unit_factorization_pref=unit_factorization_pref
+                )
+    print("\nMATCHED INTERMEDIATE TERMS:")
+    print(intermediate_variants)
 
-                    matching_remainder = rem
-
-                    # add the factor to the prefactor: might be another -1
-                    prefactor *= factor
-                    # iterator over all previously initialized intermediates
-                    # and try to add to one of them
-                    for pref, term_list, unit_factors in itmd_list:
-                        # check if:
-                        #  - the current term is already assigned to
-                        #    some itmd term (cant assign the same term
-                        #    multiple times)
-                        #  - the itmd terms we want to map the term on
-                        #    are still available
-                        #  - the prefactors are identical
-                        if any(term_list[itmd_j] is not None for itmd_j in
-                               matching_itmd_terms) or \
-                                term_i in term_list or pref != prefactor:
-                            continue
-                        # itmd_indices, remainder and prefactor are equal
-                        # -> can add
-                        for itmd_j in matching_itmd_terms:
-                            term_list[itmd_j] = term_i
-                        # add the factor which the term should have to factor
-                        # the current intermediate variant with a prefactor
-                        # of 1
-                        unit_factors[term_i] = unit_factorization_pref
-                        assigned = True
-                        break
-                    # either was possible to add to an intermediate or not
-                    # for the given itmd indices and remainder
-                    break
-                if not assigned:  # build a new itmd
-                    if matching_remainder is None:  # new remainder
-                        found_intermediates[itmd_indices][remainder] = []
-                    else:  # remainder is equal to another already found one
-                        remainder = matching_remainder
-                    found_intermediates[itmd_indices][remainder].append(
-                        (prefactor,
-                         [term_i if itmd_j in matching_itmd_terms else None
-                          for itmd_j in range(itmd_length)],
-                         {term_i: unit_factorization_pref})
-                    )
-    print("\nDONE COLLECTING INTERMEDIATES:")
-    print(found_intermediates)
-
-    # iterate through the found intermediates and try to factor the itmd
-    # -> first only the onces that are complete
-    factored: e.Expr = 0
-    factored_successfully = False  # whether we factored the itmd at least once
+    result: e.Expr = e.Expr(0, **expr.assumptions)
     factored_terms = set()  # keep track which terms have already been factored
-    for itmd_indices, remainders in found_intermediates.items():
-        for rem, itmd_list in remainders.items():
-            # new nested list of itmd that were not complete or
-            # already used to factor another itmd
-            remaining_itmds = []
-            for pref, term_list, unit_factors in itmd_list:
-                # only look for complete intermediates with all terms available
-                # -> all itmd_terms found and all terms not already factored
-                if any(term_i is None or term_i in factored_terms
-                       for term_i in term_list):
-                    remaining_itmds.append((pref, term_list, unit_factors))
-                    continue
-                # Found complete intermediate -> factor
-                print(f"\nFactoring {itmd_cls.name} in terms:")
-                for term_i in term_list:
-                    print(EriOrbenergy(terms[term_i]))
+    factored_successfully = False
 
-                new_term = _build_factored_term(rem, pref, itmd_cls,
-                                                itmd_indices)
-                print(f"result:\n{EriOrbenergy(new_term)}")
-
-                factored += new_term
-                factored_terms.update(term_list)
-                factored_successfully = True
-            # add a list of all intermediates that were not all terms
-            # were available to factor the intermediate
-            if not remaining_itmds:
-                remaining_itmds = None
-            found_intermediates[itmd_indices][rem] = remaining_itmds
+    # first try to factor all complete intermediate variants
+    result, successful = factor_complete(result, terms, itmd_cls,
+                                         factored_terms, intermediate_variants)
+    factored_successfully |= successful
 
     # go again through the remaining itmd variants and try to build more
     # complete variants by allowing mixed prefactors, i.e.,
     # add a term that belongs to a variant with prefactor 1
     # to the nearly complete variant with prefactor 2. To compensate
     # for this, additional terms are added to the result.
-    factored, factored_mixed_pref_successfully = _factor_mixed_prefactors(
-        factored, terms, found_intermediates, factored_terms, itmd_cls
-    )
-    factored_successfully |= factored_mixed_pref_successfully
+    # factored, factored_mixed_pref_successfully = _factor_mixed_prefactors(
+    #     factored, terms, found_intermediates, factored_terms, itmd_cls
+    # )
+    # factored_successfully |= factored_mixed_pref_successfully
 
     # TODO:
     # go again through the remaining itmds and see if we can factor another
     # intermediate by filling up some terms, e.g. if we found 5 out of 6 terms
     # it still makes sense to factor the itmd
 
-    # Currently everything is just added to the result
+    # add all terms that were not involved in itmd_factorization to the result
     for term_i, term in enumerate(terms):
         if term_i not in factored_terms:
             factored_terms.add(term_i)
-            factored += term
+            result += term
+    assert len(factored_terms) == len(terms)
 
     # if we factored the itmd successfully it might be necessary to adjust
     # sym_tensors or antisym_tensors of the returned expression
@@ -377,12 +308,12 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
         if isinstance(tensor, AntiSymmetricTensor):
             name = tensor.symbol.name
             if tensor.bra_ket_sym is S.One and \
-                    name not in (sym_tensors := factored.sym_tensors):
-                factored.set_sym_tensors(sym_tensors + (name,))
+                    name not in (sym_tensors := result.sym_tensors):
+                result.set_sym_tensors(sym_tensors + (name,))
             elif tensor.bra_ket_sym is S.NegativeOne and \
-                    name not in (antisym_t := factored.antisym_tensors):
-                factored.set_antisym_tensors(antisym_t + (name,))
-    return factored
+                    name not in (antisym_t := result.antisym_tensors):
+                result.set_antisym_tensors(antisym_t + (name,))
+    return result
 
 
 def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
@@ -533,6 +464,45 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
     return factored
 
 
+def factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
+                    factored_terms: set, intermediate_variants) -> e.Expr:
+    # factor all complete variants
+    factored_successfully = False
+    for itmd_indices, remainders in intermediate_variants.items():
+        for rem in remainders:
+            complete_variant = intermediate_variants.get_complete_variant(
+                itmd_indices, rem
+            )
+            while complete_variant is not None:
+                # Found a complete intermediate with matching prefactors!!
+                pref, term_list, _ = complete_variant
+
+                print(f"\nFactoring {itmd_cls.name} in terms:")
+                for term_i in term_list:
+                    print(EriOrbenergy(terms[term_i]))
+
+                new_term = _build_factored_term(rem, pref, itmd_cls,
+                                                itmd_indices)
+                print(f"result:\n{EriOrbenergy(new_term)}")
+                result += new_term
+
+                # remove the used terms from the pool of available terms
+                # and add the terms to the already factored terms
+                intermediate_variants.remove_used_terms(term_list)
+                factored_terms.update(term_list)
+                factored_successfully = True
+
+                # try to find the next complete variant
+                complete_variant = intermediate_variants.get_complete_variant(
+                    itmd_indices, rem
+                )
+    # remove empty itmd_indices and remainders
+    if factored_successfully:
+        intermediate_variants.clean_empty()
+
+    return result, factored_successfully
+
+
 def _factor_mixed_prefactors(factored: e.Expr, terms: list[e.Term],
                              found_intermediates: dict, factored_terms: set,
                              itmd_cls):
@@ -572,7 +542,7 @@ def _factor_mixed_prefactors(factored: e.Expr, terms: list[e.Term],
 
                 # loop over the upper triangle and try to fill the itmd
                 for j in range(i, n_variants):
-                    other_pref, other_term_list, other_unit_factors = itmd_list[j]
+                    other_pref, other_term_list, other_unit_factors = itmd_list[j]  # noqa E501
                     available = {}
                     for itmd_i, term_i in enumerate(other_term_list):
                         # check if the other term is still available
@@ -757,7 +727,6 @@ def _compare_eri_parts(term: EriOrbenergy, itmd_term: EriOrbenergy,
                        term_data=None, itmd_term_data=None) -> list:
     """Compare the eri parts of two terms and return the substitutions
            that are necessary to transform the itmd_eri."""
-    from itertools import product
 
     # the eri part of the term to factor has to be at least as long as the
     # eri part of the itmd (prefactors are separated!)
@@ -1000,6 +969,204 @@ def _compare_remainder(remainder: e.Expr, ref_remainder: e.Expr,
     if len(factored) > 1:  # denominators are not compatible
         return None
     return 1 if factored[0].sympy is S.Zero else -1
+
+
+class LongItmdVariants(dict):
+    """Class to manage the variants of long intermediates."""
+
+    def __init__(self, n_itmd_terms: int, *args, **kwargs):
+        self.n_itmd_terms = n_itmd_terms
+        super().__init__(*args, **kwargs)
+
+    def add(self, term_i: int, itmd_indices: tuple, remainder: e.Expr,
+            matching_itmd_terms: tuple[int],
+            prefactor, unit_factorization_pref) -> None:
+        """Add a matches term, itmd_term pair to the pool for building
+           intermediate variants.
+        """
+
+        # trivial separation by itmd_indices (the indices of the itmd we
+        # try to factor with the current variant)
+        if itmd_indices not in self:
+            self[itmd_indices] = {}
+
+        is_new_remainder = True
+        for rem, found_matches in self[itmd_indices].items():
+            # next we can separate the variants by the remainder they will
+            # create when the variant is factored
+            factor = _compare_remainder(remainder=remainder, ref_remainder=rem,
+                                        itmd_indices=itmd_indices)
+            if factor is None:  # remainder did not match
+                continue
+
+            is_new_remainder = False
+            # possibly we got another -1 from matching the remainder
+            prefactor *= factor
+
+            # next, we can separate them according to the itmd_positions
+            # so we can later build intermediate variants more efficient
+            matching_itmd_terms = tuple(sorted(matching_itmd_terms))
+            if matching_itmd_terms not in found_matches:
+                found_matches[matching_itmd_terms] = []
+            found_matches[matching_itmd_terms].append(
+                (term_i, prefactor, unit_factorization_pref)
+            )
+            break
+        if is_new_remainder:
+            self[itmd_indices][remainder] = {}
+            matching_itmd_terms = tuple(sorted(matching_itmd_terms))
+            self[itmd_indices][remainder][matching_itmd_terms] = [
+                (term_i, prefactor, unit_factorization_pref)
+            ]
+
+    def get_complete_variant(self, itmd_indices, remainder) -> None | tuple:
+        """Returns the first complete variant it finds for the given
+           itmd_indices and the remainder. Only variants that are complete
+           and share a common prefactor are considered here.
+           If no variant can be found None is returned.
+        """
+        # itmd_indices and or remainder not found
+        if itmd_indices not in self or \
+                remainder not in self[itmd_indices]:
+            return None
+        pool = self[itmd_indices][remainder]
+
+        base_variants = self._get_base_variants(pool)
+        for base in base_variants:
+            # filter the available positions to only iterate through
+            # positions that are not already filled in the base variant
+            relevant_positions = []
+            for positions in pool:
+                if all(base[1][pos] is None for pos in positions):
+                    relevant_positions.append(positions)
+            # check if we found at least 1 match per open position
+            # if not -> we will not be able to form a complete intermediate
+            unique_positions = {p for pos in relevant_positions for p in pos}
+            if base[1].count(None) > len(unique_positions):
+                continue
+            base_pref = base[0]
+            variants = [base]
+
+            for pos_i, positions in enumerate(relevant_positions):
+                matches = pool[positions]
+                # split the available variants in variants where the
+                # current positions are available and those where they
+                # are already occupied and therefore can't add any of
+                # the matches we are currently treating
+                relevant_variants = []
+                not_relevant_variants = []
+                for i, var in enumerate(variants):
+                    if all(var[1][pos] is None for pos in positions):
+                        relevant_variants.append(i)
+                    else:
+                        not_relevant_variants.append(i)
+
+                # we can also only extend the variants with matches with
+                # an identical prefactor!
+                # (all variants we are currently building have to have
+                #  the same prefactor as the base variant we started from)
+                relevant_matches = [match_i for match_i, m
+                                    in enumerate(matches) if m[1] == base_pref]
+
+                extended_variants = []
+                for var_idx, match_i in  \
+                        product(relevant_variants, relevant_matches):
+                    pref, term_list, unit_factors = variants[var_idx]
+                    term_i, _, other_unit_factor = matches[match_i]
+                    # is the term already used in the variant at another
+                    # position?
+                    if term_i in term_list:
+                        continue
+                    # copy term_list and unit_factor dict to not change
+                    # the data in the original variant (needs to be unchanged
+                    # for other extensions to the variant)
+                    term_list = term_list.copy()
+                    unit_factors = unit_factors.copy()
+                    for p in positions:
+                        term_list[p] = term_i
+                    unit_factors[term_i] = other_unit_factor
+
+                    # check if the extended variant is complete
+                    if term_list.count(None) == 0:
+                        return (pref, term_list, unit_factors)
+
+                    extended_variants.append((pref, term_list, unit_factors))
+
+                # check which of the original, relevant variants can still be
+                # completed with the remaining positions
+                for var_idx in relevant_variants:
+                    unique_positions = {
+                        p for pos in relevant_positions[pos_i+1:] for p in pos
+                    }
+                    n_missing_terms = variants[var_idx][1].count(None)
+                    if n_missing_terms > len(unique_positions):
+                        continue
+                    extended_variants.append(variants[var_idx])
+
+                # remove all relevant variants from the original list
+                # all relevant variants that may be completed should be
+                # in extended_variants by now
+                for var_idx in sorted(not_relevant_variants, reverse=True):
+                    del variants[var_idx]
+                variants.extend(extended_variants)
+
+                # could not find a single valid extended variant
+                # and none of the not relevant variants can be completed
+                # anymore
+                # -> we can't find any complete intermediate anymore
+                if not variants:
+                    break
+        # loop completed -> no complete variant found
+        return None
+
+    def remove_used_terms(self, used_terms: list[int]) -> None:
+        """Removes the provided terms from the pool, so they can not
+           be used to build further variants.
+        """
+        for remainders in self.values():
+            for positions in remainders.values():
+                empty_pos = []
+                for pos, matches in positions.items():
+                    to_delete = [i for i, m in enumerate(matches)
+                                 if m[0] in used_terms]
+                    # need to remove element with highest element first!
+                    for i in sorted(to_delete, reverse=True):
+                        del matches[i]
+                    if not matches:  # removed all matches for the position
+                        empty_pos.append(pos)
+                for pos in empty_pos:
+                    del positions[pos]
+
+    def clean_empty(self) -> None:
+        """Removes all empty entries in the nested dictionary."""
+        empty_indices = []
+        for itmd_indices, remainders in self.items():
+            empty_rem = [rem for rem, positions in remainders.items()
+                         if not positions]
+            for rem in empty_rem:
+                del remainders[rem]
+            if not remainders:
+                empty_indices.append(itmd_indices)
+        for itmd_indices in empty_indices:
+            del self[itmd_indices]
+
+    def _get_base_variants(self, pool):
+        # Builds a list of all possible variants where the first position
+        # is filled already (multiple positions might be filled)
+        # -> try to fill the remaining positions in the other methods
+
+        starter_positions = [pos for pos in pool if 0 in pos]
+
+        variants = []
+        for positions in starter_positions:
+            for term_i, pref, unit_factor_pref in pool[positions]:
+                variants.append((
+                    pref,
+                    [term_i if i in positions else None
+                     for i in range(self.n_itmd_terms)],
+                    {term_i: unit_factor_pref}
+                ))
+        return variants
 
 
 class FactorizationTermData:
