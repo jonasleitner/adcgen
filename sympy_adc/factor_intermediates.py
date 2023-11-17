@@ -7,7 +7,7 @@ from .sympy_objects import AntiSymmetricTensor
 from .symmetry import LazyTermMap
 from sympy import S, Mul, Rational
 from collections import Counter
-from itertools import product
+from itertools import product, chain
 
 
 def factor_intermediates(expr, types_or_names: str | list[str] = None,
@@ -47,7 +47,8 @@ def factor_intermediates(expr, types_or_names: str | list[str] = None,
     # try to factor all requested intermediates
     factored = []
     for name, itmd_cls in itmd_to_factor.items():
-        print("\n", ' '*25, f"Factoring {name}\n\n", '#'*80, sep='')
+        print("\n", ' '*25, f"Factoring {name}\n\n", '#'*80, sep='',
+              flush=True)
         start = perf_counter()
         expr = itmd_cls.factor_itmd(expr, factored, max_order)
         factored.append(name)
@@ -58,7 +59,7 @@ def factor_intermediates(expr, types_or_names: str | list[str] = None,
             print(f"{i+1: >{len(str(len(expr)+1))}}:  {EriOrbenergy(term)}\n")
         print('#'*80)
     print("\n\n", '#'*80, "\n", " "*25,
-          "INTERMEDIATE FACTORIZATION FINISHED\n", '#'*80, sep='')
+          "INTERMEDIATE FACTORIZATION FINISHED\n", '#'*80, sep='', flush=True)
     # make the result pretty by minimizing contracted indices:
     # some contracted indices might be hidden inside some intermediates.
     # -> ensure that the remaining ones are the lowest available
@@ -275,8 +276,9 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
     factored_successfully = False
 
     # first try to factor all complete intermediate variants
-    result, successful = factor_complete(result, terms, itmd_cls,
-                                         factored_terms, intermediate_variants)
+    result, successful = _factor_complete(result, terms, itmd_cls,
+                                          factored_terms,
+                                          intermediate_variants)
     factored_successfully |= successful
 
     # go again through the remaining itmd variants and try to build more
@@ -464,9 +466,12 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
     return factored
 
 
-def factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
-                    factored_terms: set, intermediate_variants) -> e.Expr:
-    # factor all complete variants
+def _factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
+                     factored_terms: set, intermediate_variants) -> e.Expr:
+    """Factors all intermediate variants which are complete and share
+       common prefactor, i.e., no terms have to be added to the expression
+       to compensate for the factorization of the intermediate.
+    """
     factored_successfully = False
     for itmd_indices, remainders in intermediate_variants.items():
         for rem in remainders:
@@ -475,7 +480,7 @@ def factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
             )
             while complete_variant is not None:
                 # Found a complete intermediate with matching prefactors!!
-                pref, term_list, _ = complete_variant
+                pref, term_list = complete_variant
 
                 print(f"\nFactoring {itmd_cls.name} in terms:")
                 for term_i in term_list:
@@ -483,7 +488,7 @@ def factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
 
                 new_term = _build_factored_term(rem, pref, itmd_cls,
                                                 itmd_indices)
-                print(f"result:\n{EriOrbenergy(new_term)}")
+                print(f"result:\n{EriOrbenergy(new_term)}", flush=True)
                 result += new_term
 
                 # remove the used terms from the pool of available terms
@@ -1025,97 +1030,107 @@ class LongItmdVariants(dict):
            and share a common prefactor are considered here.
            If no variant can be found None is returned.
         """
+
+        def complete_variant(term_list, pool):
+            # check if the variant can be completed with the available
+            # positions
+            unique_positions = {p for pos, _ in pool for p in pos}
+            n_missing_terms = term_list.count(None)
+            if n_missing_terms > len(unique_positions):
+                return None
+
+            for positions, matches in pool:
+                # since all positions have to be available we can already
+                # predict here whether we will be able to complete the variant
+                completed = (n_missing_terms == len(positions))
+                for term_i in matches:
+                    # don't copy the term_list. Instead revert the changes
+                    # before continue the iteration
+                    for p in positions:
+                        term_list[p] = term_i
+
+                    # check if we completed the variant
+                    if completed:
+                        return term_list
+
+                    # remove further positions and matches from the pool
+                    # that are not compatible with the current addition
+                    # and recurse further
+                    # TODO: can we also avoid creating a new sub pool?
+                    relevant_pool = []
+                    for other_pos, other_matches in pool:
+                        # the other position is not allowed to overlap
+                        # with the current and we need at least 1 other
+                        # match in the match set.
+                        if any(p in positions for p in other_pos) \
+                                or (len(other_matches) == 1 and
+                                    term_i in other_matches):
+                            continue
+                        # term_i is used in the new variant
+                        # -> cant use again in any other position
+                        other_matches = [m for m in other_matches
+                                         if m != term_i]
+                        relevant_pool.append((other_pos, other_matches))
+                    if not relevant_pool:  # nothing relevant left
+                        continue
+                    # recurse and try to complete
+                    # completed_variant = complete_variant(new_term_list,
+                    #                                      relevant_pool)
+                    completed_variant = complete_variant(term_list,
+                                                         relevant_pool)
+                    if completed_variant is not None:  # found complete variant
+                        return completed_variant
+
+                    # revert the changes and continue the loop
+                    for p in positions:
+                        term_list[p] = None
+            return None
+
         # itmd_indices and or remainder not found
         if itmd_indices not in self or \
                 remainder not in self[itmd_indices]:
             return None
         pool = self[itmd_indices][remainder]
 
-        base_variants = self._get_base_variants(pool)
-        for base in base_variants:
-            # filter the available positions to only iterate through
-            # positions that are not already filled in the base variant
-            relevant_positions = []
-            for positions in pool:
-                if all(base[1][pos] is None for pos in positions):
-                    relevant_positions.append(positions)
-            # check if we found at least 1 match per open position
-            # if not -> we will not be able to form a complete intermediate
-            unique_positions = {p for pos in relevant_positions for p in pos}
-            if base[1].count(None) > len(unique_positions):
+        # construct all possible variants where the first position (and
+        # possibly other positions) is filled.
+        # The unit factor dict is not needed for complete intermediates.
+        for pref, term_list, _ in self._get_base_variants(pool):
+            # filter the pool by removing all positions that are at least
+            # partially occupied already
+            # also: remove all matches that include terms that are already
+            # used in the base variant
+            relevant_pool = {}
+            for positions, matches in pool.items():
+                if any(term_list[p] is not None for p in positions):
+                    continue
+                relevant_matches = {
+                    term_i for term_i, other_pref, _ in matches
+                    if other_pref == pref and term_i not in term_list
+                }
+                if relevant_matches:
+                    relevant_pool[positions] = relevant_matches
+            if not relevant_pool:  # nothing relevant left
                 continue
-            base_pref = base[0]
-            variants = [base]
 
-            for pos_i, positions in enumerate(relevant_positions):
-                matches = pool[positions]
-                # split the available variants in variants where the
-                # current positions are available and those where they
-                # are already occupied and therefore can't add any of
-                # the matches we are currently treating
-                relevant_variants = []
-                not_relevant_variants = []
-                for i, var in enumerate(variants):
-                    if all(var[1][pos] is None for pos in positions):
-                        relevant_variants.append(i)
-                    else:
-                        not_relevant_variants.append(i)
+            # sort the pool to start with the positions with the lowest
+            # amount of valid matches
+            relevant_pool = sorted(relevant_pool.items(),
+                                   key=lambda kv: len(kv[1]))
+            # additionally, count how often each term_i occurs. prioritize
+            # rare indices
+            term_i_counter = Counter(chain.from_iterable(
+                tpl[1] for tpl in relevant_pool
+            ))
+            relevant_pool = [
+                (pos, sorted(matches, key=lambda m: term_i_counter[m]))
+                for pos, matches in relevant_pool
+            ]
 
-                # we can also only extend the variants with matches with
-                # an identical prefactor!
-                # (all variants we are currently building have to have
-                #  the same prefactor as the base variant we started from)
-                relevant_matches = [match_i for match_i, m
-                                    in enumerate(matches) if m[1] == base_pref]
-
-                extended_variants = []
-                for var_idx, match_i in  \
-                        product(relevant_variants, relevant_matches):
-                    pref, term_list, unit_factors = variants[var_idx]
-                    term_i, _, other_unit_factor = matches[match_i]
-                    # is the term already used in the variant at another
-                    # position?
-                    if term_i in term_list:
-                        continue
-                    # copy term_list and unit_factor dict to not change
-                    # the data in the original variant (needs to be unchanged
-                    # for other extensions to the variant)
-                    term_list = term_list.copy()
-                    unit_factors = unit_factors.copy()
-                    for p in positions:
-                        term_list[p] = term_i
-                    unit_factors[term_i] = other_unit_factor
-
-                    # check if the extended variant is complete
-                    if term_list.count(None) == 0:
-                        return (pref, term_list, unit_factors)
-
-                    extended_variants.append((pref, term_list, unit_factors))
-
-                # check which of the original, relevant variants can still be
-                # completed with the remaining positions
-                for var_idx in relevant_variants:
-                    unique_positions = {
-                        p for pos in relevant_positions[pos_i+1:] for p in pos
-                    }
-                    n_missing_terms = variants[var_idx][1].count(None)
-                    if n_missing_terms > len(unique_positions):
-                        continue
-                    extended_variants.append(variants[var_idx])
-
-                # remove all relevant variants from the original list
-                # all relevant variants that may be completed should be
-                # in extended_variants by now
-                for var_idx in sorted(not_relevant_variants, reverse=True):
-                    del variants[var_idx]
-                variants.extend(extended_variants)
-
-                # could not find a single valid extended variant
-                # and none of the not relevant variants can be completed
-                # anymore
-                # -> we can't find any complete intermediate anymore
-                if not variants:
-                    break
+            completed_variant = complete_variant(term_list, relevant_pool)
+            if completed_variant is not None:
+                return pref, completed_variant
+            # continue with the next base variant
         # loop completed -> no complete variant found
         return None
 
@@ -1129,7 +1144,7 @@ class LongItmdVariants(dict):
                 for pos, matches in positions.items():
                     to_delete = [i for i, m in enumerate(matches)
                                  if m[0] in used_terms]
-                    # need to remove element with highest element first!
+                    # need to remove element with highest index first!
                     for i in sorted(to_delete, reverse=True):
                         del matches[i]
                     if not matches:  # removed all matches for the position
@@ -1138,7 +1153,8 @@ class LongItmdVariants(dict):
                     del positions[pos]
 
     def clean_empty(self) -> None:
-        """Removes all empty entries in the nested dictionary."""
+        """Removes all empty entries in the nested dictionary.
+        """
         empty_indices = []
         for itmd_indices, remainders in self.items():
             empty_rem = [rem for rem, positions in remainders.items()
@@ -1155,18 +1171,14 @@ class LongItmdVariants(dict):
         # is filled already (multiple positions might be filled)
         # -> try to fill the remaining positions in the other methods
 
-        starter_positions = [pos for pos in pool if 0 in pos]
-
-        variants = []
-        for positions in starter_positions:
-            for term_i, pref, unit_factor_pref in pool[positions]:
-                variants.append((
-                    pref,
-                    [term_i if i in positions else None
-                     for i in range(self.n_itmd_terms)],
-                    {term_i: unit_factor_pref}
-                ))
-        return variants
+        for positions, matches in pool.items():
+            if 0 not in positions:
+                continue
+            for term_i, pref, unit_factor_pref in matches:
+                yield (pref,
+                       [term_i if i in positions else None
+                        for i in range(self.n_itmd_terms)],
+                       {term_i: unit_factor_pref})
 
 
 class FactorizationTermData:
