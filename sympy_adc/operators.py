@@ -52,7 +52,7 @@ class Operators:
         d = AntiSymmetricTensor('d', create, annihilate)
         op = Mul(*[Fd(s) for s in create]) * \
             Mul(*[F(s) for s in reversed(annihilate)])
-        return pref * d * op, Rules()
+        return pref * d * op, None
 
     @staticmethod
     def mp_h0():
@@ -62,7 +62,7 @@ class Operators:
         pq = Fd(p) * F(q)
         h0 = f * pq
         print("H0 = ", latex(h0))
-        return h0, Rules()
+        return h0, None
 
     @staticmethod
     def mp_h1():
@@ -76,7 +76,7 @@ class Operators:
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
         h1 = -v1 * pq + Rational(1, 4) * v2 * pqsr
         print("H1 = ", latex(h1))
-        return h1, Rules()
+        return h1, None
 
     @staticmethod
     def re_h0():

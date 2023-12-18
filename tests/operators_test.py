@@ -15,7 +15,7 @@ class TestOperators:
         assert (ref - h).substitute_contracted().sympy is S.Zero
 
         if variant == 'mp':
-            assert rules == Rules()
+            assert rules is None
         elif variant == 're':
             ref_rules = Rules(forbidden_tensor_blocks={
                 'V': ('ooov', 'ovoo', 'oovv', 'vvoo', 'ovvv', 'vvov'),
@@ -32,7 +32,7 @@ class TestOperators:
         assert (ref - h).substitute_contracted().sympy is S.Zero
 
         if variant == 'mp':
-            assert rules == Rules()
+            assert rules is None
         elif variant == 're':
             ref_rules = Rules(forbidden_tensor_blocks={
                 'V': ('oooo', 'ovov', 'vvvv'),
@@ -52,4 +52,4 @@ class TestOperators:
         # need to substitute the contracted indices
         assert (ref - op).substitute_contracted().sympy is S.Zero
 
-        assert rules == Rules()
+        assert rules is None

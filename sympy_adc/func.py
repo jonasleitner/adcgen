@@ -242,7 +242,5 @@ def wicks(expr, rules: Rules = None, keep_only_fully_contracted: bool = False,
         return expr
     elif not isinstance(rules, Rules):
         raise TypeError(f"Rules needs to be of type {Rules}")
-    elif rules.is_empty:  # nothing to do
-        return expr
 
     return rules.apply(Expr(expr)).sympy
