@@ -7,7 +7,7 @@ from .sympy_objects import AntiSymmetricTensor
 from .symmetry import LazyTermMap
 from sympy import S, Mul, Rational
 from collections import Counter
-from itertools import product, chain, compress
+from itertools import product, compress
 
 
 def factor_intermediates(expr, types_or_names: str | list[str] = None,
@@ -983,109 +983,35 @@ class LongItmdVariants(dict):
            If no variant can be found None is returned.
         """
 
-        def complete_variant(term_list, pool, pos_mask, match_masks):
-            # check if the variant can be completed with the available
-            # positions
-            unique_positions = {p for pos, _ in compress(pool, pos_mask)
-                                for p in pos}
-            n_missing_terms = term_list.count(None)
-            if n_missing_terms > len(unique_positions):
-                return None
-
-            for i, (positions, matches) in compress(enumerate(pool), pos_mask):
-                # update the mask:
-                # mask the positions that will be filled in the following loop
-                pos_mask[i] = False
-
-                # since all positions have to be available we can already
-                # predict here whether we will be able to complete the variant
-                completed = (n_missing_terms == len(positions))
-                for term_i in compress(matches, match_masks[i]):
-                    # don't copy the term_list. Instead revert the changes
-                    # before continue the iteration
+        def sort_matches(pool: list) -> list:
+            term_i_counter = {}
+            for positions, matches in pool:
+                for term_i in matches:
+                    if term_i not in term_i_counter:
+                        term_i_counter[term_i] = {}
                     for p in positions:
-                        term_list[p] = term_i
-
-                    if completed:  # check if we completed the variant
-                        return term_list
-
-                    # update the mask:
-                    # mask all positions that intersect with the filled
-                    # positions and mask term_i as not available
-                    # for now just store the mask changes, but we can
-                    # also recompute the changes to revert them.
-                    masked_pos = []
-                    masked_matches = []
-                    for other_i, (pos, other_matches) in \
-                            compress(enumerate(pool), pos_mask):
-                        if any(p in positions for p in pos):
-                            # no need to update the match mask here
-                            pos_mask[other_i] = False
-                            masked_pos.append(other_i)
-                            continue
-                        for j, other_term_i in \
-                                compress(enumerate(other_matches),
-                                         match_masks[other_i]):
-                            if term_i == other_term_i:
-                                match_masks[other_i][j] = False
-                                masked_matches.append((other_i, j))
-
-                    # recurse and try to complete the variant
-                    completed_variant = complete_variant(term_list, pool,
-                                                         pos_mask, match_masks)
-                    if completed_variant is not None:  # found complete variant
-                        return completed_variant
-
-                    # revert the mask changes
-                    for other_i in masked_pos:
-                        pos_mask[other_i] = True
-                    for other_i, j in masked_matches:
-                        match_masks[other_i][j] = True
-
-                    # revert the changes to term_list and continue the loop
-                    for p in positions:
-                        term_list[p] = None
-                # unmask the position
-                pos_mask[i] = True
-            return None
-
-        def get_base_variants(pool):
-            # return all variants where at the first position is filled.
-            # unit_factors are not needed for complete intermediates.
-            for positions, matches in pool.items():
-                if 0 not in positions:
-                    continue
-                # due to the symmetry of the intermediates
-                # we might find twice the same term_i with the same
-                # pref (only for triple and higher symmetry)
-                # We should also be able to filter according to abs(pref)
-                # to furher reduce the number of base variants for doubles
-                # but not 100% sure
-                prev_tried = {}
-                for term_i, pref, _ in matches:
-                    if pref not in prev_tried:
-                        prev_tried[pref] = []
-                    if term_i in prev_tried[pref]:
-                        continue
-                    prev_tried[pref].append(term_i)
-                    yield (pref,
-                           [term_i if i in positions else None
-                            for i in range(self.n_itmd_terms)])
+                        if p not in term_i_counter[term_i]:
+                            term_i_counter[term_i][p] = 0
+                        term_i_counter[term_i][p] += 1
+            term_i_counter = {term_i: (len(positions), sum(positions.values()))
+                              for term_i, positions in term_i_counter.items()}
+            return [(pos, sorted(matches, key=lambda m: term_i_counter[m]))
+                    for pos, matches in pool]
 
         # itmd_indices and or remainder not found
         if itmd_indices not in self or \
                 remainder not in self[itmd_indices]:
             return None
         pool = self[itmd_indices][remainder]
+        if not pool:  # empty pool: already factored everything
+            return None
 
-        # construct all possible variants where the first position (and
-        # possibly other positions) is filled.
-        # The unit factor dict is not needed for complete intermediates.
-        for pref, term_list in get_base_variants(pool):
-            # filter the pool by removing all positions that are at least
-            # partially occupied already
-            # also: remove all matches that include terms that are already
-            # used in the base variant
+        # construct base variants that are likely to form complete variants
+        for pref, term_list in self._complete_base_variants(pool):
+            # filter the pool:
+            # - remove all already occupied positions
+            # - remove all matches of already used terms
+            # - remove all matches that have a different prefactor
             relevant_pool = {}
             for positions, matches in pool.items():
                 if any(term_list[p] is not None for p in positions):
@@ -1099,31 +1025,146 @@ class LongItmdVariants(dict):
             if not relevant_pool:  # nothing relevant left
                 continue
 
-            # sort the pool to start with the positions with the lowest
-            # amount of valid matches
+            # sort the pool:
+            # - start with the positions with the lowest number of matches
+            # - prioritize rare indices
             relevant_pool = sorted(relevant_pool.items(),
                                    key=lambda kv: len(kv[1]))
-            # additionally, count how often each term_i occurs. prioritize
-            # rare indices
-            term_i_counter = Counter(chain.from_iterable(
-                tpl[1] for tpl in relevant_pool
-            ))
-            relevant_pool = [
-                (pos, sorted(matches, key=lambda m: term_i_counter[m]))
-                for pos, matches in relevant_pool
-            ]
+            relevant_pool = sort_matches(relevant_pool)
 
+            # set up masks to avoid creating copies of the pool
             pos_mask = [True for _ in relevant_pool]
             match_masks = [[True for _ in matches]
                            for _, matches in relevant_pool]
-
-            completed_variant = complete_variant(term_list, relevant_pool,
-                                                 pos_mask, match_masks)
-            if completed_variant is not None:
-                return pref, completed_variant
+            # try to complete the base variant from the relevant pool
+            success = self._build_complete_variant(
+                term_list, relevant_pool, pos_mask, match_masks
+            )
+            if success:
+                return pref, term_list
             # continue with the next base variant
         # loop completed -> no complete variant found
         return None
+
+    def _complete_base_variants(self, pool: dict) -> tuple:
+        """Iterator over the base variants for complete intermediates."""
+
+        def sort_matches(pool: dict, matches_to_sort: list) -> list:
+            term_i_counter = {}
+            pref_available_pos = {}
+            for positions, matches in pool.items():
+                for term_i, pref, _, in matches:
+                    if term_i not in term_i_counter:
+                        term_i_counter[term_i] = {}
+                    if pref not in pref_available_pos:
+                        pref_available_pos[pref] = [False for _ in
+                                                    range(self.n_itmd_terms)]
+                    for p in positions:
+                        if p not in term_i_counter[term_i]:
+                            term_i_counter[term_i][p] = 0
+                        term_i_counter[term_i][p] += 1
+                        pref_available_pos[pref][p] = True
+            term_i_counter = {term_i: (
+                    len(positions),
+                    sum(positions.values())
+                ) for term_i, positions in term_i_counter.items()}
+            # remove prefactors where not all positions are available
+            matches_to_sort = [m for m in matches_to_sort
+                               if all(pref_available_pos[m[1]])]
+            return sorted(matches_to_sort, key=lambda m: term_i_counter[m[0]])
+
+        # find the position with the lowest number of matches
+        pos, matches = min(pool.items(), key=lambda kv: len(kv[1]))
+        # sort the matches so that rare term_i are covered first
+        # and remove prefactors where not all positions are available
+        if len(matches) > 1:
+            matches = sort_matches(pool, matches)
+
+        # ensure we only ever try once per term_i and pref combination
+        prev_tried = {}
+        for term_i, pref, _ in matches:
+            if pref not in prev_tried:
+                prev_tried[pref] = set()
+            if term_i in prev_tried[pref]:
+                continue
+            prev_tried[pref].add(term_i)
+
+            yield (pref,
+                   [term_i if i in pos else None
+                    for i in range(self.n_itmd_terms)])
+
+    def _build_complete_variant(self, term_list: list, pool: list,
+                                pos_mask: list, match_masks: list) -> bool:
+        """Tries to recursively complete the given variant from the pool
+           of matches."""
+        # check if the variant can be completed with the available
+        # positions
+        unique_positions = {p for pos, _ in compress(pool, pos_mask)
+                            for p in pos}
+        n_missing_terms = term_list.count(None)
+        if n_missing_terms > len(unique_positions):
+            return False
+
+        for i, (positions, matches) in compress(enumerate(pool), pos_mask):
+            # update the mask:
+            # mask the positions that will be filled in the following loop
+            pos_mask[i] = False
+
+            # since all positions have to be available we can already
+            # predict here whether we will be able to complete the variant
+            completed = (n_missing_terms == len(positions))
+            for term_i in compress(matches, match_masks[i]):
+                # don't copy the term_list. Instead revert the changes
+                # before continue the iteration
+                for p in positions:
+                    term_list[p] = term_i
+
+                if completed:  # check if we completed the variant
+                    return True
+
+                # update the mask:
+                # mask all positions that intersect with the filled
+                # positions and mask term_i as not available
+                # for now just store the mask changes, but we can
+                # also recompute the changes to revert them.
+                masked_pos = []
+                masked_matches = []
+                for other_i, (pos, other_matches) in \
+                        compress(enumerate(pool), pos_mask):
+                    if any(p in positions for p in pos):
+                        # no need to update the match mask here
+                        pos_mask[other_i] = False
+                        masked_pos.append(other_i)
+                        continue
+                    for j, other_term_i in \
+                            compress(enumerate(other_matches),
+                                     match_masks[other_i]):
+                        if term_i == other_term_i:
+                            match_masks[other_i][j] = False
+                            masked_matches.append((other_i, j))
+                    if not any(match_masks[other_i]):
+                        pos_mask[other_i] = False
+                        masked_pos.append(other_i)
+
+                # recurse and try to complete the variant
+                success = self._build_complete_variant(
+                    term_list, pool, pos_mask, match_masks
+                )
+                if success:  # found complete variant
+                    return True
+
+                # revert the mask changes
+                for other_i in masked_pos:
+                    pos_mask[other_i] = True
+                for other_i, j in masked_matches:
+                    match_masks[other_i][j] = True
+
+                # revert the changes to term_list and continue the loop
+                for p in positions:
+                    term_list[p] = None
+            # unmask the position
+            pos_mask[i] = True
+        return False
 
     def get_mixed_pref_variant(self, itmd_indices, remainder) -> None | tuple:
         """Finds an intermediate variant allowing mixed prefactors for the
@@ -1245,6 +1286,9 @@ class LongItmdVariants(dict):
                                 unit_factors: dict, pool: list,
                                 pref_counter: dict, pos_mask: list,
                                 match_masks: list) -> bool:
+        """Tries to complete the variant from the pool allowing mixed
+           mixed prefactors. Only variants where at least 60% of the
+           terms share a common prefactor are accepted."""
         # check if the variant can be completed with the available
         # positions
         unique_positions = {p for pos, _ in compress(pool, pos_mask)
@@ -1270,7 +1314,7 @@ class LongItmdVariants(dict):
                 if max_terms_common_pref < self.n_common_pref_terms:
                     # we will not be able to complete the variant
                     # with the current addition
-                    pref_counter[pref] -= 1
+                    pref_counter[pref] -= len(positions)
                     continue
 
                 # add the current match to the variant
