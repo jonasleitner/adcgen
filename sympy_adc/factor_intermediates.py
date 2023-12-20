@@ -286,10 +286,10 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
     # add a term that belongs to a variant with prefactor 1
     # to the nearly complete variant with prefactor 2. To compensate
     # for this, additional terms are added to the result.
-    # factored, factored_mixed_pref_successfully = _factor_mixed_prefactors(
-    #     factored, terms, found_intermediates, factored_terms, itmd_cls
-    # )
-    # factored_successfully |= factored_mixed_pref_successfully
+    result, factored_mixed_pref_successfully = _factor_mixed_prefactors(
+        result, terms, itmd_cls, factored_terms, intermediate_variants
+    )
+    factored_successfully |= factored_mixed_pref_successfully
 
     # TODO:
     # go again through the remaining itmds and see if we can factor another
@@ -320,7 +320,7 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
 
 def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
                                itmd_data, itmd_cls) -> e.Expr:
-    """Function for factoring a short intermediate, i.e., an intermediate that
+    """Tries to factor a short intermediate, i.e., an intermediate that
        consists of a single term."""
 
     if expr.sympy.is_number:
@@ -467,7 +467,9 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
 
 
 def _factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
-                     factored_terms: set, intermediate_variants) -> e.Expr:
+                     factored_terms: set,
+                     intermediate_variants: 'LongItmdVariants'
+                     ) -> tuple[e.Expr, bool]:
     """Factors all intermediate variants which are complete and share
        common prefactor, i.e., no terms have to be added to the expression
        to compensate for the factorization of the intermediate.
@@ -508,106 +510,36 @@ def _factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
     return result, factored_successfully
 
 
-def _factor_mixed_prefactors(factored: e.Expr, terms: list[e.Term],
-                             found_intermediates: dict, factored_terms: set,
-                             itmd_cls):
-    """Tries to factor an intermediate by filling missing terms in a
-       variant with terms that belong to other variants with different
-       prefactors. Additional terms are added to the result to
-       compensate for the adjustment of the prefactors."""
-
+def _factor_mixed_prefactors(result: e.Expr, terms: list[e.Term], itmd_cls,
+                             factored_terms: set,
+                             intermediate_variants: 'LongItmdVariants'
+                             ) -> tuple[e.Expr, bool]:
+    """Factors intermediate variants allowing terms to have mixed prefactors.
+       To compensate for the mixed prefactors additional terms are added
+       to the result. Only factors intermediates if at least 60% of the
+       terms have a common prefactor."""
     factored_successfully = False
-    for itmd_indices, remainders in found_intermediates.items():
-        for rem, itmd_list in remainders.items():
-            # possibly we don't have any itmd left -> None
-            if itmd_list is None:
-                continue
-            n_variants = len(itmd_list)
-            remaining_itmds = []
-            # because of the term map a term can correspond to
-            # multiple intermediate terms!
-            # -> start with a given incomplete variant and try
-            #    to fill the missing parts with other variants
-            # -> term_i needs to be unique, but each term_i can
-            #    occur multiple times
-            for i, (pref, term_list, unit_factors) in enumerate(itmd_list):
-                # update the term_list, because some terms might have already
-                # been used to factor complete intermediates
-                # also update the unit_factors
-                term_list = [None if term_i is None or term_i in factored_terms
-                             else term_i for term_i in term_list]
-                unit_factors = {term_i: f for term_i, f in unit_factors.items()
-                                if term_i in term_list}
-                prefactors = [None if term_i is None else pref
-                              for term_i in term_list]
-                n_missing_terms = term_list.count(None)
-                # skip empty intermediates, where no terms are available
-                if n_missing_terms == len(term_list):
-                    continue
+    for itmd_indices, remainders in intermediate_variants.items():
+        for rem in remainders:
+            mixed_variant = intermediate_variants.get_mixed_pref_variant(
+                itmd_indices, rem
+            )
+            while mixed_variant is not None:
+                prefs, term_list, unit_factors, pref_counter = mixed_variant
 
-                # loop over the upper triangle and try to fill the itmd
-                for j in range(i, n_variants):
-                    other_pref, other_term_list, other_unit_factors = itmd_list[j]  # noqa E501
-                    available = {}
-                    for itmd_i, term_i in enumerate(other_term_list):
-                        # check if the other term is still available
-                        # and if we don't already use the term in the
-                        # variant we want to complete
-                        if term_i is None or term_i in term_list \
-                                or term_i in factored_terms:
-                            continue
-                        if term_i not in available:
-                            available[term_i] = []
-                        available[term_i].append(itmd_i)
-
-                    for term_i, itmd_i_list in available.items():
-                        # ensure that all the positions are vacant
-                        if any(term_list[itmd_i] is not None for itmd_i
-                               in itmd_i_list):
-                            continue
-                        assert len(itmd_i_list) <= n_missing_terms
-                        for itmd_i in itmd_i_list:  # fill the missing pos
-                            term_list[itmd_i] = term_i
-                            prefactors[itmd_i] = other_pref
-                            n_missing_terms -= 1
-
-                        unit_factors[term_i] = other_unit_factors[term_i]
-
-                        # check if we are done and completed the itmd
-                        if n_missing_terms == 0:
-                            break
-                    if n_missing_terms == 0:
-                        break
-
-                # could not fill up the intermediate with other prefactors
-                # -> keep the filled up state so we may try to
-                #    factor it as incomplete intermediate
-                if n_missing_terms:
-                    remaining_itmds.append(
-                        (prefactors, term_list, unit_factors)
-                    )
-                    continue
-                # found a complete intermediate with mixed prefactors!!
-
-                # check how many terms share a common prefactor
-                most_common_pref, count = sorted(
-                    Counter(prefactors).items(), key=lambda x: x[1]
-                )[-1]
-
-                # if not enough terms share a common prefactor
-                # -> don't factor! will not give a shorter expression
-                if count < 0.6 * len(term_list):
-                    continue
-
+                # determine the most common prefactor and which terms needs
+                # to be added (have a different prefactor)
+                most_common_pref = max(pref_counter.items(),
+                                       key=lambda tpl: tpl[1])[0]
                 terms_to_add = {}
-                for p, term_i in zip(prefactors, term_list):
+                for p, term_i in zip(prefs, term_list):
                     if p == most_common_pref or term_i in terms_to_add:
                         continue
                     terms_to_add[term_i] = p
 
                 # for all terms that don't have the most common prefactor:
-                # determine extension that needs to be added to the term
-                # to factor the intermediate
+                # determine the 'extension' that needs to be added to the
+                # result to factor the intermediate using the most common pref
                 print("\nAdding terms:")
                 for term_i, p in terms_to_add.items():
                     desired_pref = most_common_pref * unit_factors[term_i]
@@ -615,27 +547,32 @@ def _factor_mixed_prefactors(factored: e.Expr, terms: list[e.Term],
                     extension_pref = term.pref - desired_pref
                     term = extension_pref * term.num * term.eri / term.denom
                     print(EriOrbenergy(term))
-                    factored += term
+                    result += term
 
-                print(f"\nFactoring {itmd_cls.name} with mixed prefs in:")
+                print(f"\nFactoring {itmd_cls.name} with mixed prefactors in:")
                 for term_i in term_list:
                     print(EriOrbenergy(terms[term_i]))
 
-                # build the factored intermediate and add to the term
                 new_term = _build_factored_term(rem, most_common_pref,
                                                 itmd_cls, itmd_indices)
-                print(f"result:\n{EriOrbenergy(new_term)}")
-                factored += new_term
+                print(f"result:\n{EriOrbenergy(new_term)}", flush=True)
+                result += new_term
 
+                # remove the used terms from the pool of available terms
+                # and add the terms to the already factored terms
+                intermediate_variants.remove_used_terms(term_list)
                 factored_terms.update(term_list)
                 factored_successfully = True
-            # add a list of all filled up variants back to
-            # found_intermediates so we can try to factor incomplete
-            # variants later
-            if not remaining_itmds:
-                remaining_itmds = None
-            found_intermediates[itmd_indices][rem] = remaining_itmds
-    return factored, factored_successfully
+
+                # try to find the next mixed intermediate
+                mixed_variant = intermediate_variants.get_mixed_pref_variant(
+                    itmd_indices, rem
+                )
+    # remove empty itmd_indices and remainders
+    if factored_successfully:
+        intermediate_variants.clean_empty()
+
+    return result, factored_successfully
 
 
 def _build_factored_term(remainder: e.Expr, pref, itmd_cls,
@@ -981,12 +918,15 @@ class LongItmdVariants(dict):
 
     def __init__(self, n_itmd_terms: int, *args, **kwargs):
         self.n_itmd_terms = n_itmd_terms
+        # The number of terms we require to share a common prefactor
+        # for mixed prefactor intermediates
+        self.n_common_pref_terms = (0.6 * self.n_itmd_terms).__ceil__()
         super().__init__(*args, **kwargs)
 
     def add(self, term_i: int, itmd_indices: tuple, remainder: e.Expr,
             matching_itmd_terms: tuple[int],
             prefactor, unit_factorization_pref) -> None:
-        """Add a matches term, itmd_term pair to the pool for building
+        """Add a matching term-itmd_term pair to the pool for building
            intermediate variants.
         """
 
@@ -1013,9 +953,21 @@ class LongItmdVariants(dict):
             matching_itmd_terms = tuple(sorted(matching_itmd_terms))
             if matching_itmd_terms not in found_matches:
                 found_matches[matching_itmd_terms] = []
-            found_matches[matching_itmd_terms].append(
-                (term_i, prefactor, unit_factorization_pref)
+            # It is possible to obtain entries that have the same
+            # term_i and pref, but differ in the sign of the unit factor
+            # this is probably a result of the permutation symmetry
+            # of some intermediates
+            # -> only add the term if term_i and pref have not been found yet
+            is_dublicate = any(
+                (term_i == other_term_i and prefactor == other_pref
+                 and abs(unit_factorization_pref) == abs(other_unit_factor))
+                for other_term_i, other_pref, other_unit_factor in
+                found_matches[matching_itmd_terms]
             )
+            if not is_dublicate:
+                found_matches[matching_itmd_terms].append(
+                    (term_i, prefactor, unit_factorization_pref)
+                )
             break
         if is_new_remainder:
             self[itmd_indices][remainder] = {}
@@ -1172,6 +1124,213 @@ class LongItmdVariants(dict):
             # continue with the next base variant
         # loop completed -> no complete variant found
         return None
+
+    def get_mixed_pref_variant(self, itmd_indices, remainder) -> None | tuple:
+        """Finds an intermediate variant allowing mixed prefactors for the
+           given itmd_indices and remainder."""
+
+        # itmd_indices or remainder not available
+        if itmd_indices not in self or \
+                remainder not in self[itmd_indices]:
+            return None
+        pool = self[itmd_indices][remainder]
+        if not pool:  # empty pool: already factored all term_i
+            return None
+
+        for (prefs, term_list, unit_factors) in \
+                self._mixed_pref_base_variants(pool):
+            # filter the pool by removing all positions that are already
+            # occupied. Addtionally, remove all term_i that are already
+            # in use.
+            relevant_pool = {}
+            for positions, matches in pool.items():
+                if any(term_list[p] is not None for p in positions):
+                    continue
+                relevant_matches = [
+                    data for data in matches if data[0] not in term_list
+                ]
+                if relevant_matches:
+                    relevant_pool[positions] = relevant_matches
+            if not relevant_pool:
+                continue
+
+            # sort the pool to start with the position with the lowest amount
+            # of valid matches and prioritize rare term_i and common prefactors
+            relevant_pool = sorted(relevant_pool.items(),
+                                   key=lambda kv: len(kv[1]))
+            relevant_pool = self._sort_mixed_pref_matches(relevant_pool)
+
+            # set up masks for position and matches to avoid copying data
+            pos_mask = [True for _ in relevant_pool]
+            match_masks = [[True for _ in matches]
+                           for _, matches in relevant_pool]
+            pref_counter = Counter([p for p in prefs if p is not None])
+            # try to complete the base variant using the relevant pool
+            success = self._complete_mixed_variant(
+                term_list, prefs, unit_factors, relevant_pool, pref_counter,
+                pos_mask, match_masks
+            )
+            if success:
+                return prefs, term_list, unit_factors, pref_counter
+            # else continue with the next base variant
+        # loop completed -> no mixed variant found
+        return None
+
+    def _mixed_pref_base_variants(self, pool: dict) -> tuple:
+        """Iterator over the base variants for intermediates with
+           mixed prefactors."""
+        # find the positions with the lowest number of matches
+        pos, matches = min(pool.items(), key=lambda kv: len(kv[1]))
+        # sort the matches so that
+        # rare indices and common prefactors are preferred
+        if len(matches) > 1:
+            matches = self._sort_mixed_pref_matches(pool.items(), matches)
+
+        # filter out matches that have the same term_i and pref
+        prev_tried = {}
+        for term_i, pref, unit_factor in matches:
+            if pref not in prev_tried:
+                prev_tried[pref] = set()
+            if term_i in prev_tried[pref]:
+                continue
+            prev_tried[pref].add(term_i)
+
+            yield ([pref if i in pos else None
+                    for i in range(self.n_itmd_terms)],
+                   [term_i if i in pos else None
+                    for i in range(self.n_itmd_terms)],
+                   {term_i: unit_factor})
+
+    def _sort_mixed_pref_matches(self, pool: list[tuple],
+                                 matches_to_sort: list = None) -> list:
+        """Sorts all matches in the pool so that rare term_i and common
+           prefactors are preferred. If an additional match list is provided
+           instead this match list will be sorted instead of all matches in
+           the pool."""
+        term_i_counter = {}
+        pref_counter = {}
+        for positions, matches in pool:
+            for term_i, pref, _ in matches:
+                if term_i not in term_i_counter:
+                    term_i_counter[term_i] = {}
+                if pref not in pref_counter:
+                    pref_counter[pref] = {}
+                for pos in positions:
+                    if pos not in term_i_counter[term_i]:
+                        term_i_counter[term_i][pos] = 0
+                    term_i_counter[term_i][pos] += 1
+                    if pos not in pref_counter[pref]:
+                        pref_counter[pref][pos] = 0
+                    pref_counter[pref][pos] += 1
+        term_i_counter = {term_i: (
+                len(positions),
+                sum(positions.values())
+            ) for term_i, positions in term_i_counter.items()}
+        pref_counter = {pref: (
+                -len(positions),
+                -sum(positions.values())
+            ) for pref, positions in pref_counter.items()}
+
+        if matches_to_sort is None:
+            return [
+                (pos, sorted(matches, key=lambda m: (*term_i_counter[m[0]],
+                                                     *pref_counter[m[1]])))
+                for pos, matches in pool
+            ]
+        else:
+            return sorted(matches, key=lambda m: (*term_i_counter[m[0]],
+                                                  *pref_counter[m[1]]))
+
+    def _complete_mixed_variant(self, term_list: list, prefactors: list,
+                                unit_factors: dict, pool: list,
+                                pref_counter: dict, pos_mask: list,
+                                match_masks: list) -> bool:
+        # check if the variant can be completed with the available
+        # positions
+        unique_positions = {p for pos, _ in compress(pool, pos_mask)
+                            for p in pos}
+        n_missing_terms = term_list.count(None)
+        if n_missing_terms > len(unique_positions):
+            return False
+
+        for i, (positions, matches) in compress(enumerate(pool), pos_mask):
+            # update the poositions mask
+            pos_mask[i] = False
+
+            completed = (n_missing_terms == len(positions))
+            for term_i, pref, unit_factor in \
+                    compress(matches, match_masks[i]):
+                # if we add the match: will we still be able to
+                # create a valid variant that hast at least 60% common
+                # prefactor?
+                pref_counter[pref] += len(positions)
+
+                max_terms_common_pref = max(pref_counter.values()) + \
+                    n_missing_terms - len(positions)
+                if max_terms_common_pref < self.n_common_pref_terms:
+                    # we will not be able to complete the variant
+                    # with the current addition
+                    pref_counter[pref] -= 1
+                    continue
+
+                # add the current match to the variant
+                for p in positions:
+                    term_list[p] = term_i
+                    prefactors[p] = pref
+                unit_factors[term_i] = unit_factor
+
+                if completed and max(pref_counter.values()) >= \
+                        self.n_common_pref_terms:
+                    return True
+
+                # update the mask:
+                # - mask any position that intersects with the the added
+                #   positions
+                # - mask all otherm matches of term_i
+                masked_pos = []
+                masked_matches = []
+                for other_i, (pos, other_matches) in \
+                        compress(enumerate(pool), pos_mask):
+                    if any(p in positions for p in pos):
+                        pos_mask[other_i] = False
+                        masked_pos.append(other_i)
+                        continue
+                    for j, (other_term_i, _, _) in \
+                            compress(enumerate(other_matches),
+                                     match_masks[other_i]):
+                        if term_i == other_term_i:
+                            match_masks[other_i][j] = False
+                            masked_matches.append((other_i, j))
+                    if not any(match_masks[other_i]):
+                        pos_mask[other_i] = False
+                        masked_pos.append(other_i)
+
+                # recurse and try to complete the variant
+                success = self._complete_mixed_variant(
+                    term_list, prefactors, unit_factors, pool, pref_counter,
+                    pos_mask, match_masks
+                )
+                if success:
+                    return True
+
+                # revert the mask changes
+                for other_i in masked_pos:
+                    pos_mask[other_i] = True
+                for other_i, j in masked_matches:
+                    match_masks[other_i][j] = True
+
+                # undo the changes to the variant
+                for p in positions:
+                    term_list[p] = None
+                    prefactors[p] = None
+                del unit_factors[term_i]
+
+                # undo the prefcounter changes
+                pref_counter[pref] -= len(positions)
+
+            # unmaks the position
+            pos_mask[i] = True
+        return False
 
     def remove_used_terms(self, used_terms: list[int]) -> None:
         """Removes the provided terms from the pool, so they can not

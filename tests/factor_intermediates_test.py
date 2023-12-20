@@ -101,8 +101,6 @@ class TestFactorIntermediates:
         assert simplify(res - ref).sympy is S.Zero
 
     def test_long_intermediate_mixed_prefs(self):
-        import pytest
-        pytest.skip("not implemented")
         # test expression to factor the re_t2_1_residual
         test = (
             r"\frac{\delta_{i j} {V^{kl}_{bc}} {t1^{ac}_{kl}}}{2}"
