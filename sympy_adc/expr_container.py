@@ -1178,7 +1178,7 @@ class Obj(Container):
     def make_real(self, return_sympy: bool = False):
         """Removes all 'c' in the names of t-amplitudes."""
 
-        if self.type == 'antisymtensor':
+        if 'tensor' in self.type and self.is_amplitude:
             old = self.name
             new = old.replace('c', '')
             if old == new:

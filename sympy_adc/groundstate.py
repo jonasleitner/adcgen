@@ -24,6 +24,8 @@ class GroundState:
     @cached_member
     def energy(self, order):
         """Returns the ground state energy of specified order."""
+        # NOTE: this function assumes a block diagonal H0
+        # in the general case we have to include <0|H0|n>
 
         validate_input(order=order)
 

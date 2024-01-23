@@ -141,7 +141,7 @@ class RegisteredIntermediate:
         itmd = expanded_itmd.expr.subs(subs)
 
         if itmd is S.Zero and expanded_itmd.expr is not S.Zero:
-            raise ValueError(f"The substitutions {subs} ar enot valid for "
+            raise ValueError(f"The substitutions {subs} are not valid for "
                              f"{expanded_itmd.expr}.")
 
         if not return_sympy:
@@ -710,7 +710,7 @@ class t2_1_re_residual(RegisteredIntermediate):
         base = eri([i, c, k, a]) * t2.tensor(indices=[j, k, b, c])
         itmd = (base.sympy - base.copy().permute((i, j)).sympy
                 - base.copy().permute((a, b)).sympy
-                + base.copy().permute((i, j), (a, b)))
+                + base.copy().permute((i, j), (a, b)).sympy)
         # (1 - P_ab) f_ac t_ij^bc
         base = fock([a, c]) * t2.tensor(indices=[i, j, b, c])
         itmd += base.sympy - base.copy().permute((a, b)).sympy
@@ -725,6 +725,89 @@ class t2_1_re_residual(RegisteredIntermediate):
                  t2.tensor(indices=(k, l, a, b), return_sympy=True))
         # + <ij||ab>
         itmd += eri((i, j, a, b))
+        target = (i, j, a, b)
+        contracted = (k, l, c, d)
+        return base_expr(itmd, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        # placeholder for 0, will be replaced in factor_intermediate
+        return AntiSymmetricTensor("Zero", indices[:2], indices[2:])
+
+
+class t1_2_re_residual(RegisteredIntermediate):
+    """Residual of the Second order REPT singles amplitudes.
+    """
+    _itmd_type: str = 're_residual'
+    _order: int = 3  # according to MP the maximum order of the residual is 3
+    _default_idx: tuple[str] = ('i', 'a')
+
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, a = get_symbols(self.default_idx)
+        # additional contracted indices
+        j, k, b, c = get_symbols('jkbc')
+
+        # t amplitudes
+        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        ts2: t1_2 = self._registry['t_amplitude']['t1_2']
+
+        # - {V^{ib}_{ja}} {t2^{b}_{j}}
+        itmd = -eri([i, b, j, a]) * ts2.tensor(indices=[j, b],
+                                               return_sympy=True)
+        # + {f^{a}_{b}} {t2^{b}_{i}}
+        itmd += fock([a, b]) * ts2.tensor(indices=[i, b], return_sympy=True)
+        # - {f^{i}_{j}} {t2^{a}_{j}}
+        itmd -= fock([i, j]) * ts2.tensor(indices=[j, a], return_sympy=True)
+        # + \frac{{V^{ja}_{bc}} {t1^{bc}_{ij}}}{2}
+        itmd += (Rational(1, 2) * eri([j, a, b, c])
+                 * t2.tensor(indices=[i, j, b, c], return_sympy=True))
+        # + \frac{{V^{jk}_{ib}} {t1^{ab}_{jk}}}{2}
+        itmd += (Rational(1, 2) * eri([j, k, i, b])
+                 * t2.tensor(indices=[j, k, a, b], return_sympy=True))
+        # - {f^{j}_{b}} {t1^{ab}_{ij}}
+        itmd -= fock([j, b]) * t2.tensor(indices=[i, j, a, b],
+                                         return_sympy=True)
+        target = (i, a)
+        contracted = (j, k, b, c)
+        return base_expr(itmd, target, contracted)
+
+    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+        # placeholder for 0, will be replaced in factor_intermediate
+        return AntiSymmetricTensor("Zero", (indices[0],), (indices[1],))
+
+
+class t2_2_re_residual(RegisteredIntermediate):
+    """Residual of the Second order REPT doubles amplitudes.
+    """
+    _itmd_type: str = 're_residual'
+    _order: int = 3  # according to MP the maximum order of the residual is 3
+    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+
+    @cached_property
+    def _build_expanded_itmd(self):
+        i, j, a, b = get_symbols(self.default_idx)
+        # additional contracted indices
+        k, l, c, d = get_symbols('klcd')
+        # t2_1 class instance
+        t2: t2_2 = self._registry['t_amplitude']['t2_2']
+
+        # (1 - P_ij)(1 - P_ab) <ic||ka> t_jk^bc
+        base = eri([i, c, k, a]) * t2.tensor(indices=[j, k, b, c])
+        itmd = (base.sympy - base.copy().permute((i, j)).sympy
+                - base.copy().permute((a, b)).sympy
+                + base.copy().permute((i, j), (a, b)).sympy)
+        # (1 - P_ab) f_ac t_ij^bc
+        base = fock([a, c]) * t2.tensor(indices=[i, j, b, c])
+        itmd += base.sympy - base.copy().permute((a, b)).sympy
+        # (1 - P_ij) f_jk t_ik^ab
+        base = fock([j, k]) * t2.tensor(indices=[i, k, a, b])
+        itmd += base.sympy - base.copy().permute((i, j)).sympy
+        # - 0.5 * <ab||cd> t_ij^cd
+        itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
+                 t2.tensor(indices=(i, j, c, d), return_sympy=True))
+        # -0.5 * <ij||kl> t_kl^ab
+        itmd -= (Rational(1, 2) * eri((i, j, k, l)) *
+                 t2.tensor(indices=(k, l, a, b), return_sympy=True))
         target = (i, j, a, b)
         contracted = (k, l, c, d)
         return base_expr(itmd, target, contracted)
