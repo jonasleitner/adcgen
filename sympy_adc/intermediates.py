@@ -109,13 +109,14 @@ class RegisteredIntermediate:
         return indices
 
     def expand_itmd(self, indices: str = None, lower: str = None,
-                    upper: str = None, return_sympy: bool = False):
+                    upper: str = None, return_sympy: bool = False,
+                    fully_expand: bool = True):
         # check that the provided indices are fine for the itmd
         idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
 
         # build a cached base version of the intermediate where we can just
         # substitute indices
-        expanded_itmd = self._build_expanded_itmd
+        expanded_itmd = self._build_expanded_itmd(fully_expand)
 
         # build the substitution dict
         subs = {}
@@ -330,8 +331,8 @@ class t2_1(RegisteredIntermediate):
     _order: int = 1
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         # build a basic version of the intermediate using minimal indices
         # 'like on paper'
         i, j, a, b = get_symbols(self.default_idx)
@@ -454,21 +455,22 @@ class t1_2(RegisteredIntermediate):
     _default_idx: tuple[str] = ('i', 'a')
     _min_n_terms = 2
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         # target_indices
         i, a = get_symbols(self.default_idx)
         # additional contracted indices
         j, k, b, c = get_symbols('jkbc')
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the amplitude
         denom = orb_energy(i) - orb_energy(a)
         term1 = (Rational(1, 2) *
-                 t2.expand_itmd(indices=(i, j, b, c), return_sympy=True) *
+                 t2(indices=(i, j, b, c), return_sympy=True) *
                  eri([j, a, b, c]))
         term2 = (Rational(1, 2) *
-                 t2.expand_itmd(indices=(j, k, a, b), return_sympy=True) *
+                 t2(indices=(j, k, a, b), return_sympy=True) *
                  eri([j, k, i, b]))
         return base_expr(term1/denom + term2/denom, (i, a), (j, k, b, c))
 
@@ -482,24 +484,25 @@ class t2_2(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
         k, l, c, d = get_symbols('klcd')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the t2_2 amplitude
         denom = (orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j))
         # - 0.5 t2eri_3
         itmd = (- Rational(1, 2) * eri((i, j, k, l)) *
-                t2.expand_itmd(indices=(k, l, a, b), return_sympy=True))
+                t2(indices=(k, l, a, b), return_sympy=True))
         # - 0.5 t2eri_5
         itmd += (- Rational(1, 2) * eri((a, b, c, d)) *
-                 t2.expand_itmd(indices=(i, j, c, d), return_sympy=True))
+                 t2(indices=(i, j, c, d), return_sympy=True))
         # + (1 - P_ij) (1 - P_ab) P_ij t2eri_4
         base = (
-            t2.expand_itmd(indices=(i, k, a, c)) * eri((k, b, j, c))
+            t2(indices=(i, k, a, c)) * eri((k, b, j, c))
         )
         itmd += (base.sympy - base.copy().permute((i, j)).sympy
                  - base.copy().permute((a, b)).sympy
@@ -516,18 +519,19 @@ class t3_2(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'k', 'a', 'b', 'c')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, k, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         l, d = get_symbols('ld')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the t3_2 amplitude
         denom = (orb_energy(i) + orb_energy(j) + orb_energy(k)
                  - orb_energy(a) - orb_energy(b) - orb_energy(c))
         # (1 - P_ik - P_jk) (1 - P_ab - P_ac) <kd||bc> t_ij^ad
-        base = t2.expand_itmd(indices=(i, j, a, d)) * eri((k, d, b, c))
+        base = t2(indices=(i, j, a, d)) * eri((k, d, b, c))
         itmd = (base.sympy - base.copy().permute((i, k)).sympy
                 - base.copy().permute((j, k)).sympy
                 - base.copy().permute((a, b)).sympy
@@ -537,7 +541,7 @@ class t3_2(RegisteredIntermediate):
                 + base.copy().permute((j, k), (a, b)).sympy
                 + base.copy().permute((j, k), (a, c)).sympy)
         # (1 - P_ij - P_ik) (1 - P_ac - P_bc) <jk||lc> t_il^ab
-        base = t2.expand_itmd(indices=(i, l, a, b)) * eri((j, k, l, c))
+        base = t2(indices=(i, l, a, b)) * eri((j, k, l, c))
         itmd += (base.sympy - base.copy().permute((i, j)).sympy
                  - base.copy().permute((i, k)).sympy
                  - base.copy().permute((a, c)).sympy
@@ -559,19 +563,20 @@ class t4_2(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'k', 'l', 'a', 'b', 'c', 'd')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         from itertools import product
 
         i, j, k, l, a, b, c, d = get_symbols(self.default_idx)
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the t4_2 amplitude
         # (1 - P_ac - P_ad - P_bc - P_bd + P_ac P_bd) (1 - P_jk - P_jl)
         #  t_ij^ab t_kl^cd
         base: e.Expr = (
-            t2.expand_itmd(indices=(i, j, a, b)) *
-            t2.expand_itmd(indices=(k, l, c, d), return_sympy=True)
+            t2(indices=(i, j, a, b)) *
+            t2(indices=(k, l, c, d), return_sympy=True)
         )
         v_permutations = {tuple(tuple()): 1, ((a, c),): -1, ((a, d),): -1,
                           ((b, c),): -1, ((b, d),): -1, ((a, c), (b, d)): +1}
@@ -593,8 +598,8 @@ class t1_3(RegisteredIntermediate):
     _order: int = 3
     _default_idx: tuple[str] = ('i', 'a')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, a = get_symbols('ia')
         # generate additional contracted indices (2o / 2v)
         j, k, b, c = get_symbols('jkbc')
@@ -602,25 +607,38 @@ class t1_3(RegisteredIntermediate):
         t1: t1_2 = self._registry['t_amplitude']['t1_2']
         t2: t2_2 = self._registry['t_amplitude']['t2_2']
         t3: t3_2 = self._registry['t_amplitude']['t3_2']
+        if fully_expand:
+            t1 = t1.expand_itmd
+            t2 = t2.expand_itmd
+            t3 = t3.expand_itmd
+        else:
+            t1 = t1.tensor
+            t2 = t2.tensor
+            t3 = t3.tensor
         # build the amplitude
         denom = orb_energy(i) - orb_energy(a)
         itmd = (Rational(1, 2) * eri([j, a, b, c]) *
-                t2.expand_itmd(indices=(i, j, b, c), return_sympy=True))
+                t2(indices=(i, j, b, c), return_sympy=True))
         itmd += (Rational(1, 2) * eri([j, k, i, b]) *
-                 t2.expand_itmd(indices=(j, k, a, b), return_sympy=True))
-        itmd -= (t1.expand_itmd(indices=(j, b), return_sympy=True) *
+                 t2(indices=(j, k, a, b), return_sympy=True))
+        itmd -= (t1(indices=(j, b), return_sympy=True) *
                  eri([i, b, j, a]))
         itmd += (Rational(1, 4) * eri([j, k, b, c]) *
-                 t3.expand_itmd(indices=(i, j, k, a, b, c), return_sympy=True))
+                 t3(indices=(i, j, k, a, b, c), return_sympy=True))
         # need to keep track of all contracted indices... also contracted
         # indices within each of the second order t-amplitudes
         # -> substitute_contracted indices to minimize the number of contracted
         #    indices
         target = (i, a)
-        itmd = e.Expr(itmd, target_idx=target).substitute_contracted().sympy
-        contracted = tuple(sorted(
-            [s for s in itmd.atoms(Dummy) if s not in target], key=idx_sort_key
-        ))
+        if fully_expand:
+            itmd = e.Expr(itmd, target_idx=target)
+            itmd = itmd.substitute_contracted().sympy
+            contracted = tuple(sorted(
+                [s for s in itmd.atoms(Dummy) if s not in target],
+                key=idx_sort_key
+            ))
+        else:
+            contracted = (j, k, b, c)
         return base_expr(itmd / denom, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -633,8 +651,8 @@ class t2_3(RegisteredIntermediate):
     _order: int = 3
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
         k, l, c, d = get_symbols('klcd')
@@ -644,47 +662,63 @@ class t2_3(RegisteredIntermediate):
         t2: t2_2 = self._registry['t_amplitude']['t2_2']
         t3: t3_2 = self._registry['t_amplitude']['t3_2']
         t4: t4_2 = self._registry['t_amplitude']['t4_2']
+        if fully_expand:
+            _t2_1 = _t2_1.expand_itmd
+            t1 = t1.expand_itmd
+            t2 = t2.expand_itmd
+            t3 = t3.expand_itmd
+            t4 = t4.expand_itmd
+        else:
+            _t2_1 = _t2_1.tensor
+            t1 = t1.tensor
+            t2 = t2.tensor
+            t3 = t3.tensor
+            t4 = t4.tensor
         # build the amplitude
         denom = orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j)
         # +(1-P_ij) * <ic||ab> t^c_j(2)
-        base = t1.expand_itmd(indices=(j, c)) * eri((i, c, a, b))
+        base = t1(indices=(j, c)) * eri((i, c, a, b))
         itmd = base.sympy - base.permute((i, j)).sympy
         # +(1-P_ab) * <ij||ka> t^b_k(2)
-        base = t1.expand_itmd(indices=(k, b)) * eri((i, j, k, a))
+        base = t1(indices=(k, b)) * eri((i, j, k, a))
         itmd += base.sympy - base.permute((a, b)).sympy
         # - 0.5 * <ab||cd> t^cd_ij(2)
         itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
-                 t2.expand_itmd(indices=(i, j, c, d), return_sympy=True))
+                 t2(indices=(i, j, c, d), return_sympy=True))
         # - 0.5 * <ij||kl> t^ab_kl(2)
         itmd -= (Rational(1, 2) * eri((i, j, k, l)) *
-                 t2.expand_itmd(indices=(k, l, a, b), return_sympy=True))
+                 t2(indices=(k, l, a, b), return_sympy=True))
         # + (1-P_ij)*(1-P_ab) * <jc||kb> t^ac_ik(2)
-        base = t2.expand_itmd(indices=(i, k, a, c)) * eri((j, c, k, b))
+        base = t2(indices=(i, k, a, c)) * eri((j, c, k, b))
         itmd += (base.sympy - base.copy().permute((i, j)).sympy
                  - base.copy().permute((a, b)).sympy
                  + base.copy().permute((i, j), (a, b)).sympy)
         # + 0.5 * (1-P_ab) * <ka||cd> t^bcd_ijk(2)
-        base = t3.expand_itmd(indices=(i, j, k, b, c, d)) * eri((k, a, c, d))
+        base = t3(indices=(i, j, k, b, c, d)) * eri((k, a, c, d))
         itmd += (Rational(1, 2) * base.sympy
                  - Rational(1, 2) * base.copy().permute((a, b)).sympy)
         # + 0.5 * (1-P_ij) <kl||ic> t^abc_jkl(2)
-        base = t3.expand_itmd(indices=(j, k, l, a, b, c)) * eri((k, l, i, c))
+        base = t3(indices=(j, k, l, a, b, c)) * eri((k, l, i, c))
         itmd += (Rational(1, 2) * base.sympy
                  - Rational(1, 2) * base.copy().permute((i, j)).sympy)
         # + 0.25 <kl||cd> t^abcd_ijkl(2)
         itmd += (Rational(1, 4) * eri((k, l, c, d)) *
-                 t4.expand_itmd(indices=(i, j, k, l, a, b, c, d),
-                                return_sympy=True))
+                 t4(indices=(i, j, k, l, a, b, c, d), return_sympy=True))
         # - 0.25 <kl||cd> t^ab_ij(1) t^kl_cd(1)
         itmd -= (Rational(1, 4) * eri((k, l, c, d)) *
-                 _t2_1.expand_itmd(indices=(i, j, a, b), return_sympy=True) *
-                 _t2_1.expand_itmd(indices=(k, l, c, d), return_sympy=True))
+                 _t2_1(indices=(i, j, a, b), return_sympy=True) *
+                 _t2_1(indices=(k, l, c, d), return_sympy=True))
         # minimize the number of contracted indices
         target = (i, j, a, b)
-        itmd = e.Expr(itmd, target_idx=target).substitute_contracted().sympy
-        contracted = contracted = tuple(sorted(
-            [s for s in itmd.atoms(Dummy) if s not in target], key=idx_sort_key
-        ))
+        if fully_expand:
+            itmd = e.Expr(itmd, target_idx=target)
+            itmd = itmd.substitute_contracted().sympy
+            contracted = contracted = tuple(sorted(
+                [s for s in itmd.atoms(Dummy) if s not in target],
+                key=idx_sort_key
+            ))
+        else:
+            contracted = (k, l, c, d)
         return base_expr(itmd / denom, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -698,8 +732,10 @@ class t2_1_re_residual(RegisteredIntermediate):
     _order: int = 2  # according to MP the maximum order of the residual is 2
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
+        # re intermediates can not be fully expanded, but add the bool
+        # anyway for a consistent interface
         i, j, a, b = get_symbols(self.default_idx)
         # additional contracted indices
         k, l, c, d = get_symbols('klcd')
@@ -741,8 +777,8 @@ class t1_2_re_residual(RegisteredIntermediate):
     _order: int = 3  # according to MP the maximum order of the residual is 3
     _default_idx: tuple[str] = ('i', 'a')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, a = get_symbols(self.default_idx)
         # additional contracted indices
         j, k, b, c = get_symbols('jkbc')
@@ -783,8 +819,8 @@ class t2_2_re_residual(RegisteredIntermediate):
     _order: int = 3  # according to MP the maximum order of the residual is 3
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, a, b = get_symbols(self.default_idx)
         # additional contracted indices
         k, l, c, d = get_symbols('klcd')
@@ -824,17 +860,18 @@ class p0_2_oo(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j = get_symbols(self.default_idx)
         # additional contracted indices (1o / 2v)
         k, a, b = get_symbols('kab')
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the density
         p0 = (- Rational(1, 2) *
-              t2.expand_itmd(indices=(i, k, a, b), return_sympy=True) *
-              t2.expand_itmd(indices=(j, k, a, b), return_sympy=True))
+              t2(indices=(i, k, a, b), return_sympy=True) *
+              t2(indices=(j, k, a, b), return_sympy=True))
         return base_expr(p0, (i, j), (k, a, b))
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -847,17 +884,18 @@ class p0_2_vv(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         a, b = get_symbols(self.default_idx)
         # additional contracted indices (2o / 1v)
         i, j, c = get_symbols('ijc')
         # t2_1 class instance
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the density
         p0 = (Rational(1, 2) *
-              t2.expand_itmd(indices=(i, j, a, c), return_sympy=True) *
-              t2.expand_itmd(indices=(i, j, b, c), return_sympy=True))
+              t2(indices=(i, j, a, c), return_sympy=True) *
+              t2(indices=(i, j, b, c), return_sympy=True))
         return base_expr(p0, (a, b), (i, j, c))
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -871,25 +909,31 @@ class p0_3_oo(RegisteredIntermediate):
     _order: int = 3
     _default_idx: tuple[str] = ('i', 'j')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 2v)
         k, a, b = get_symbols('kab')
         # t amplitude cls
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         td2: t2_2 = self._registry['t_amplitude']['t2_2']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
+        td2 = td2.expand_itmd if fully_expand else td2.tensor
         # build the density
         p0 = (- Rational(1, 2) *
-              t2.expand_itmd(indices=(i, k, a, b), return_sympy=True) *
-              td2.expand_itmd(indices=(j, k, a, b), return_sympy=True))
+              t2(indices=(i, k, a, b), return_sympy=True) *
+              td2(indices=(j, k, a, b), return_sympy=True))
         p0 += p0.subs({i: j, j: i}, simultaneous=True)
 
         target = (i, j)
-        p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
-        contracted = tuple(sorted(
-            [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
-        ))
+        if fully_expand:
+            p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
+            contracted = tuple(sorted(
+                [s for s in p0.atoms(Dummy) if s not in target],
+                key=idx_sort_key
+            ))
+        else:
+            contracted = (k, a, b)
         return base_expr(p0, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -903,8 +947,8 @@ class p0_3_ov(RegisteredIntermediate):
     _order: int = 3
     _default_idx: tuple[str] = ('i', 'a')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, a = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
         j, k, b, c = get_symbols('jkbc')
@@ -913,22 +957,36 @@ class p0_3_ov(RegisteredIntermediate):
         ts2: t1_2 = self._registry['t_amplitude']['t1_2']
         tt2: t3_2 = self._registry['t_amplitude']['t3_2']
         ts3: t1_3 = self._registry['t_amplitude']['t1_3']
+        if fully_expand:
+            t2 = t2.expand_itmd
+            ts2 = ts2.expand_itmd
+            tt2 = tt2.expand_itmd
+            ts3 = ts3.expand_itmd
+        else:
+            t2 = t2.tensor
+            ts2 = ts2.tensor
+            tt2 = tt2.tensor
+            ts3 = ts3.tensor
         # build the density
         # - t^ab_ij(1) t^b_j(2)
-        p0 = (- t2.expand_itmd(indices=(i, j, a, b), return_sympy=True) *
-              ts2.expand_itmd(indices=(j, b), return_sympy=True))
+        p0 = (- t2(indices=(i, j, a, b), return_sympy=True) *
+              ts2(indices=(j, b), return_sympy=True))
         # - 0.25 * t^bc_jk(1) t^abc_ijk(2)
         p0 -= (Rational(1, 4) *
-               t2.expand_itmd(indices=(j, k, b, c), return_sympy=True) *
-               tt2.expand_itmd(indices=(i, j, k, a, b, c), return_sympy=True))
+               t2(indices=(j, k, b, c), return_sympy=True) *
+               tt2(indices=(i, j, k, a, b, c), return_sympy=True))
         # + t^a_i(3)
-        p0 += ts3.expand_itmd(indices=(i, a), return_sympy=True)
+        p0 += ts3(indices=(i, a), return_sympy=True)
 
         target = (i, a)
-        p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
-        contracted = tuple(sorted(
-            [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
-        ))
+        if fully_expand:
+            p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
+            contracted = tuple(sorted(
+                [s for s in p0.atoms(Dummy) if s not in target],
+                key=idx_sort_key
+            ))
+        else:
+            contracted = (j, k, b, c)
         return base_expr(p0, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -941,25 +999,31 @@ class p0_3_vv(RegisteredIntermediate):
     _order: int = 3
     _default_idx: tuple[str] = ('a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         a, b = get_symbols(self.default_idx)
         # additional contracted indices (2o / 1v)
         i, j, c = get_symbols('ijc')
         # t_amplitude cls instances
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
         td2: t2_2 = self._registry['t_amplitude']['t2_2']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
+        td2 = td2.expand_itmd if fully_expand else td2.tensor
         # build the density
         p0 = (Rational(1, 2) *
-              t2.expand_itmd(indices=(i, j, a, c), return_sympy=True) *
-              td2.expand_itmd(indices=(i, j, b, c), return_sympy=True))
+              t2(indices=(i, j, a, c), return_sympy=True) *
+              td2(indices=(i, j, b, c), return_sympy=True))
         p0 += p0.subs({a: b, b: a}, simultaneous=True)
 
         target = (a, b)
-        p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
-        contracted = tuple(sorted(
-            [s for s in p0.atoms(Dummy) if s not in target], key=idx_sort_key
-        ))
+        if fully_expand:
+            p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
+            contracted = tuple(sorted(
+                [s for s in p0.atoms(Dummy) if s not in target],
+                key=idx_sort_key
+            ))
+        else:
+            contracted = (i, j, c)
         return base_expr(p0, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -972,15 +1036,16 @@ class t2eri_1(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, k, a = get_symbols(self.default_idx)
         # generate additional contracted indices (2v)
         b, c = get_symbols('bc')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2.expand_itmd(indices=(i, j, b, c), return_sympy=True) *
+        t2eri = (t2(indices=(i, j, b, c), return_sympy=True) *
                  eri((k, a, b, c)))
         return base_expr(t2eri, (i, j, k, a), (b, c))
 
@@ -994,14 +1059,15 @@ class t2eri_2(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, k, a = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         b, l = get_symbols('bl')  # noqa E741
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2.expand_itmd(indices=(i, l, a, b), return_sympy=True) *
+        t2eri = (t2(indices=(i, l, a, b), return_sympy=True) *
                  eri((l, k, j, b)))
         return base_expr(t2eri, (i, j, k, a), (b, l))
 
@@ -1015,15 +1081,16 @@ class t2eri_3(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o)
         k, l = get_symbols('kl')  # noqa E741
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2.expand_itmd(indices=(k, l, a, b), return_sympy=True) *
+        t2eri = (t2(indices=(k, l, a, b), return_sympy=True) *
                  eri((i, j, k, l)))
         return base_expr(t2eri, (i, j, a, b), (k, l))
 
@@ -1037,15 +1104,16 @@ class t2eri_4(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         k, c = get_symbols('kc')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2.expand_itmd(indices=(j, k, a, c), return_sympy=True) *
+        t2eri = (t2(indices=(j, k, a, c), return_sympy=True) *
                  eri((k, b, i, c)))
         return base_expr(t2eri, (i, j, a, b), (k, c))
 
@@ -1059,15 +1127,16 @@ class t2eri_5(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2v)
         c, d = get_symbols('cd')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2.expand_itmd(indices=(i, j, c, d), return_sympy=True) *
+        t2eri = (t2(indices=(i, j, c, d), return_sympy=True) *
                  eri((a, b, c, d)))
         return base_expr(t2eri, (i, j, a, b), (c, d))
 
@@ -1081,15 +1150,16 @@ class t2eri_6(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (2o)
         j, k = get_symbols('jk')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2.expand_itmd(indices=(j, k, b, c), return_sympy=True) *
+        t2eri = (t2(indices=(j, k, b, c), return_sympy=True) *
                  eri((j, k, i, a)))
         return base_expr(t2eri, (i, a, b, c), (j, k))
 
@@ -1103,15 +1173,16 @@ class t2eri_7(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         j, d = get_symbols('jd')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2.expand_itmd(indices=(i, j, b, d), return_sympy=True) *
+        t2eri = (t2(indices=(i, j, b, d), return_sympy=True) *
                  eri((j, c, a, d)))
         return base_expr(t2eri, (i, a, b, c), (j, d))
 
@@ -1125,21 +1196,27 @@ class t2eri_A(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, j, k, a = get_symbols(self.default_idx)
         # t2eri cls instances for generating the itmd
         pi1: t2eri_1 = self._registry['misc']['t2eri_1']
         pi2: t2eri_2 = self._registry['misc']['t2eri_2']
+        pi1 = pi1.expand_itmd if fully_expand else pi1.tensor
+        pi2 = pi2.expand_itmd if fully_expand else pi2.tensor
         # build the itmd
-        pia = (0.5 * pi1.expand_itmd(indices=(i, j, k, a), return_sympy=True)
-               + pi2.expand_itmd(indices=(i, j, k, a), return_sympy=True)
-               - pi2.expand_itmd(indices=(j, i, k, a), return_sympy=True))
+        pia = (0.5 * pi1(indices=(i, j, k, a), return_sympy=True)
+               + pi2(indices=(i, j, k, a), return_sympy=True)
+               - pi2(indices=(j, i, k, a), return_sympy=True))
         target = (i, j, k, a)
-        pia = e.Expr(pia, target_idx=target).substitute_contracted().sympy
-        contracted = tuple(sorted(
-            [s for s in pia.atoms(Dummy) if s not in target], key=idx_sort_key
-        ))
+        if fully_expand:
+            pia = e.Expr(pia, target_idx=target).substitute_contracted().sympy
+            contracted = tuple(sorted(
+                [s for s in pia.atoms(Dummy) if s not in target],
+                key=idx_sort_key
+            ))
+        else:
+            contracted = tuple()
         return base_expr(pia, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -1152,21 +1229,27 @@ class t2eri_B(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, a, b, c = get_symbols(self.default_idx)
         # t2eri cls instances for generating the itmd
         pi6: t2eri_6 = self._registry['misc']['t2eri_6']
         pi7: t2eri_7 = self._registry['misc']['t2eri_7']
+        pi6 = pi6.expand_itmd if fully_expand else pi6.tensor
+        pi7 = pi7.expand_itmd if fully_expand else pi7.tensor
         # build the itmd
-        pib = (-0.5 * pi6.expand_itmd(indices=(i, a, b, c), return_sympy=True)
-               + pi7.expand_itmd(indices=(i, a, b, c), return_sympy=True)
-               - pi7.expand_itmd(indices=(i, a, c, b), return_sympy=True))
+        pib = (-0.5 * pi6(indices=(i, a, b, c), return_sympy=True)
+               + pi7(indices=(i, a, b, c), return_sympy=True)
+               - pi7(indices=(i, a, c, b), return_sympy=True))
         target = (i, a, b, c)
-        pib = e.Expr(pib, target_idx=target).substitute_contracted().sympy
-        contracted = tuple(sorted(
-            [s for s in pib.atoms(Dummy) if s not in target], key=idx_sort_key
-        ))
+        if fully_expand:
+            pib = e.Expr(pib, target_idx=target).substitute_contracted().sympy
+            contracted = tuple(sorted(
+                [s for s in pib.atoms(Dummy) if s not in target],
+                key=idx_sort_key
+            ))
+        else:
+            contracted = tuple()
         return base_expr(pib, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
@@ -1179,16 +1262,17 @@ class t2sq(RegisteredIntermediate):
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'a', 'j', 'b')
 
-    @cached_property
-    def _build_expanded_itmd(self):
+    @cached_member
+    def _build_expanded_itmd(self, fully_expand: bool = True):
         i, a, j, b = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         c, k = get_symbols('ck')
         # t2_1 class instance for generating t2_1 amplitudes
         t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        itmd = (t2.expand_itmd(indices=(i, k, a, c), return_sympy=True) *
-                t2.expand_itmd(indices=(j, k, b, c), return_sympy=True))
+        itmd = (t2(indices=(i, k, a, c), return_sympy=True) *
+                t2(indices=(j, k, b, c), return_sympy=True))
         return base_expr(itmd, (i, a, j, b), (k, c))
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
