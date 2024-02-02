@@ -33,10 +33,10 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
             # nonsym_tensor / antisym_tensor / delta
             # -> extract relevant data
             if 'tensor' in (o_type := o.type) or o_type == 'delta':
-                o_idx.append(i)
-                names.append(o.pretty_name)
+                o_idx.append(i for _ in range(o.exponent))
+                names.append(o.pretty_name for _ in range(o.exponent))
                 idx = o.idx
-                indices.append(idx)
+                indices.append(idx for _ in range(o.exponent))
                 contracted.update(s for s in idx if s not in target)
             elif o_type == 'prefactor':
                 continue
