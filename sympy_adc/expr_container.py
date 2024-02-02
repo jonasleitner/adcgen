@@ -466,25 +466,25 @@ class Term(Container):
         return 'term' if isinstance(self.sympy, Mul) else 'obj'
 
     @cached_property
-    def objects(self) -> tuple:
+    def objects(self) -> tuple['Obj']:
         return tuple(Obj(self, i) for i in range(len(self)))
 
     @property
-    def tensors(self) -> list:
+    def tensors(self) -> tuple['Obj']:
         """Returns all tensor objects in the term."""
         return tuple(o for o in self.objects if 'tensor' in o.type)
 
     @property
-    def deltas(self):
+    def deltas(self) -> tuple['Obj']:
         """Returns all delta objects of the term."""
         return tuple(o for o in self.objects if o.type == 'delta')
 
     @property
-    def polynoms(self):
+    def polynoms(self) -> tuple['Polynom']:
         return tuple(o for o in self.objects if o.type == 'polynom')
 
     @cached_property
-    def order(self):
+    def order(self) -> int:
         """Returns the perturbation theoretical order of the term."""
         return sum(t.order for t in self.tensors)
 
@@ -1580,6 +1580,22 @@ class Obj(Container):
         return descr
 
     @property
+    def allowed_spin_blocks(self) -> tuple[str]:
+        """Returns the valid spin blocks of tensors."""
+        from .intermediates import Intermediates
+
+        if "tensor" not in self.type:
+            raise NotImplementedError("Only implemented for tensors.")
+        if self.name == "V":  # hardcode the ERI spin blocks
+            return ("aaaa", "abab", "baba", "bbbb")
+        # determine the valid spin blocks for intermediates
+        itmd = Intermediates().available.get(self.pretty_name, None)
+        if itmd is None:
+            raise NotImplementedError("Can not determine spin blocks for "
+                                      f"{self}. Not available as intermediate")
+        return itmd.allowed_spin_blocks
+
+    @property
     def contains_only_orb_energies(self):
         # all orb energies should be nonsym_tensors actually
         return self.name == 'e' and len(self.idx) == 1
@@ -1661,7 +1677,7 @@ class NormalOrdered(Obj):
         return self.extract_no.args
 
     @cached_property
-    def objects(self):
+    def objects(self) -> tuple['Obj']:
         return tuple(Obj(self, i) for i in range(len(self.extract_no.args)))
 
     @property

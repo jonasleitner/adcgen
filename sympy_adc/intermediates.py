@@ -7,10 +7,12 @@ from . import expr_container as e
 from .eri_orbenergy import EriOrbenergy
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
 from .symmetry import LazyTermMap
+from .spatial_orbitals import allowed_spin_blocks
 
 from sympy import S, Dummy, Rational, Pow
 
 from collections import namedtuple
+from itertools import product, chain
 
 
 base_expr = namedtuple('base_expr', ['expr', 'target', 'contracted'])
@@ -172,6 +174,14 @@ class RegisteredIntermediate:
            default indices, e.g., ijk + abc triples symmetry for t3_2."""
         return self.tensor().terms[0].symmetry()
 
+    @cached_property
+    def allowed_spin_blocks(self) -> list[str]:
+        """Determines all non-zero spin block of the intermediate."""
+
+        target_idx = self.default_idx
+        itmd = self.expand_itmd(indices=target_idx, fully_expand=False)
+        return allowed_spin_blocks(itmd.expand(), target_idx)
+
     @cached_member
     def itmd_term_map(self,
                       factored_itmds: tuple[str] = tuple()) -> LazyTermMap:
@@ -191,7 +201,6 @@ class RegisteredIntermediate:
             as much as possible and factor all given intermediates in the
             provided order."""
         from .reduce_expr import factor_eri_parts, factor_denom
-        from itertools import chain
 
         # In a usual run we only need 1 variant of an intermediate:
         #   a  b  c  d  e
@@ -565,7 +574,6 @@ class t4_2(RegisteredIntermediate):
 
     @cached_member
     def _build_expanded_itmd(self, fully_expand: bool = True):
-        from itertools import product
 
         i, j, k, l, a, b, c, d = get_symbols(self.default_idx)
         # t2_1 class instance
