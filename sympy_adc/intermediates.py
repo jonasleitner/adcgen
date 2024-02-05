@@ -175,7 +175,7 @@ class RegisteredIntermediate:
         return self.tensor().terms[0].symmetry()
 
     @cached_property
-    def allowed_spin_blocks(self) -> list[str]:
+    def allowed_spin_blocks(self) -> tuple[str]:
         """Determines all non-zero spin block of the intermediate."""
 
         target_idx = self.default_idx

@@ -1,14 +1,18 @@
 from .expr_container import Expr
 from .indices import get_symbols
+from .misc import Inputerror
 
 from itertools import product
 
 
-def allowed_spin_blocks(expr: Expr, target_idx: str):
+def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
     """Determines all allowed spin blocks that can be populated by the
        provided expression. Thereby, it is assumed that all allowed spin
        blocks of tensors in the expression are either known or can be
        determined, i.e., this only works for closed expressions."""
+
+    if not isinstance(expr, Expr):
+        raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
 
     target_idx = get_symbols(target_idx)
 
@@ -113,7 +117,7 @@ def allowed_spin_blocks(expr: Expr, target_idx: str):
         # blocks that have been found dont need to be checked again
         spin_blocks_to_check = [i for i in spin_blocks_to_check
                                 if i not in blocks_to_remove]
-    return sorted(allowed_blocks)
+    return tuple(sorted(allowed_blocks))
 
 
 def _has_valid_combination(tensor_idx_maps: list, current_pos: int,

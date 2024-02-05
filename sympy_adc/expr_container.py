@@ -1583,12 +1583,29 @@ class Obj(Container):
     def allowed_spin_blocks(self) -> tuple[str]:
         """Returns the valid spin blocks of tensors."""
         from .intermediates import Intermediates
+        from itertools import product
 
         if "tensor" not in self.type:
             raise NotImplementedError("Only implemented for tensors.")
-        if self.name == "V":  # hardcode the ERI spin blocks
-            return ("aaaa", "abab", "baba", "bbbb")
-        # determine the valid spin blocks for intermediates
+
+        name = self.name
+        if name == "V":  # hardcode the ERI spin blocks
+            return ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
+        # t-amplitudes: all spin conserving spin blocks are allowed, i.e.,
+        # all blocks with the same amount of alpha and beta indices
+        # in upper and lower
+        elif name[0] == 't' and name[1:].replace('c', '').isnumeric():
+            if len(self.idx) % 2:
+                raise ValueError("Expected t-amplitude to have the same "
+                                 f"of upper and lower indices: {self}.")
+            n = len(self.idx)//2
+            return tuple(
+                sorted(["".join(block)
+                        for block in product("ab", repeat=len(self.idx))
+                        if block[:n].count("a") == block[n:].count("a")])
+            )
+        # the known spin blocks of eri and t-amplitudes may be used to
+        # generate the spin blocks of other intermediates
         itmd = Intermediates().available.get(self.pretty_name, None)
         if itmd is None:
             raise NotImplementedError("Can not determine spin blocks for "
