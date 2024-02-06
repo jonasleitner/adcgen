@@ -1,8 +1,102 @@
 from .expr_container import Expr
-from .indices import get_symbols
+from .indices import get_symbols, idx_sort_key
 from .misc import Inputerror
 
 from itertools import product
+
+
+def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
+    """Transorm an expression from spin to spatial orbitals by integrating
+       over the spin. Currently this function only works in the restricted
+       case as the spin is not directly attached to the indices, i.e.,
+       there is no way to distinguish alpha from beta indices."""
+
+    if not isinstance(expr, Expr):
+        raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
+    target_idx = get_symbols(target_idx)
+    if len(target_idx) != len(target_spin):
+        raise Inputerror(f"Spin {target_spin} and indices {target_idx} are "
+                         "not compatible.")
+    sorted_target = tuple(sorted(target_idx, key=idx_sort_key))
+    # - assign the target indices to a spin
+    target_idx_spin_map = {}
+    for idx, spin in zip(target_idx, target_spin):
+        if idx in target_idx_spin_map and target_idx_spin_map[idx] != spin:
+            raise ValueError(f"The index {idx} can not be assigned to alpha "
+                             "and beta spin simultaneously.")
+        target_idx_spin_map[idx] = spin
+
+    result = Expr(0, **expr.assumptions)
+    for term in expr.terms:
+        # - ensure that the term has matching target indices
+        if term.target != sorted_target:
+            raise ValueError(f"Target indices of {term} {term.target} dont "
+                             f"match the desired target indices {target_idx}")
+        # - assign the indices to a spin for all allowed spin blocks of tensors
+        #   in the term filtering those out that are in contradiction to the
+        #   spin of the target indices
+        term_vanishes = False
+        term_spin_idx_maps = []
+        for tensor in term.tensors:
+            tensor_idx = tensor.idx
+            tensor_spin_idx_maps = []
+            for block in tensor.allowed_spin_blocks:
+                valid = True
+                idx_map = {"a": set(), "b": set()}
+                for spin, idx in zip(block, tensor_idx):
+                    if idx in target_idx_spin_map and \
+                            spin != target_idx_spin_map[idx]:
+                        valid = False
+                        break
+                    idx_map[spin].add(idx)
+                if not valid:
+                    continue
+                if idx_map["a"] & idx_map["b"]:
+                    raise ValueError("Found invalid allowed spin block "
+                                     f"{block} for tensor {tensor}.")
+                tensor_spin_idx_maps.append(idx_map)
+            # no valid spin block for the tensor -> term vanishes
+            if not tensor_spin_idx_maps:
+                term_vanishes = True
+                break
+            term_spin_idx_maps.append(tensor_spin_idx_maps)
+        if term_vanishes:
+            continue
+
+        # - form all unique valid combinations of idx_maps while checking
+        #   for contradictions
+        combinations = []
+        for tensor_spin_idx_maps in term_spin_idx_maps:
+            if not combinations:  # initialize combinations
+                combinations.extend(tensor_spin_idx_maps)
+                continue
+            old_combinations = combinations.copy()
+            combinations.clear()
+            for idx_map, addition in \
+                    product(old_combinations, tensor_spin_idx_maps):
+                # ensure that there are no contradictions
+                if idx_map["a"] & addition["b"] or \
+                        idx_map["b"] & addition["a"]:
+                    continue
+                combined_map = {"a": idx_map["a"] | addition["a"],
+                                "b": idx_map["b"] | addition["b"]}
+                # we only need unique variants -> remove duplicates
+                if any(d == combined_map for d in combinations):
+                    continue
+                combinations.append(combined_map)
+            # it was not possible to find a single valid combination
+            # -> the term should vanish for the given target indices
+            if not combinations:
+                term_vanishes = True
+                break
+        if term_vanishes:
+            continue
+
+        # - iterate over the unique combinations and in principle assign
+        #   the spin to the indices and add the corresponding term to the
+        #   result. However, since we currently can not assign the spin
+        #   to the indices just add the term n-times to the result?
+        result += len(combinations) * term
 
 
 def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
@@ -15,6 +109,7 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
         raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
 
     target_idx = get_symbols(target_idx)
+    sorted_target = tuple(sorted(target_idx, key=idx_sort_key))
 
     # - determine all possible spin blocks
     spin_blocks = ["".join(b) for b in product("ab", repeat=len(target_idx))]
@@ -22,6 +117,10 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
 
     allowed_blocks = set()
     for term in expr.terms:
+        # - ensure that the term has matching target indices
+        if term.target != sorted_target:
+            raise ValueError(f"Target indices of {term} {term.target} dont "
+                             f"match the desired target indices {target_idx}")
         # - extract the allowed blocks for all tensors and initialize
         #   index maps to relate indices to a spin
         allowed_tensor_blocks = []
