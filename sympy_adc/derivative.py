@@ -1,6 +1,7 @@
 from . import expr_container as e
 from .indices import index_space, minimize_tensor_indices
-from sympy import Dummy, Rational, diff, S
+from .sympy_objects import Index
+from sympy import Rational, diff, S
 
 
 def derivative(expr: e.Expr, t_string: str):
@@ -21,7 +22,7 @@ def derivative(expr: e.Expr, t_string: str):
     # create some Dummy Symbol. Replace the tensor with the Symbol and
     # compute the derivative with respect to the Symbol. Afterwards
     # resubstitute the Tensor for the Dummy Symbol.
-    x = Dummy('x')
+    x = Index('x')
 
     derivative = {}
     for term in expr.terms:

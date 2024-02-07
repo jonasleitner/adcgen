@@ -143,6 +143,45 @@ class NonSymmetricTensor(TensorSymbol):
         return "%s%s" % self.args
 
 
+class Index(Dummy):
+    """Class to represent Indices. Inherits it's behaviour from the sympy
+       'Dummy' class, i.e.,
+        Index("x") == Index("x")
+        will evaluate to False.
+        Additional functionality:
+         - assigning a spin to the variable via the spin keyword ('a'/'b')
+    """
+    def __new__(cls, name: str = None, dummy_index=None, spin: str = None,
+                **assumptions):
+        if spin is None:
+            return super().__new__(cls, name, dummy_index, **assumptions)
+        elif spin == "a":
+            return super().__new__(cls, name, dummy_index, alpha=True,
+                                   **assumptions)
+        elif spin == "b":
+            return super().__new__(cls, name, dummy_index, beta=True,
+                                   **assumptions)
+        else:
+            raise Inputerror(f"Invalid spin {spin}. Valid values are 'a' and "
+                             "'b'.")
+
+    @property
+    def spin(self) -> None | str:
+        if self.assumptions0.get("alpha"):
+            return "a"
+        elif self.assumptions0.get("beta"):
+            return "b"
+
+    @property
+    def space(self) -> str:
+        if self.assumptions0.get("below_fermi"):
+            return "occ"
+        elif self.assumptions0.get("above_fermi"):
+            return "virt"
+        else:
+            return "general"
+
+
 class SingleSymmetryTensor(TensorSymbol):
     def __new__(cls, symbol: str, indices: tuple[Dummy],
                 perms: list[tuple[int]], factor: int) -> TensorSymbol:

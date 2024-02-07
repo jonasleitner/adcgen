@@ -1,4 +1,4 @@
-from sympy import symbols, Dummy, S
+from sympy import S, Dummy
 from .misc import Inputerror, Singleton
 
 
@@ -13,7 +13,7 @@ class Indices(metaclass=Singleton):
        """
     def __init__(self):
         # dict that holds all symbols that have been created previously.
-        self._symbols = {'occ': [], 'virt': [], 'general': []}
+        self._symbols = {'occ': {}, 'virt': {}, 'general': {}}
         # dict that holds the generic indices. Automatically filled by
         # generated index strings.
         self.generic_indices = {'occ': [], 'virt': [], 'general': []}
@@ -45,7 +45,7 @@ class Indices(metaclass=Singleton):
 
         # generate the new index strings
         counter = getattr(self, f'counter_{ov}')
-        used = {s.name for s in self._symbols[ov]}
+        used = self._symbols[ov]
         new_idx = [idx + str(counter) for idx in idx_base[ov]
                    if idx + str(counter) not in used]
 
@@ -64,23 +64,19 @@ class Indices(metaclass=Singleton):
             if ov not in ret:
                 ret[ov] = []
             # check whether the symbol is already available
-            found = False
-            for s in self._symbols[ov]:
-                if idx == s.name:
-                    ret[ov].append(s)
-                    found = True
-                    break
+            if idx in self._symbols[ov]:
+                ret[ov].append(self._symbols[ov][idx])
+                continue
             # did not find -> create a new symbol + add it to self._symbols
             # and if it is a generic index -> remove it from the current
             # generic index list.
-            if not found:
-                s = self.__new_symbol(idx, ov)
-                ret[ov].append(s)
-                self._symbols[ov].append(s)
-                try:
-                    self.generic_indices[ov].remove(idx)
-                except ValueError:
-                    pass
+            s = self.__new_symbol(idx, ov)
+            ret[ov].append(s)
+            self._symbols[ov][idx] = s
+            try:
+                self.generic_indices[ov].remove(idx)
+            except ValueError:
+                pass
         return ret
 
     def get_generic_indices(self, **kwargs):
@@ -107,12 +103,14 @@ class Indices(metaclass=Singleton):
 
     def __new_symbol(self, idx, ov):
         """Creates the new symbol from the index string."""
+        from .sympy_objects import Index
+
         if ov == 'occ':
-            return symbols(idx, below_fermi=True, cls=Dummy)
+            return Index(idx, below_fermi=True)
         elif ov == 'virt':
-            return symbols(idx, above_fermi=True, cls=Dummy)
+            return Index(idx, above_fermi=True)
         elif ov == 'general':
-            return symbols(idx, cls=Dummy)
+            return Index(idx)
 
     def substitute_with_generic(self, expr):
         """Substitute all contracted indices with new, generic indices."""
@@ -250,6 +248,8 @@ def order_substitutions(subsdict: dict[Dummy, Dummy]) -> list:
     """Returns substitutions ordered in a way one can use the subs method
        without the need to use the 'sumiltanous=True' option. Essentially
        identical to a part of the substitute_dummies function of sympy."""
+    from .sympy_objects import Index
+
     subs = []
     final_subs = []
     for o, n in subsdict.items():
@@ -260,7 +260,7 @@ def order_substitutions(subsdict: dict[Dummy, Dummy]) -> list:
             if other_n in subsdict:
                 # i -> j / j -> i
                 # temporary variable is needed
-                p = Dummy('p')
+                p = Index('p')
                 subs.append((o, p))
                 final_subs.append((p, n))
             else:
