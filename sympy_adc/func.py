@@ -1,5 +1,12 @@
+from .expr_container import Expr
 from .misc import Inputerror
 from .rules import Rules
+from .sympy_objects import Index
+
+from sympy.physics.secondquant import (
+    F, Fd, FermionicOperator, KroneckerDelta, NO
+)
+from sympy import S, Add, Mul
 
 
 def gen_term_orders(order, term_length, min_order):
@@ -224,23 +231,109 @@ def evaluate_deltas(expr, target_idx=None):
         return expr
 
 
-def wicks(expr, rules: Rules = None, keep_only_fully_contracted: bool = False,
-          simplify_kronecker_deltas: bool = False):
-    """Wrapper function that forwards the wicks call to the sympy
-       implementation. If some rules are provided, they are applied to the
-       resulting expression before returning."""
+def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
+    """Evaluates Wicks theorem on the provided expression only returning
+       fully contracted contributions.
+       The resulting Kronecker deltas are evaluated automatically if
+       simplify_kronecker_deltas is set.
+       If some rules are provided, they are applied to the
+       resulting expression before returning.
+       Adapted from 'sympy.physics.secondquant'."""
 
-    import sympy.physics.secondquant
-    from .expr_container import Expr
+    # normal ordered operator string has to evaluate to zero
+    # and a single second quantized operator can not be contracted
+    if isinstance(expr, (NO, FermionicOperator)):
+        return S.Zero
 
-    expr = sympy.physics.secondquant.wicks(
-        expr, simplify_kronecker_deltas=simplify_kronecker_deltas,
-        keep_only_fully_contracted=keep_only_fully_contracted
-    )
+    # break up any NO-objects, and evaluate commutators
+    expr = expr.doit(wicks=True).expand()
 
+    if isinstance(expr, Add):
+        return Add(*[wicks(term, rules=rules,
+                           simplify_kronecker_deltas=simplify_kronecker_deltas)
+                     for term in expr.args])
+    elif isinstance(expr, Mul):
+        # we don't want to mess around with commuting part of Mul
+        # so we factorize it out before starting recursion
+        c_part = []
+        op_string = []
+        for factor in expr.args:
+            if factor.is_commutative:
+                c_part.append(factor)
+            else:
+                op_string.append(factor)
+
+        if (n := len(op_string)) == 0:  # no operators
+            result = expr
+        elif n == 1:  # a single operator
+            return S.Zero
+        else:  # at least 2 operators
+            result = _contract_operator_string(op_string)
+            result = (Mul(*c_part) * result).expand()
+            if simplify_kronecker_deltas:
+                result = evaluate_deltas(result)
+
+    # apply rules to the result
     if rules is None:
-        return expr
+        return result
     elif not isinstance(rules, Rules):
         raise TypeError(f"Rules needs to be of type {Rules}")
 
-    return rules.apply(Expr(expr)).sympy
+    return rules.apply(Expr(result)).sympy
+
+
+def _contract_operator_string(op_string: list) -> Add:
+    """Contracts the provided operator string only returning fully contracted
+       contributions.
+       Adapted from 'sympy.physics.secondquant'."""
+    result = []
+    for i in range(1, len(op_string)):
+        c = _contraction(op_string[0], op_string[i])
+        if c is S.Zero:
+            continue
+        if not i % 2:  # introduce -1 for swapping operators
+            c *= S.NegativeOne
+
+        if len(op_string) - 2 > 0:  # at least one operator left
+            # remove the contracted operators from the string and recurse
+            remaining = op_string[1:i] + op_string[i+1:]
+            result.append(c * _contract_operator_string(remaining))
+        else:  # no operators left
+            result.append(c)
+    return Add(*result)
+
+
+def _contraction(p, q):
+    """Evaluates the contraction of two sqcond quantized fermionic operators.
+       Adapted from 'sympy.physics.secondquant'.
+    """
+    if not isinstance(p, FermionicOperator) or \
+            not isinstance(q, FermionicOperator):
+        raise NotImplementedError("Contraction only implemented for "
+                                  "FermionicOperators.")
+    if p.state.spin is not None or q.state.spin is not None:
+        raise NotImplementedError("Contraction not implemented for indices "
+                                  "with spin.")
+
+    if isinstance(p, F) and isinstance(q, Fd):
+        if p.state.assumptions0.get("below_fermi") or \
+                q.state.assumptions0.get("below_fermi"):
+            return S.Zero
+        elif p.state.assumptions0.get("above_fermi") or \
+                q.state.assumptions0.get("above_fermi"):
+            return KroneckerDelta(p.state, q.state)
+        else:
+            return (KroneckerDelta(p.state, q.state) *
+                    KroneckerDelta(q.state, Index('a', above_fermi=True)))
+    elif isinstance(p, Fd) and isinstance(q, F):
+        if q.state.assumptions0.get("above_fermi") or \
+                p.state.assumptions0.get("above_fermi"):
+            return S.Zero
+        elif q.state.assumptions0.get("below_fermi") or \
+                p.state.assumptions0.get("below_fermi"):
+            return KroneckerDelta(p.state, q.state)
+        else:
+            return (KroneckerDelta(p.state, q.state) *
+                    KroneckerDelta(q.state, Index('i', below_fermi=True)))
+    else:  # vanish if 2xAnnihilator or 2xCreator
+        return S.Zero

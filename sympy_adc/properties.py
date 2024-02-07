@@ -126,8 +126,7 @@ class Properties:
                                                     braket='ket',
                                                     indices=right_idx) *
                       right_ampl)
-                expec += wicks(i1, keep_only_fully_contracted=True,
-                               simplify_kronecker_deltas=True, rules=rules)
+                expec += wicks(i1, simplify_kronecker_deltas=True, rules=rules)
             res += (norm * expec).expand()
         return simplify(Expr(res)).sympy
 
@@ -249,8 +248,8 @@ class Properties:
                                              braket='bra', indices=idx) *
                       op *
                       mp[term[2]])
-                trans_mom += wicks(i1, keep_only_fully_contracted=True,
-                                   simplify_kronecker_deltas=True, rules=rules)
+                trans_mom += wicks(i1, simplify_kronecker_deltas=True,
+                                   rules=rules)
             res += (norm * trans_mom).expand()
         return simplify(Expr(res)).sympy
 

@@ -279,7 +279,7 @@ def simplify_unitary(expr: e.Expr, t_name: str,
     """Simplifies an expression that contains unitary tensors by applying
        U_pq * U_pr * Remainder = delta_qr * Remainder,
        where the Remainder does not contain the index p."""
-    from sympy.physics.secondquant import evaluate_deltas
+    from . import func
     from itertools import combinations
 
     def simplify_term_unitary(term: e.Term) -> e.Term:
@@ -350,7 +350,7 @@ def simplify_unitary(expr: e.Expr, t_name: str,
 
     # evaluate the generated deltas if requested
     if evaluate_deltas:
-        res = e.Expr(evaluate_deltas(res.sympy), **res.assumptions)
+        res = e.Expr(func.evaluate_deltas(res.sympy), **res.assumptions)
     return res
 
 

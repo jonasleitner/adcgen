@@ -1,4 +1,3 @@
-from sympy.physics.secondquant import evaluate_deltas
 from sympy import sqrt, S
 
 from math import factorial
@@ -6,7 +5,7 @@ from math import factorial
 from .indices import repeated_indices, Indices
 from .misc import (Inputerror, cached_member, transform_to_tuple,
                    process_arguments, validate_input)
-from .func import gen_term_orders, wicks
+from .func import gen_term_orders, wicks, evaluate_deltas
 from .simplify import simplify
 from .expr_container import Expr
 from .rules import Rules
@@ -73,8 +72,7 @@ class SecularMatrix:
                         operator *
                         self.isr.precursor(order=ket_order, space=ket_space,
                                            braket='ket', indices=ket_idx))
-                itmd = wicks(itmd, keep_only_fully_contracted=True,
-                             simplify_kronecker_deltas=True, rules=rules)
+                itmd = wicks(itmd, simplify_kronecker_deltas=True, rules=rules)
                 matrix += itmd
             # evaluate_deltas should not be necessary here, because norm only
             # contains contracted indices
@@ -127,8 +125,7 @@ class SecularMatrix:
                                                     space=ket_space,
                                                     braket='ket',
                                                     indices=ket_idx))
-                itmd = wicks(itmd, keep_only_fully_contracted=True,
-                             simplify_kronecker_deltas=True, rules=rules)
+                itmd = wicks(itmd, simplify_kronecker_deltas=True, rules=rules)
                 matrix += itmd
             # evaluate deltas should not be necessary here
             res += (norm * matrix).expand()

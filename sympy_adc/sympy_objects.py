@@ -146,8 +146,7 @@ class NonSymmetricTensor(TensorSymbol):
 class Index(Dummy):
     """Class to represent Indices. Inherits it's behaviour from the sympy
        'Dummy' class, i.e.,
-        Index("x") == Index("x")
-        will evaluate to False.
+        Index("x") != Index("x").
         Additional functionality:
          - assigning a spin to the variable via the spin keyword ('a'/'b')
     """

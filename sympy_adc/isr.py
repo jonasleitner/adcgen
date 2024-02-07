@@ -1,4 +1,3 @@
-from sympy.physics.secondquant import wicks, evaluate_deltas
 from sympy import latex, Rational, S, Mul, sympify
 
 from math import factorial
@@ -9,7 +8,7 @@ from .indices import (
 from .misc import (cached_member, Inputerror, transform_to_tuple,
                    validate_input, process_arguments)
 from .simplify import simplify
-from .func import gen_term_orders
+from .func import gen_term_orders, wicks, evaluate_deltas
 from .groundstate import GroundState
 from .expr_container import Expr
 
@@ -131,10 +130,7 @@ class IntermediateStates:
                               get_gs_wfn(term[1], 'ket'))
                         state = get_gs_wfn(term[2], 'bra')
                     # wicks automatically expands the passed expression
-                    i1 = wicks(
-                        i1, keep_only_fully_contracted=True,
-                        simplify_kronecker_deltas=True,
-                    )
+                    i1 = wicks(i1, simplify_kronecker_deltas=True)
                     projection += (state * i1).expand()
                 projection = evaluate_deltas(projection)
                 res -= (norm * projection).expand()
@@ -193,10 +189,7 @@ class IntermediateStates:
                             order=term[2], space=lower_space, braket="bra",
                             indices=idx_isr
                         )
-                    i1 = wicks(
-                        i1, keep_only_fully_contracted=True,
-                        simplify_kronecker_deltas=True,
-                    )
+                    i1 = wicks(i1, simplify_kronecker_deltas=True)
                     projection += (prefactor * state * i1).expand()
                 projection = evaluate_deltas(projection)
                 res -= (norm * projection).expand()
@@ -245,8 +238,7 @@ class IntermediateStates:
                                      braket="bra", indices=indices[0]) *
                       self.precursor(order=term[1], space=block[1],
                                      braket="ket", indices=indices[1]))
-                i1 = wicks(i1, keep_only_fully_contracted=True,
-                           simplify_kronecker_deltas=True)
+                i1 = wicks(i1, simplify_kronecker_deltas=True)
                 overlap += i1
             res += (norm * overlap).expand()
         # It should be valid to simplifiy the result by permuting contracted
@@ -389,8 +381,7 @@ class IntermediateStates:
                       self.intermediate_state(order=term[1], space=block[1],
                                               braket="ket",
                                               indices=indices[1]))
-                i1 = wicks(i1, keep_only_fully_contracted=True,
-                           simplify_kronecker_deltas=True)
+                i1 = wicks(i1, simplify_kronecker_deltas=True)
                 overlap += i1
             res += (norm * overlap).expand()
         print(f"Build ISR overlap {block} S_{indices}^({order}) = ",
