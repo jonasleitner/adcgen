@@ -279,7 +279,6 @@ class EriOrbenergy:
            all virtual orbital energies will be subtracted, while all occupied
            energies are added. This might change numerator, denominator
            and prefactor."""
-        from .indices import index_space
 
         def adjust_sign(expr: e.Expr | e.Polynom) -> bool:
             # function that extracts the sign of the occupied and virtual
@@ -292,7 +291,7 @@ class EriOrbenergy:
                     raise RuntimeError("Expected a braket to consist of "
                                        "epsilons that each hold a single index"
                                        f". Found: {term} in {expr}.")
-                ov = index_space(idx[0].name)[0]
+                ov = idx[0].space[0]
                 if ov not in signs:
                     signs[ov] = []
                 signs[ov].append(term.sign)

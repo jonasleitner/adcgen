@@ -1,4 +1,4 @@
-from sympy_adc.sympy_objects import Index
+from sympy_adc.indices import Index
 
 
 class TestIndex:

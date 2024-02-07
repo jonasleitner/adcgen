@@ -1,8 +1,8 @@
 from sympy.physics.secondquant import TensorSymbol, \
     _sort_anticommuting_fermions, ViolationOfPauliPrinciple
-from sympy import sympify, Tuple, Symbol, Dummy, S
+from sympy import sympify, Tuple, Symbol, S
 from .misc import Inputerror
-from .indices import index_space
+from .indices import Index
 
 
 class AntiSymmetricTensor(TensorSymbol):
@@ -13,7 +13,7 @@ class AntiSymmetricTensor(TensorSymbol):
            - Additional support for bra/ket symmetry/antisymmetry.
         """
 
-    def __new__(cls, symbol: str, upper: tuple[Dummy], lower: tuple[Dummy],
+    def __new__(cls, symbol: str, upper: tuple[Index], lower: tuple[Index],
                 bra_ket_sym: int = 0) -> TensorSymbol:
         # sort the upper and lower indices
         try:
@@ -28,7 +28,7 @@ class AntiSymmetricTensor(TensorSymbol):
         # additionally account for the bra ket symmetry
         # add the check for Dummy indices for subs to work correctly
         bra_ket_sym = sympify(bra_ket_sym)
-        if bra_ket_sym is not S.Zero and all(isinstance(s, Dummy) for s
+        if bra_ket_sym is not S.Zero and all(isinstance(s, Index) for s
                                              in upper+lower):
             if bra_ket_sym not in [S.One, S.NegativeOne]:
                 raise Inputerror("Invalid bra ket symmetry given "
@@ -37,8 +37,8 @@ class AntiSymmetricTensor(TensorSymbol):
                 raise NotImplementedError("Bra Ket symmetry only implemented "
                                           "for tensors with an equal amount "
                                           "of upper and lower indices.")
-            space_u = "".join([index_space(s.name)[0] for s in upper])
-            space_l = "".join([index_space(s.name)[0] for s in lower])
+            space_u = "".join([s.space[0] for s in upper])
+            space_l = "".join([s.space[0] for s in lower])
             if space_l < space_u:  # space with more occ should be the lowest
                 upper, lower = lower, upper  # swap
                 if bra_ket_sym is S.NegativeOne:  # add another -1
@@ -66,9 +66,9 @@ class AntiSymmetricTensor(TensorSymbol):
 
     @classmethod
     def _sort_canonical(cls, idx):
-        if isinstance(idx, Dummy):
+        if isinstance(idx, Index):
             # also add the hash here for wicks, where multiple i are around
-            return (index_space(idx.name)[0],
+            return (idx.space[0],
                     int(idx.name[1:]) if idx.name[1:] else 0,
                     idx.name[0],
                     hash(idx))
@@ -122,7 +122,7 @@ class AntiSymmetricTensor(TensorSymbol):
 class NonSymmetricTensor(TensorSymbol):
     """Used to represent tensors that do not have any symmetry."""
 
-    def __new__(cls, symbol: str, indices: tuple[Dummy]) -> TensorSymbol:
+    def __new__(cls, symbol: str, indices: tuple[Index]) -> TensorSymbol:
         symbol = sympify(symbol)
         indices = Tuple(*indices)
         return TensorSymbol.__new__(cls, symbol, indices)
@@ -143,46 +143,8 @@ class NonSymmetricTensor(TensorSymbol):
         return "%s%s" % self.args
 
 
-class Index(Dummy):
-    """Class to represent Indices. Inherits it's behaviour from the sympy
-       'Dummy' class, i.e.,
-        Index("x") != Index("x").
-        Additional functionality:
-         - assigning a spin to the variable via the spin keyword ('a'/'b')
-    """
-    def __new__(cls, name: str = None, dummy_index=None, spin: str = None,
-                **assumptions):
-        if spin is None:
-            return super().__new__(cls, name, dummy_index, **assumptions)
-        elif spin == "a":
-            return super().__new__(cls, name, dummy_index, alpha=True,
-                                   **assumptions)
-        elif spin == "b":
-            return super().__new__(cls, name, dummy_index, beta=True,
-                                   **assumptions)
-        else:
-            raise Inputerror(f"Invalid spin {spin}. Valid values are 'a' and "
-                             "'b'.")
-
-    @property
-    def spin(self) -> None | str:
-        if self.assumptions0.get("alpha"):
-            return "a"
-        elif self.assumptions0.get("beta"):
-            return "b"
-
-    @property
-    def space(self) -> str:
-        if self.assumptions0.get("below_fermi"):
-            return "occ"
-        elif self.assumptions0.get("above_fermi"):
-            return "virt"
-        else:
-            return "general"
-
-
 class SingleSymmetryTensor(TensorSymbol):
-    def __new__(cls, symbol: str, indices: tuple[Dummy],
+    def __new__(cls, symbol: str, indices: tuple[Index],
                 perms: list[tuple[int]], factor: int) -> TensorSymbol:
         from itertools import chain
 
@@ -234,9 +196,9 @@ class SingleSymmetryTensor(TensorSymbol):
 
     @classmethod
     def _sort_canonical(cls, idx):
-        if isinstance(idx, Dummy):
+        if isinstance(idx, Index):
             # also add the hash here for wicks, where multiple i are around
-            return (index_space(idx.name)[0],
+            return (idx.space[0],
                     int(idx.name[1:]) if idx.name[1:] else 0,
                     idx.name[0],
                     hash(idx))

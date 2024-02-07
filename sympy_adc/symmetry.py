@@ -1,8 +1,7 @@
-from .indices import idx_sort_key, index_space
+from .indices import idx_sort_key, Index
 from . import expr_container as e
 from .misc import cached_member, cached_property, Inputerror
 from .eri_orbenergy import EriOrbenergy
-from sympy.physics.secondquant import Dummy
 from sympy import S
 from collections import defaultdict
 from itertools import chain, combinations
@@ -12,7 +11,7 @@ class Permutation(tuple):
     """A Permutation operator that permutes the two provided indices.
        The provided indices are sorted according to their name."""
 
-    def __new__(cls, p: Dummy, q: Dummy):
+    def __new__(cls, p: Index, q: Index):
         if idx_sort_key(p) < idx_sort_key(q):
             args = (p, q)
         else:
@@ -54,7 +53,7 @@ class PermutationProduct(tuple):
         links = []
         for perm in permutations:
             p, q = perm
-            space = set(index_space(p.name)[0] + index_space(q.name)[0])
+            space = set(p.space[0] + q.space[0])
             perm_spaces.append(space)
 
             if len(space) > 1:  # identify linking permutations
@@ -204,7 +203,7 @@ class LazyTermMap:
             ))
             # space of contracted indices
             idx_space = "".join(sorted(
-                index_space(s.name)[0] for s in term.eri.contracted
+                s.space[0] for s in term.eri.contracted
             ))
             # the number and length of brackets in the denominator
             key = (eri_descriptions, term.denom_description(), idx_space)

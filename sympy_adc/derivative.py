@@ -1,6 +1,5 @@
 from . import expr_container as e
-from .indices import index_space, minimize_tensor_indices
-from .sympy_objects import Index
+from .indices import minimize_tensor_indices, Index
 from sympy import Rational, diff, S
 
 
@@ -40,7 +39,7 @@ def derivative(expr: e.Expr, t_string: str):
         # - extract the names of target indices of the term
         target_names_by_space = {}
         for s in term.target:
-            if (sp := index_space(s.name)) not in target_names_by_space:
+            if (sp := s.space) not in target_names_by_space:
                 target_names_by_space[sp] = set()
             target_names_by_space[sp].add(s.name)
 

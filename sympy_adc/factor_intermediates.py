@@ -1,8 +1,7 @@
 from . import expr_container as e
 from .misc import Inputerror, cached_property
 from .eri_orbenergy import EriOrbenergy
-from .indices import (order_substitutions, get_symbols, index_space,
-                      minimize_tensor_indices)
+from .indices import order_substitutions, get_symbols, minimize_tensor_indices
 from .sympy_objects import AntiSymmetricTensor
 from .symmetry import LazyTermMap
 from sympy import S, Mul, Rational
@@ -128,7 +127,7 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
         # extract the target idx names of the term
         target_idx_by_space = {}
         for s in term.eri.target:
-            if (sp := index_space(s.name)) not in target_idx_by_space:
+            if (sp := s.space) not in target_idx_by_space:
                 target_idx_by_space[sp] = set()
             target_idx_by_space[sp].add(s.name)
 

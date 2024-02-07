@@ -1,6 +1,6 @@
 from .expr_container import Expr
-from .indices import get_symbols, idx_sort_key
 from .misc import Inputerror
+from .indices import idx_sort_key, get_symbols
 
 from itertools import product
 

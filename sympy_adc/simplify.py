@@ -1,9 +1,9 @@
-from .indices import (index_space, get_symbols, order_substitutions,
+from .indices import (get_symbols, order_substitutions, Index,
                       get_lowest_avail_indices, minimize_tensor_indices)
 from .misc import Inputerror
 from . import expr_container as e
 
-from sympy import Add, Pow, S, Dummy, KroneckerDelta, sqrt, Rational
+from sympy import Add, Pow, S, KroneckerDelta, sqrt, Rational
 from collections import Counter, defaultdict
 
 
@@ -166,8 +166,7 @@ def find_compatible_terms(terms: list[e.Term]):
             for i1, i2 in product(idx1[1:], idx2[1:]):
                 repeated = i1 & i2
                 if len(repeated) > 1:
-                    repeated = "".join(sorted(index_space(s.name)[0] for s
-                                              in repeated))
+                    repeated = "".join(sorted(s.space[0] for s in repeated))
                     repeating_idx.append((repeated, *sorted([descr1, descr2])))
         return tuple(sorted(repeating_idx))
 
@@ -370,7 +369,7 @@ def remove_tensor(expr: e.Expr, t_name: str):
         #   to their space
         used_indices = {}
         for s in set(s for s, _ in term._idx_counter):
-            if (ov := index_space(s.name)) not in used_indices:
+            if (ov := s.space) not in used_indices:
                 used_indices[ov] = set()
             used_indices[ov].add(s.name)
 
@@ -383,7 +382,7 @@ def remove_tensor(expr: e.Expr, t_name: str):
         # get all target indices on the tensor, split according to their space
         tensor_target_indices = {}
         for s in indices:
-            ov = index_space(s.name)
+            ov = s.space
             if s.name in target_indices.get(ov, []):
                 if ov not in tensor_target_indices:
                     tensor_target_indices[ov] = []
@@ -393,7 +392,7 @@ def remove_tensor(expr: e.Expr, t_name: str):
         # - add the tensor indices to the term_indices to collect all
         #   unavailable indices
         for s in indices:
-            if (ov := index_space(s.name)) not in used_indices:
+            if (ov := s.space) not in used_indices:
                 used_indices[ov] = set()
             used_indices[ov].add(s.name)
 
@@ -427,13 +426,13 @@ def remove_tensor(expr: e.Expr, t_name: str):
         repeating_indices = {}
         for s, n in Counter(indices).items():
             if n > 1:
-                if (ov := index_space(s.name)) not in repeating_indices:
+                if (ov := s.space) not in repeating_indices:
                     repeating_indices[ov] = []
                 repeating_indices[ov].extend(s for _ in range(n-1))
         if repeating_indices:
             # print(f"Found repeating indices {repeating_indices}")
             #   - get the list indices of all tensor indices
-            indices_i: dict[Dummy, list[int]] = {}
+            indices_i: dict[Index, list[int]] = {}
             for i, s in enumerate(indices):
                 if s not in indices_i:
                     indices_i[s] = []
@@ -570,7 +569,7 @@ def remove_tensor(expr: e.Expr, t_name: str):
         # extract all the target indices and split according to their space
         target_indices = {}
         for s in term.target:
-            if (ov := index_space(s.name)) not in target_indices:
+            if (ov := s.space) not in target_indices:
                 target_indices[ov] = set()
             target_indices[ov].add(s.name)
         # remove the first occurence of the tensor

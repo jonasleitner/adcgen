@@ -1,7 +1,7 @@
 from .expr_container import Expr
 from .misc import Inputerror
 from .rules import Rules
-from .sympy_objects import Index
+from .indices import Index
 
 from sympy.physics.secondquant import (
     F, Fd, FermionicOperator, KroneckerDelta, NO

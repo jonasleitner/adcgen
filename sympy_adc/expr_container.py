@@ -1,8 +1,8 @@
-from .indices import (index_space, get_lowest_avail_indices, get_symbols,
-                      order_substitutions, idx_sort_key)
+from .indices import (get_lowest_avail_indices, get_symbols,
+                      order_substitutions, idx_sort_key, Index)
 from .misc import Inputerror, cached_property, cached_member
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
-from sympy import latex, Add, Mul, Pow, sympify, S, Dummy, Basic, nsimplify
+from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify
 from sympy.physics.secondquant import NO, F, Fd, KroneckerDelta
 
 
@@ -101,7 +101,7 @@ class Container:
 class Expr(Container):
     def __init__(self, e, real: bool = False, sym_tensors: list[str] = None,
                  antisym_tensors: list[str] = None,
-                 target_idx: list[Dummy] = None):
+                 target_idx: list[Index] = None):
         if isinstance(e, Container):
             e = e.sympy
         self._expr = sympify(e)
@@ -110,7 +110,7 @@ class Expr(Container):
                                   else set(sym_tensors))
         self._antisym_tensors: set = (set() if antisym_tensors is None
                                       else set(antisym_tensors))
-        self._target_idx: None | tuple[Dummy] = None
+        self._target_idx: None | tuple[Index] = None
         if target_idx is not None:
             self.set_target_idx(target_idx)
         # first apply the tensor symmetry
@@ -156,7 +156,7 @@ class Expr(Container):
         return tuple(sorted(self._antisym_tensors))
 
     @property
-    def provided_target_idx(self) -> None | tuple[Dummy]:
+    def provided_target_idx(self) -> None | tuple[Index]:
         return self._target_idx
 
     @property
@@ -195,7 +195,7 @@ class Expr(Container):
             self._antisym_tensors = antisym_tensors
             self._apply_tensor_braket_sym()
 
-    def set_target_idx(self, target_idx: None | list[str | Dummy]) -> None:
+    def set_target_idx(self, target_idx: None | list[str | Index]) -> None:
         if target_idx is None:
             self._target_idx = None
         else:
@@ -530,7 +530,7 @@ class Term(Container):
             return bl_diag
         return Expr(bl_diag, **self.assumptions)
 
-    def diagonalize_fock(self, target: tuple[Dummy] = None,
+    def diagonalize_fock(self, target: tuple[Index] = None,
                          return_sympy: bool = False):
         """Transform the term in the canonical basis without loosing any
            information. It might not be possible to determine the
@@ -576,12 +576,12 @@ class Term(Container):
         #    and therefore not sorted -> will produce a random result.
         contracted = {}
         for s in self.contracted:
-            if (sp := index_space(s.name)) not in contracted:
+            if (sp := s.space) not in contracted:
                 contracted[sp] = []
             contracted[sp].append(s)
         used = {}
         for s in set(self.target):
-            if (sp := index_space(s.name)) not in used:
+            if (sp := s.space) not in used:
                 used[sp] = set()
             used[sp].add(s.name)
 
@@ -684,7 +684,7 @@ class Term(Container):
         # split in occ and virt indices (only generate P_oo, P_vv and P_gg)
         sorted_idx = {}
         for s in indices:
-            if (sp := index_space(s.name)[0]) not in sorted_idx:
+            if (sp := s.space[0]) not in sorted_idx:
                 sorted_idx[sp] = []
             sorted_idx[sp].append(s)
 
@@ -806,7 +806,7 @@ class Term(Container):
             positions = o.crude_pos()
             c = f"_{'_'.join(sorted(coupl[i]))}" if i in coupl else None
             for s, pos in positions.items():
-                ov = index_space(s.name)[0]
+                ov = s.space[0]
                 if ov not in pattern:
                     pattern[ov] = {}
                 if s not in pattern[ov]:
@@ -913,7 +913,7 @@ class Term(Container):
 
         def sort_canonical(idx):
             # duplicate of antisym tensor sort function. Hash was omitted
-            return (index_space(idx.name)[0],
+            return (idx.space[0],
                     int(idx.name[1:]) if idx.name[1:] else 0,
                     idx.name[0])
 
@@ -954,9 +954,9 @@ class Term(Container):
                 return None
 
             # determine the scaling of the contraction
-            target_sp = Counter([index_space(s.name)[0] for s in target])
+            target_sp = Counter([s.space[0] for s in target])
             contracted_sp = \
-                Counter([index_space(s.name)[0] for s in contracted])
+                Counter([s.space[0] for s in contracted])
 
             occ = target_sp['o'] + contracted_sp['o']
             virt = target_sp['v'] + contracted_sp['v']
@@ -1058,7 +1058,7 @@ class Term(Container):
         elif len(relevant_objects) == 1:  # only a single tensor
             i, o = next(iter(relevant_objects.items()))
             indices = o.idx
-            target_sp = Counter(index_space(s.name)[0] for s in target_indices)
+            target_sp = Counter(s.space[0] for s in target_indices)
             mem = mem_scaling(len(target_indices), target_sp['g'],
                               target_sp['v'], target_sp['o'])
             scal = scaling(sum(target_sp.values()), target_sp['g'],
@@ -1227,7 +1227,7 @@ class Obj(Container):
             return bl_diag
         return Expr(bl_diag, **self.assumptions)
 
-    def diagonalize_fock(self, target: tuple[Dummy] = None,
+    def diagonalize_fock(self, target: tuple[Index] = None,
                          return_sympy: bool = False):
         sub = {}
         if self.name == 'f':  # self contains a fock element
@@ -1432,11 +1432,11 @@ class Obj(Container):
     @property
     def space(self) -> str:
         """Returns the canonical space of tensors and other objects."""
-        return "".join(index_space(s.name)[0] for s in self.idx)
+        return "".join(s.space[0] for s in self.idx)
 
     @cached_member
     def crude_pos(self, include_target_idx: bool = True,
-                  include_exponent: bool = True) -> dict[Dummy, list]:
+                  include_exponent: bool = True) -> dict[Index, list]:
         """Returns the 'crude' position of the indices in the object.
            (e.g. only if they are located in bra/ket, not the exact position)
            """
@@ -1461,7 +1461,7 @@ class Obj(Container):
                     # space (occ/virt) of neighbour indices
                     neighbours = [i for i in idx_tpl if i is not s]
                     if neighbours:
-                        neighbour_sp = ''.join(index_space(i.name)[0] for i in
+                        neighbour_sp = ''.join(i.space[0] for i in
                                                neighbours)
                         pos += f"-{neighbour_sp}"
                     # names of neighbour target indices
@@ -1538,8 +1538,8 @@ class Obj(Container):
             # - space separated in upper and lower part
             tensor = self.extract_pow
             upper, lower = tensor.upper, tensor.lower
-            space_u = "".join(index_space(s.name)[0] for s in upper)
-            space_l = "".join(index_space(s.name)[0] for s in lower)
+            space_u = "".join(s.space[0] for s in upper)
+            space_l = "".join(s.space[0] for s in lower)
             descr += f"-{self.name}-{space_u}-{space_l}"
             # names of target indices, also separated in upper and lower part
             # indices in upper and lower have been sorted upon tensor creation!
@@ -1757,7 +1757,7 @@ class NormalOrdered(Obj):
             if include_target_idx and idx[0] in target:
                 op_str = idx[0].name
             else:
-                op_str = index_space(idx[0].name)[0]
+                op_str = idx[0].space[0]
             # add a plus for creation operators
             if (type := o.type) == 'create':
                 op_str += '+'

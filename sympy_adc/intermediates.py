@@ -127,7 +127,7 @@ class RegisteredIntermediate:
             subs.update({o: n for o, n in zip(base_target, idx)})
         # map contracted indices onto each other
         if (base_contracted := expanded_itmd.contracted) is not None:
-            spaces = [index_space(s.name) for s in base_contracted]
+            spaces = [s.space for s in base_contracted]
             contracted = idx_cls().get_generic_indices(
                 n_o=spaces.count('occ'), n_v=spaces.count('virt'),
                 n_g=spaces.count('general')

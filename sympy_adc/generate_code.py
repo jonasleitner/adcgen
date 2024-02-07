@@ -2,7 +2,6 @@ from . import expr_container as e
 from .misc import Inputerror
 from .sort_expr import exploit_perm_sym
 from collections import namedtuple
-from .indices import index_space
 
 scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
 mem_scaling = namedtuple('mem_scaling', ['total', 'g', 'v', 'o'])
@@ -21,7 +20,7 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
        """
 
     def unoptimized_contraction(term: e.Term, target_indices: str):
-        from .indices import index_space, get_symbols
+        from .indices import get_symbols
         # construct a contraction_data object for the simulötaneous,
         # unoptimized contraction of all objects of a term.
         target = get_symbols(target_indices)
@@ -45,12 +44,12 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
                                           "polynoms, creation and annihilation"
                                           f"operators: {term}")
         contracted = sorted(contracted, key=lambda s:
-                            (index_space(s.name)[0],
+                            (s.space[0],
                              int(s.name[1:]) if s.name[1:] else 0,
                              s.name[0]))
         # determine the scaling
-        target_sp = [index_space(s.name)[0] for s in target]
-        contracted_sp = [index_space(s.name)[0] for s in contracted]
+        target_sp = [s.space[0] for s in target]
+        contracted_sp = [s.space[0] for s in contracted]
 
         occ = target_sp.count('o') + contracted_sp.count('o')
         virt = target_sp.count('v') + contracted_sp.count('v')
@@ -148,14 +147,13 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
 
 def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
     """Generate a contraction string using the einsum syntax."""
-    from .indices import index_space
 
     translate_tensor_names = {
         'V': lambda indices: (  # eri
-            f"hf.{''.join(index_space(s.name)[0] for s in indices)}"
+            f"hf.{''.join(s.space[0] for s in indices)}"
         ),
         'f': lambda indices: (  # fock
-            f"hf.f{''.join(index_space(s.name)[0] for s in indices)}"
+            f"hf.f{''.join(s.space[0] for s in indices)}"
         )
     }
 
@@ -249,7 +247,7 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
 
     translate_tensor_names = {
         'V': lambda indices: (  # eri
-            f"i_{''.join(index_space(s.name)[0] for s in indices)}"
+            f"i_{''.join(s.space[0] for s in indices)}"
         ),
     }
 

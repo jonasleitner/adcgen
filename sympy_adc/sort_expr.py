@@ -1,6 +1,6 @@
 from . import expr_container as e
 from .misc import Inputerror
-from .indices import index_space, get_symbols, idx_sort_key
+from .indices import get_symbols, idx_sort_key
 
 
 def by_delta_types(expr: e.Expr) -> dict[tuple[str], e.Expr]:
@@ -111,7 +111,7 @@ def by_tensor_target_space(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Ex
             if o.name == t_string:
                 # indices are in canonical order -> the space should also
                 obj_target_sp = "".join(
-                    [index_space(s.name)[0] for s in o.idx if s in target]
+                    [s.space[0] for s in o.idx if s in target]
                 )
                 if not obj_target_sp:
                     obj_target_sp = 'none'
@@ -241,7 +241,7 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
             for o in term.eri.objects
         ))
         idx_space = "".join(sorted(
-            index_space(s.name)[0] for s in term.eri.contracted
+            s.space[0] for s in term.eri.contracted
         ))
         key = (eri_descr, term.denom_description(), idx_space)
         filtered_terms[key].append(term_i)

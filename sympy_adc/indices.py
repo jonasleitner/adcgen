@@ -6,6 +6,44 @@ from .misc import Inputerror, Singleton
 idx_base = {'occ': 'ijklmno', 'virt': 'abcdefgh', 'general': 'pqrstuvw'}
 
 
+class Index(Dummy):
+    """Class to represent Indices. Inherits it's behaviour from the sympy
+       'Dummy' class, i.e.,
+        Index("x") != Index("x").
+        Additional functionality:
+         - assigning a spin to the variable via the spin keyword ('a'/'b')
+    """
+    def __new__(cls, name: str = None, dummy_index=None, spin: str = None,
+                **assumptions):
+        if spin is None:
+            return super().__new__(cls, name, dummy_index, **assumptions)
+        elif spin == "a":
+            return super().__new__(cls, name, dummy_index, alpha=True,
+                                   **assumptions)
+        elif spin == "b":
+            return super().__new__(cls, name, dummy_index, beta=True,
+                                   **assumptions)
+        else:
+            raise Inputerror(f"Invalid spin {spin}. Valid values are 'a' and "
+                             "'b'.")
+
+    @property
+    def spin(self) -> None | str:
+        if self.assumptions0.get("alpha"):
+            return "a"
+        elif self.assumptions0.get("beta"):
+            return "b"
+
+    @property
+    def space(self) -> str:
+        if self.assumptions0.get("below_fermi"):
+            return "occ"
+        elif self.assumptions0.get("above_fermi"):
+            return "virt"
+        else:
+            return "general"
+
+
 class Indices(metaclass=Singleton):
     """Book keeping class that manages the indices in an expression.
        This ensures that for every index only a single instance exists,
@@ -120,7 +158,7 @@ class Indices(metaclass=Singleton):
             # count how many indices need to be replaced and get new indices
             old = {}
             for s in term.contracted:
-                ov = index_space(s.name)
+                ov = s.space
                 if ov not in old:
                     old[ov] = []
                 old[ov].append(s)
@@ -222,16 +260,16 @@ def extract_names(syms):
     return [s.name for s in syms]
 
 
-def get_symbols(idx: str | list[str] | list[Dummy]) -> list[Dummy]:
+def get_symbols(idx: str | list[str] | list[Index]) -> list[Index]:
     """Ensure that all provided indices are sympy symbols. If a string of
        indices is provided the corresponding sympy symbols are
        created automatically."""
 
     if not idx:
         return []
-    elif isinstance(idx, Dummy):  # a single symbol is not iterable
+    elif isinstance(idx, Index):  # a single symbol is not iterable
         return [idx]
-    elif all(isinstance(i, Dummy) for i in idx):
+    elif all(isinstance(i, Index) for i in idx):
         return idx
     elif all(isinstance(i, str) for i in idx):
         idx_cls = Indices()
@@ -241,10 +279,10 @@ def get_symbols(idx: str | list[str] | list[Dummy]) -> list[Dummy]:
         ]
     else:
         raise Inputerror("Indices need to be provided as string or a list "
-                         "of sympy Dummy objects.")
+                         f"of {Index} objects.")
 
 
-def order_substitutions(subsdict: dict[Dummy, Dummy]) -> list:
+def order_substitutions(subsdict: dict[Index, Index]) -> list:
     """Returns substitutions ordered in a way one can use the subs method
        without the need to use the 'sumiltanous=True' option. Essentially
        identical to a part of the substitute_dummies function of sympy."""
@@ -294,7 +332,7 @@ def minimize_tensor_indices(tensor_indices: tuple,
     for s in tensor_indices:
         if s in minimized:
             continue
-        space = index_space(s.name)
+        space = s.space
         # target indices of the corresponding space
         space_target = target_idx.get(space, [])
         # index is a target idx -> keep as is

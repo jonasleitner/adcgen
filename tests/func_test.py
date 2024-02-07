@@ -1,6 +1,5 @@
-from sympy_adc.func import (
-    _contraction, Index, _contract_operator_string, wicks
-)
+from sympy_adc.func import _contraction, _contract_operator_string, wicks
+from sympy_adc.indices import Index
 
 from sympy import S
 from sympy.physics.secondquant import F, Fd, KroneckerDelta, substitute_dummies
