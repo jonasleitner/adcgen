@@ -576,23 +576,28 @@ class Term(Container):
         #    and therefore not sorted -> will produce a random result.
         contracted = {}
         for s in self.contracted:
-            if (sp := s.space) not in contracted:
-                contracted[sp] = []
-            contracted[sp].append(s)
+            if (key := (s.space, s.spin)) not in contracted:
+                contracted[key] = []
+            contracted[key].append(s)
         used = {}
         for s in set(self.target):
-            if (sp := s.space) not in used:
-                used[sp] = set()
-            used[sp].add(s.name)
+            if (key := (s.space, s.spin)) not in used:
+                used[key] = set()
+            used[key].add(s.name)
 
         # 3) generate new indices the contracted will be replaced with
         #    and build a substitution dictionary
         #    Don't filter out indices that will not change!
         sub = {}
-        for sp, idx_list in contracted.items():
-            new_idx = get_symbols(
-                get_lowest_avail_indices(len(idx_list), used.get(sp, []), sp)
-            )
+        for (space, spin), idx_list in contracted.items():
+            new_idx = get_lowest_avail_indices(len(idx_list),
+                                               used.get((space, spin), []),
+                                               space)
+            if spin:
+                new_idx = get_symbols(new_idx, "".join(spin for _ in
+                                                       range(len(idx_list))))
+            else:
+                new_idx = get_symbols(new_idx)
             sub.update({o: n for o, n in zip(idx_list, new_idx)})
         # 4) apply substitutions while ensuring the substitutions are
         # performed in the correct order
@@ -741,7 +746,7 @@ class Term(Container):
         return Expr(res.expand(), **self.assumptions)
 
     @property
-    def contracted(self):
+    def contracted(self) -> tuple[Index]:
         """Returns all contracted indices of the term. If no target indices
            have been provided to the parent expression, the Einstein sum
            convention will be applied."""
@@ -753,7 +758,7 @@ class Term(Container):
             return tuple(s for s, n in self._idx_counter if n)
 
     @property
-    def target(self):
+    def target(self) -> tuple[Index]:
         """Returns all target indices of the term. If no target indices
            have been provided to the parent expression, the Einstein sum
            convention will be applied."""
@@ -766,7 +771,7 @@ class Term(Container):
             return tuple(s for s, n in self._idx_counter if not n)
 
     @cached_property
-    def idx(self):
+    def idx(self) -> tuple[Index]:
         """Returns all indices that occur in the term. Indices that occur
            multiple times will be listed multiple times."""
         return tuple(s for s, n in self._idx_counter for _ in range(n + 1))

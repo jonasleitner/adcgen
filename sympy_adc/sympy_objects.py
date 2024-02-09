@@ -71,6 +71,7 @@ class AntiSymmetricTensor(TensorSymbol):
             return (idx.space[0],
                     int(idx.name[1:]) if idx.name[1:] else 0,
                     idx.name[0],
+                    idx.spin,
                     hash(idx))
         else:  # necessary for subs to work correctly with simultaneous=True
             return ('', 0, str(idx), hash(idx))
@@ -78,8 +79,8 @@ class AntiSymmetricTensor(TensorSymbol):
     def _latex(self, printer) -> str:
         return "{%s^{%s}_{%s}}" % (
             self.symbol,
-            "".join([i.name for i in self.args[1]]),
-            "".join([i.name for i in self.args[2]])
+            "".join([i._latex(printer) for i in self.args[1]]),
+            "".join([i._latex(printer) for i in self.args[2]])
         )
 
     @property
@@ -128,8 +129,8 @@ class NonSymmetricTensor(TensorSymbol):
         return TensorSymbol.__new__(cls, symbol, indices)
 
     def _latex(self, printer) -> str:
-        return "{%s_{%s}}" % (self.symbol,
-                              "".join([i.name for i in self.indices]))
+        return "{%s_{%s}}" % (self.symbol, "".join([i._latex(printer)
+                                                    for i in self.indices]))
 
     @property
     def symbol(self) -> Symbol:
@@ -201,13 +202,14 @@ class SingleSymmetryTensor(TensorSymbol):
             return (idx.space[0],
                     int(idx.name[1:]) if idx.name[1:] else 0,
                     idx.name[0],
+                    idx.spin,
                     hash(idx))
         else:  # necessary for subs to work correctly with simultaneous=True
             return ('', 0, str(idx), hash(idx))
 
     def _latex(self, printer) -> str:
-        return "{%s_{%s}}" % (self.symbol,
-                              "".join([i.name for i in self.indices]))
+        return "{%s_{%s}}" % (self.symbol, "".join([i._latex(printer)
+                                                    for i in self.indices]))
 
     @property
     def symbol(self) -> Symbol:

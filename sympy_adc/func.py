@@ -311,7 +311,7 @@ def _contraction(p, q):
             not isinstance(q, FermionicOperator):
         raise NotImplementedError("Contraction only implemented for "
                                   "FermionicOperators.")
-    if p.state.spin is not None or q.state.spin is not None:
+    if p.state.spin or q.state.spin:
         raise NotImplementedError("Contraction not implemented for indices "
                                   "with spin.")
 

@@ -12,7 +12,6 @@ import argparse
 
 class Generator:
     def __init__(self, names):
-        # TODO: add argparse options to only generate a subset of data
         mp_op = Operators(variant='mp')
         re_op = Operators(variant='re')
         mp = GroundState(mp_op, first_order_singles=False)
