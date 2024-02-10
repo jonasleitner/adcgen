@@ -1,7 +1,7 @@
 from .expr_container import Expr
 from .misc import Inputerror
 from .rules import Rules
-from .indices import Index
+from .indices import Index, get_symbols
 
 from sympy.physics.secondquant import (
     F, Fd, FermionicOperator, KroneckerDelta, NO
@@ -184,49 +184,53 @@ def evaluate_deltas(expr, target_idx=None):
        that takes the target indices of the expr as additional input.
        Neccessary if the einstein sum convention is not sufficient
        to determine the target indices in all terms of the expression."""
-    from sympy import Add, Mul
-    import sympy.physics.secondquant
-    from .indices import get_symbols
 
-    if target_idx is None:
-        return sympy.physics.secondquant.evaluate_deltas(expr)
-
-    # convert the target indices to Dummies (if we got a string)
-    target_idx = get_symbols(target_idx)
-
-    accepted_functions = (
-        Add,
-    )
-    if isinstance(expr, accepted_functions):
+    if isinstance(expr, Add):
         return expr.func(*[evaluate_deltas(arg, target_idx)
                            for arg in expr.args])
-
     elif isinstance(expr, Mul):
-        # find all occurrences of kronecker delta
-        deltas = [d for d in expr.args if
-                  isinstance(d, sympy.physics.secondquant.KroneckerDelta)]
+        if target_idx is None:
+            # for determining the target indices it is sufficient to use
+            # atoms, which lists every index only once per object, i.e.,
+            # (f_ii).atoms(Index) -> i.
+            # We are only interested in indices on deltas
+            # -> it is sufficient to know that an index occurs on another
+            #    object. (twice on the same delta is not possible)
+            deltas = []
+            indices = {}
+            for obj in expr.args:
+                for s in obj.atoms(Index):
+                    if s in indices:
+                        indices[s] += 1
+                    else:
+                        indices[s] = 0
+                if isinstance(obj, KroneckerDelta):
+                    deltas.append(obj)
+            target_idx = [s for s, n in indices.items() if not n]
+        else:
+            # find all occurrences of kronecker delta
+            deltas = [d for d in expr.args if isinstance(d, KroneckerDelta)]
+            target_idx = get_symbols(target_idx)
 
         for d in deltas:
             # If we do something, and there are more deltas, we should recurse
             # to treat the resulting expression properly
-            if d.killable_index.is_Symbol and \
-                    d.killable_index not in target_idx:
-                # killable is a contracted index
-                expr = expr.subs(d.killable_index, d.preferred_index)
-                if len(deltas) > 1:
-                    return evaluate_deltas(expr, target_idx)
-            elif (d.preferred_index.is_Symbol and
-                  d.preferred_index not in target_idx
-                  and d.indices_contain_equal_information):
-                # preferred is a contracted index
-                expr = expr.subs(d.preferred_index, d.killable_index)
-                if len(deltas) > 1:
-                    return evaluate_deltas(expr, target_idx)
+            if d._get_preferred_index():
+                preferred, killable = d.args[1], d.args[0]
             else:
-                pass
-
+                preferred, killable = d.args[0], d.args[1]
+            # killable is contracted -> remove killable
+            if killable.is_Symbol and killable not in target_idx:
+                expr = expr.subs(killable, preferred)
+                if len(deltas) > 1:
+                    return evaluate_deltas(expr, target_idx)
+            # preferred is a contracted index that can be removed
+            elif preferred.is_Symbol and preferred not in target_idx \
+                    and preferred.space == killable.space:
+                expr = expr.subs(preferred, killable)
+                if len(deltas) > 1:
+                    return evaluate_deltas(expr, target_idx)
         return expr
-    # nothing to do, maybe we hit a Symbol or a number
     else:
         return expr
 

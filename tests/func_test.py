@@ -1,8 +1,36 @@
-from sympy_adc.func import _contraction, _contract_operator_string, wicks
+from sympy_adc.func import (
+    _contraction, _contract_operator_string, wicks, evaluate_deltas
+)
 from sympy_adc.indices import Index
 
 from sympy import S
 from sympy.physics.secondquant import F, Fd, KroneckerDelta, substitute_dummies
+
+
+class TestEvaluateDeltas:
+    def test_ev_deltas(self):
+        i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
+        p = Index("p")
+
+        test = KroneckerDelta(i, j) * F(j)
+        assert evaluate_deltas(test) == F(i)
+        test = KroneckerDelta(i, j) * F(i)
+        assert evaluate_deltas(test) == F(j)
+        test = KroneckerDelta(i, p) * F(p)
+        assert evaluate_deltas(test) == F(i)
+        test = KroneckerDelta(i, p) * F(i)  # don't remove i!
+        assert evaluate_deltas(test) == test
+        test = KroneckerDelta(i, j) * F(p)
+        assert evaluate_deltas(test) == test
+
+    def test_with_target_idx(self):
+        i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
+        p = Index("p")
+
+        test = KroneckerDelta(i, j) * F(j)
+        assert evaluate_deltas(test, j) == F(j)
+        assert evaluate_deltas(test, p) == F(i)
+        assert evaluate_deltas(test, (i, j)) == test
 
 
 class TestWicks:
