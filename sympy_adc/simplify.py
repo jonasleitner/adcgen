@@ -91,15 +91,16 @@ def find_compatible_terms(terms: list[e.Term]):
                 matching_idx = []  # list to collect all possible matches
                 for other_idx, other_pat in other_idx_pattern.items():
                     other_is_target = other_idx in target
-                    if is_target != other_is_target:
-                        continue  # 1 index is a target index -> cant map
+                    # only 1 index is a target index -> cant map
+                    # or both are different target indices
+                    # -> cant map because we cant substitute target indices
+                    if is_target != other_is_target or \
+                            (is_target and other_is_target and
+                             idx is not other_idx):
+                        continue
                     # the pattern of both indices is identical
                     # -> possible match
                     if pat == other_pat:
-                        # can't substitute target indices
-                        if is_target and other_is_target \
-                                and idx is not other_idx:
-                            continue
                         matching_idx.append(other_idx)
                 # could not find a match for idx -> no need to check further
                 if not matching_idx:
@@ -166,7 +167,8 @@ def find_compatible_terms(terms: list[e.Term]):
             for i1, i2 in product(idx1[1:], idx2[1:]):
                 repeated = i1 & i2
                 if len(repeated) > 1:
-                    repeated = "".join(sorted(s.space[0] for s in repeated))
+                    repeated = "".join(sorted(s.space[0] + s.spin
+                                              for s in repeated))
                     repeating_idx.append((repeated, *sorted([descr1, descr2])))
         return tuple(sorted(repeating_idx))
 
@@ -175,7 +177,7 @@ def find_compatible_terms(terms: list[e.Term]):
 
     # prefilter terms according to
     # - number of objects, excluding prefactor
-    # - type, name, space, obj target indices and exponent of objects
+    # - type, name, space, spin, obj target indices and exponent of objects
     # - the space of repeating indices subsets (2, 3, ...) that repeat on
     #   on multiple objects together in a common index subspace (upper/lower)
     # - number of indices in each space

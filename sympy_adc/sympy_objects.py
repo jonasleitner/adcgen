@@ -69,9 +69,9 @@ class AntiSymmetricTensor(TensorSymbol):
         if isinstance(idx, Index):
             # also add the hash here for wicks, where multiple i are around
             return (idx.space[0],
+                    idx.spin,
                     int(idx.name[1:]) if idx.name[1:] else 0,
                     idx.name[0],
-                    idx.spin,
                     hash(idx))
         else:  # necessary for subs to work correctly with simultaneous=True
             return ('', 0, str(idx), hash(idx))
@@ -200,9 +200,9 @@ class SingleSymmetryTensor(TensorSymbol):
         if isinstance(idx, Index):
             # also add the hash here for wicks, where multiple i are around
             return (idx.space[0],
+                    idx.spin,
                     int(idx.name[1:]) if idx.name[1:] else 0,
                     idx.name[0],
-                    idx.spin,
                     hash(idx))
         else:  # necessary for subs to work correctly with simultaneous=True
             return ('', 0, str(idx), hash(idx))

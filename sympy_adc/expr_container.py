@@ -594,8 +594,7 @@ class Term(Container):
                                                used.get((space, spin), []),
                                                space)
             if spin:
-                new_idx = get_symbols(new_idx, "".join(spin for _ in
-                                                       range(len(idx_list))))
+                new_idx = get_symbols(new_idx, spin * len(idx_list))
             else:
                 new_idx = get_symbols(new_idx)
             sub.update({o: n for o, n in zip(idx_list, new_idx)})
@@ -811,13 +810,15 @@ class Term(Container):
             positions = o.crude_pos()
             c = f"_{'_'.join(sorted(coupl[i]))}" if i in coupl else None
             for s, pos in positions.items():
-                ov = s.space[0]
-                if ov not in pattern:
-                    pattern[ov] = {}
-                if s not in pattern[ov]:
-                    pattern[ov][s] = []
-                pattern[ov][s].extend((p + c if c is not None else p
-                                       for p in pos))
+                key = s.space[0] + s.spin
+                if key not in pattern:
+                    pattern[key] = {}
+                if s not in pattern[key]:
+                    pattern[key][s] = []
+                if c is None:
+                    pattern[key][s].extend((p for p in pos))
+                else:
+                    pattern[key][s].extend((p + c for p in pos))
         # sort pattern to allow for direct comparison
         for ov, idx_pat in pattern.items():
             for s, pat in idx_pat.items():
@@ -826,7 +827,7 @@ class Term(Container):
 
     @cached_member
     def coupling(self, include_target_idx: bool = True,
-                 include_exponent: bool = True) -> dict:
+                 include_exponent: bool = True) -> dict[int, list]:
         """Returns the coupling between the objects in the term, where two
            objects are coupled when they share common indices. Only the
            coupling of non unique objects is returned, i.e., the coupling
@@ -845,11 +846,10 @@ class Term(Container):
                                  include_target_idx=include_target_idx)
                      for o in objects]
         coupling = {}
-        for i, descr in enumerate(descriptions):
+        for i, (descr, idx_pos) in enumerate(zip(descriptions, positions)):
             # if the tensor is unique in the term -> no coupling necessary
             if descr_counter[descr] < 2:
                 continue
-            idx_pos = positions[i]
             for other_i, other_idx_pos in enumerate(positions):
                 if i == other_i:
                     continue
@@ -1439,6 +1439,11 @@ class Obj(Container):
         """Returns the canonical space of tensors and other objects."""
         return "".join(s.space[0] for s in self.idx)
 
+    @property
+    def spin(self) -> str:
+        """Returns the spin block of the current object."""
+        return "".join(s.spin if s.spin else "n" for s in self.idx)
+
     @cached_member
     def crude_pos(self, include_target_idx: bool = True,
                   include_exponent: bool = True) -> dict[Index, list]:
@@ -1466,9 +1471,10 @@ class Obj(Container):
                     # space (occ/virt) of neighbour indices
                     neighbours = [i for i in idx_tpl if i is not s]
                     if neighbours:
-                        neighbour_sp = ''.join(i.space[0] for i in
-                                               neighbours)
-                        pos += f"-{neighbour_sp}"
+                        neighbour_data = ''.join(
+                            i.space[0] + i.spin for i in neighbours
+                        )
+                        pos += f"-{neighbour_data}"
                     # names of neighbour target indices
                     if include_target_idx:
                         neighbour_target = [i.name for i in neighbours
@@ -1543,9 +1549,9 @@ class Obj(Container):
             # - space separated in upper and lower part
             tensor = self.extract_pow
             upper, lower = tensor.upper, tensor.lower
-            space_u = "".join(s.space[0] for s in upper)
-            space_l = "".join(s.space[0] for s in lower)
-            descr += f"-{self.name}-{space_u}-{space_l}"
+            data_u = "".join(s.space[0] + s.spin for s in upper)
+            data_l = "".join(s.space[0] + s.spin for s in lower)
+            descr += f"-{self.name}-{data_u}-{data_l}"
             # names of target indices, also separated in upper and lower part
             # indices in upper and lower have been sorted upon tensor creation!
             if include_target_idx:
@@ -1567,7 +1573,8 @@ class Obj(Container):
             if include_exponent:  # add exponent to description
                 descr += f"-{self.exponent}"
         elif descr == 'nonsymtensor':
-            descr += f"-{self.name}_{self.space}"
+            data = "".join(s.space[0] + s.spin for s in self.idx)
+            descr += f"-{self.name}-{data}"
             if include_target_idx:
                 target_str = "".join(s.name + str(i) for i, s in
                                      enumerate(self.idx) if s in target)
@@ -1576,6 +1583,7 @@ class Obj(Container):
             if include_exponent:
                 descr += f"-{self.exponent}"
         elif descr in ['delta', 'annihilate', 'create']:
+            descr += f"-{self.space}"
             if include_target_idx and \
                     (target_str := "".join(s.name for s in self.idx
                                            if s in target)):
@@ -1762,7 +1770,7 @@ class NormalOrdered(Obj):
             if include_target_idx and idx[0] in target:
                 op_str = idx[0].name
             else:
-                op_str = idx[0].space[0]
+                op_str = idx[0].space[0] + idx[0].spin
             # add a plus for creation operators
             if (type := o.type) == 'create':
                 op_str += '+'
