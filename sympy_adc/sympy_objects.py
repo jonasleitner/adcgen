@@ -1,5 +1,7 @@
 from sympy.physics.secondquant import TensorSymbol, \
     _sort_anticommuting_fermions, ViolationOfPauliPrinciple
+from sympy.functions.special.tensor_functions import KroneckerDelta
+from sympy.core.logic import fuzzy_not
 from sympy import sympify, Tuple, Symbol, S
 from .misc import Inputerror
 from .indices import Index
@@ -142,6 +144,63 @@ class NonSymmetricTensor(TensorSymbol):
 
     def __str__(self):
         return "%s%s" % self.args
+
+
+class Delta(KroneckerDelta):
+    @classmethod
+    def eval(cls, i: Index, j: Index, delta_range=None):
+        """Evaluates the KroneckerDelta.
+           Adapted from sympy to also cover Spin."""
+
+        if delta_range is not None:
+            dinf, dsup = delta_range
+            if dinf - i > 0 or dinf - j > 0 or dsup - i < 0 or dsup - j < 0:
+                return S.Zero
+
+        diff = i - j
+        if diff.is_zero or fuzzy_not(diff.is_zero):
+            return S.One
+
+        spi, spj = i.space[0], j.space[0]
+        if spi != "g" and spj != "g" and spi != spj:  # delta_ov / delta_vo
+            return S.Zero
+        spi, spj = i.spin, j.spin
+        if spi and spj and spi != spj:  # delta_ab / delta_ba
+            return S.Zero
+        # sort the indices of the delta
+        if i != min(i, j, key=cls._sort_canonical):
+            if delta_range:
+                return cls(j, i, delta_range)
+            else:
+                return cls(j, i)
+
+    @classmethod
+    def _sort_canonical(cls, idx):
+        if isinstance(idx, Index):
+            # also add the hash here for wicks, where multiple i are around
+            return (idx.space[0],
+                    idx.spin,
+                    int(idx.name[1:]) if idx.name[1:] else 0,
+                    idx.name[0],
+                    hash(idx))
+        else:  # necessary for subs to work correctly with simultaneous=True
+            return ('', 0, str(idx), hash(idx))
+
+    def _get_preferred_index(self) -> int:
+        """Returns the index which is preferred to keep in the final
+           expression."""
+        space1, spin1 = self.args[0].space[0], self.args[0].spin
+        space2, spin2 = self.args[1].space[0], self.args[1].spin
+        if spin1 != spin2:
+            raise NotImplementedError("Preferred index can not be determined "
+                                      "for indices with different spin: ",
+                                      self)
+        if space1 == space2:  # oo / vv / gg
+            return 0
+        elif space2 == "g":  # og / vg
+            return 0
+        elif space1 == "g":  # go / gv
+            return 1
 
 
 class SingleSymmetryTensor(TensorSymbol):

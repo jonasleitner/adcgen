@@ -1,9 +1,9 @@
 from sympy_adc.simplify import simplify_unitary
-from sympy_adc.sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
+from sympy_adc.sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, \
+    Delta
 from sympy_adc.expr_container import Expr
 from sympy_adc.indices import get_symbols
 
-from sympy.physics.secondquant import KroneckerDelta
 from sympy import S
 
 
@@ -16,7 +16,7 @@ class TestSimplify:
         expr = Expr(
             NonSymmetricTensor('U', (i, j)) * NonSymmetricTensor('U', (k, j))
         )
-        res = KroneckerDelta(i, k)
+        res = Delta(i, k)
         assert simplify_unitary(expr, 'U').sympy == res
         # trivial positive: anti-symmetric
         expr = Expr(AntiSymmetricTensor('A', (i,), (j,))
@@ -28,7 +28,7 @@ class TestSimplify:
             NonSymmetricTensor('U', (i, j)) * NonSymmetricTensor('U', (k, j))
             * NonSymmetricTensor('U', (a, b))
         )
-        res = NonSymmetricTensor('U', (a, b)) * KroneckerDelta(i, k)
+        res = NonSymmetricTensor('U', (a, b)) * Delta(i, k)
         assert simplify_unitary(expr, 'U').sympy - res is S.Zero
 
         # U_ij U_ik U_ab U_ac = delta_jk * delta_bc
@@ -36,7 +36,7 @@ class TestSimplify:
             NonSymmetricTensor('U', (i, j)) * NonSymmetricTensor('U', (i, k))
             * NonSymmetricTensor('U', (a, b)) * NonSymmetricTensor('U', (a, c))
         )
-        res = KroneckerDelta(j, k) * KroneckerDelta(b, c)
+        res = Delta(j, k) * Delta(b, c)
         assert simplify_unitary(expr, 'U').sympy - res is S.Zero
 
         # switch index positions

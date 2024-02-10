@@ -2,6 +2,7 @@ from .indices import (
     get_symbols, index_space, order_substitutions, idx_sort_key
 )
 from .indices import Indices as idx_cls
+from .indices import Index
 from .misc import Inputerror, Singleton, cached_property, cached_member
 from . import expr_container as e
 from .eri_orbenergy import EriOrbenergy
@@ -9,7 +10,7 @@ from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
 from .symmetry import LazyTermMap
 from .spatial_orbitals import allowed_spin_blocks
 
-from sympy import S, Dummy, Rational, Pow
+from sympy import S, Rational, Pow
 
 from collections import namedtuple
 from itertools import product, chain
@@ -78,7 +79,7 @@ class RegisteredIntermediate:
             raise AttributeError(f"No itmd_type defined for {self.name}.")
         return itmd_type
 
-    def validate_indices(self, **kwargs) -> tuple[Dummy]:
+    def validate_indices(self, **kwargs) -> tuple[Index]:
         indices = kwargs.pop('indices', None)
         default = self.default_idx
         # indices are provided as index string
@@ -642,7 +643,7 @@ class t1_3(RegisteredIntermediate):
             itmd = e.Expr(itmd, target_idx=target)
             itmd = itmd.substitute_contracted().sympy
             contracted = tuple(sorted(
-                [s for s in itmd.atoms(Dummy) if s not in target],
+                [s for s in itmd.atoms(Index) if s not in target],
                 key=idx_sort_key
             ))
         else:
@@ -722,7 +723,7 @@ class t2_3(RegisteredIntermediate):
             itmd = e.Expr(itmd, target_idx=target)
             itmd = itmd.substitute_contracted().sympy
             contracted = contracted = tuple(sorted(
-                [s for s in itmd.atoms(Dummy) if s not in target],
+                [s for s in itmd.atoms(Index) if s not in target],
                 key=idx_sort_key
             ))
         else:
@@ -937,7 +938,7 @@ class p0_3_oo(RegisteredIntermediate):
         if fully_expand:
             p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
             contracted = tuple(sorted(
-                [s for s in p0.atoms(Dummy) if s not in target],
+                [s for s in p0.atoms(Index) if s not in target],
                 key=idx_sort_key
             ))
         else:
@@ -990,7 +991,7 @@ class p0_3_ov(RegisteredIntermediate):
         if fully_expand:
             p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
             contracted = tuple(sorted(
-                [s for s in p0.atoms(Dummy) if s not in target],
+                [s for s in p0.atoms(Index) if s not in target],
                 key=idx_sort_key
             ))
         else:
@@ -1027,7 +1028,7 @@ class p0_3_vv(RegisteredIntermediate):
         if fully_expand:
             p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
             contracted = tuple(sorted(
-                [s for s in p0.atoms(Dummy) if s not in target],
+                [s for s in p0.atoms(Index) if s not in target],
                 key=idx_sort_key
             ))
         else:
@@ -1220,7 +1221,7 @@ class t2eri_A(RegisteredIntermediate):
         if fully_expand:
             pia = e.Expr(pia, target_idx=target).substitute_contracted().sympy
             contracted = tuple(sorted(
-                [s for s in pia.atoms(Dummy) if s not in target],
+                [s for s in pia.atoms(Index) if s not in target],
                 key=idx_sort_key
             ))
         else:
@@ -1253,7 +1254,7 @@ class t2eri_B(RegisteredIntermediate):
         if fully_expand:
             pib = e.Expr(pib, target_idx=target).substitute_contracted().sympy
             contracted = tuple(sorted(
-                [s for s in pib.atoms(Dummy) if s not in target],
+                [s for s in pib.atoms(Index) if s not in target],
                 key=idx_sort_key
             ))
         else:
@@ -1287,7 +1288,7 @@ class t2sq(RegisteredIntermediate):
         return AntiSymmetricTensor('t2sq', indices[:2], indices[2:], 1)
 
 
-def eri(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:
+def eri(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
     """Builds an electron repulsion integral using the provided indices.
        Indices may be provided as list of sympy symbols or as string."""
 
@@ -1297,7 +1298,7 @@ def eri(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:
     return AntiSymmetricTensor('V', idx[:2], idx[2:])
 
 
-def fock(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:
+def fock(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
     """Builds an electron repulsion integral using the provided indices.
        Indices may be provided as list of sympy symbols or as string."""
 
@@ -1308,7 +1309,7 @@ def fock(idx: str | list[Dummy] | list[str]) -> AntiSymmetricTensor:
     return AntiSymmetricTensor('f', idx[:1], idx[1:])
 
 
-def orb_energy(idx: str | Dummy) -> NonSymmetricTensor:
+def orb_energy(idx: str | Index) -> NonSymmetricTensor:
     """Builds an orbital energy using the provided index.
        Indices may be provided as list of sympy symbols or as string."""
 

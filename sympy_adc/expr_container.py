@@ -1,9 +1,9 @@
 from .indices import (get_lowest_avail_indices, get_symbols,
                       order_substitutions, idx_sort_key, Index)
 from .misc import Inputerror, cached_property, cached_member
-from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
+from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, Delta
 from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify
-from sympy.physics.secondquant import NO, F, Fd, KroneckerDelta
+from sympy.physics.secondquant import NO, F, Fd
 
 
 class Container:
@@ -1307,7 +1307,7 @@ class Obj(Container):
     def type(self) -> str:
         types = {
             AntiSymmetricTensor: 'antisymtensor',
-            KroneckerDelta: 'delta',
+            Delta: 'delta',
             F: 'annihilate',
             Fd: 'create',
             NonSymmetricTensor: 'nonsymtensor',

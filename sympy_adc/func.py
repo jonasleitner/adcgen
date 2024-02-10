@@ -2,9 +2,10 @@ from .expr_container import Expr
 from .misc import Inputerror
 from .rules import Rules
 from .indices import Index, get_symbols
+from .sympy_objects import Delta
 
 from sympy.physics.secondquant import (
-    F, Fd, FermionicOperator, KroneckerDelta, NO
+    F, Fd, FermionicOperator, NO
 )
 from sympy import S, Add, Mul
 
@@ -57,7 +58,7 @@ def import_from_sympy_latex(expr_string: str):
             idx = get_symbols(idx)
             if len(idx) != 2:
                 raise RuntimeError(f"Invalid indices for delta: {idx}.")
-            return KroneckerDelta(*idx)
+            return Delta(*idx)
         elif obj_str.startswith("\\left("):  # braket
             # need to take care of exponent of the braket!
             base, exponent = obj_str.rsplit('\\right)', 1)
@@ -204,12 +205,12 @@ def evaluate_deltas(expr, target_idx=None):
                         indices[s] += 1
                     else:
                         indices[s] = 0
-                if isinstance(obj, KroneckerDelta):
+                if isinstance(obj, Delta):
                     deltas.append(obj)
             target_idx = [s for s, n in indices.items() if not n]
         else:
             # find all occurrences of kronecker delta
-            deltas = [d for d in expr.args if isinstance(d, KroneckerDelta)]
+            deltas = [d for d in expr.args if isinstance(d, Delta)]
             target_idx = get_symbols(target_idx)
 
         for d in deltas:
@@ -325,19 +326,19 @@ def _contraction(p, q):
             return S.Zero
         elif p.state.assumptions0.get("above_fermi") or \
                 q.state.assumptions0.get("above_fermi"):
-            return KroneckerDelta(p.state, q.state)
+            return Delta(p.state, q.state)
         else:
-            return (KroneckerDelta(p.state, q.state) *
-                    KroneckerDelta(q.state, Index('a', above_fermi=True)))
+            return (Delta(p.state, q.state) *
+                    Delta(q.state, Index('a', above_fermi=True)))
     elif isinstance(p, Fd) and isinstance(q, F):
         if q.state.assumptions0.get("above_fermi") or \
                 p.state.assumptions0.get("above_fermi"):
             return S.Zero
         elif q.state.assumptions0.get("below_fermi") or \
                 p.state.assumptions0.get("below_fermi"):
-            return KroneckerDelta(p.state, q.state)
+            return Delta(p.state, q.state)
         else:
-            return (KroneckerDelta(p.state, q.state) *
-                    KroneckerDelta(q.state, Index('i', below_fermi=True)))
+            return (Delta(p.state, q.state) *
+                    Delta(q.state, Index('i', below_fermi=True)))
     else:  # vanish if 2xAnnihilator or 2xCreator
         return S.Zero
