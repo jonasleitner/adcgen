@@ -1,7 +1,7 @@
 from .indices import (get_symbols, order_substitutions, Index,
                       get_lowest_avail_indices, minimize_tensor_indices)
 from .misc import Inputerror
-from .sympy_objects import Delta
+from .sympy_objects import KroneckerDelta
 from . import expr_container as e
 
 from sympy import Add, Pow, S, sqrt, Rational
@@ -316,11 +316,11 @@ def simplify_unitary(expr: e.Expr, t_name: str,
             # U_pq U_pr = delta_qr
             if idx1[0] == idx2[0] and idx1[0] not in target and \
                     idx_counter[idx1[0]] == 2:
-                delta = Delta(idx1[1], idx2[1])
+                delta = KroneckerDelta(idx1[1], idx2[1])
             # U_qp U_rp = delta_qr
             elif idx1[1] == idx2[1] and idx1[1] not in target and \
                     idx_counter[idx1[1]] == 2:
-                delta = Delta(idx1[0], idx2[0])
+                delta = KroneckerDelta(idx1[0], idx2[0])
             else:  # no matching indices
                 continue
 
@@ -417,7 +417,7 @@ def remove_tensor(expr: e.Expr, t_name: str):
                 # create a delta for each index and attach to the term
                 # and replace the index in tensor indices
                 for s, new_s in sub.items():
-                    term *= Delta(s, new_s)
+                    term *= KroneckerDelta(s, new_s)
                 indices = [sub.get(s, s) for s in indices]
             # print(f"modified tensor indices to: {indices}")
             # print(f"Term now reads {term}")
@@ -452,7 +452,7 @@ def remove_tensor(expr: e.Expr, t_name: str):
                 )
                 additional_indices = get_symbols(additional_indices)
                 for s, new_s in zip(idx_list, additional_indices):
-                    term *= Delta(s, new_s)
+                    term *= KroneckerDelta(s, new_s)
                     # substitute the second occurence of s in tensor indices
                     indices[indices_i[s].pop(1)] = new_s
             # no repeating indices left

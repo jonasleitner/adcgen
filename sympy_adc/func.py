@@ -1,13 +1,17 @@
 from .expr_container import Expr
 from .misc import Inputerror
 from .rules import Rules
-from .indices import Index, get_symbols
-from .sympy_objects import Delta
+from .indices import Index, get_symbols, split_idx_string
+from .sympy_objects import (
+    KroneckerDelta, NonSymmetricTensor, AntiSymmetricTensor
+)
 
 from sympy.physics.secondquant import (
     F, Fd, FermionicOperator, NO
 )
-from sympy import S, Add, Mul
+from sympy import S, Add, Mul, Pow, sqrt
+
+from itertools import product
 
 
 def gen_term_orders(order, term_length, min_order):
@@ -25,7 +29,6 @@ def gen_term_orders(order, term_length, min_order):
        :return: All possible combinations of a given order
        :rtype: list
        """
-    from itertools import product
 
     if not all(isinstance(n, int) and n >= 0
                for n in [order, term_length, min_order]):
@@ -58,7 +61,7 @@ def import_from_sympy_latex(expr_string: str):
             idx = get_symbols(idx)
             if len(idx) != 2:
                 raise RuntimeError(f"Invalid indices for delta: {idx}.")
-            return Delta(*idx)
+            return KroneckerDelta(*idx)
         elif obj_str.startswith("\\left("):  # braket
             # need to take care of exponent of the braket!
             base, exponent = obj_str.rsplit('\\right)', 1)
@@ -152,7 +155,7 @@ def import_from_sympy_latex(expr_string: str):
 
     expr_string = expr_string.strip()
     if not expr_string:
-        return e.Expr(0)
+        return Expr(0)
 
     terms = split_terms(expr_string)
     if terms[0][0] not in ['+', '-']:
@@ -177,7 +180,7 @@ def import_from_sympy_latex(expr_string: str):
         if denom is not None:
             sympy_term /= import_term(denom)
         sympy_expr += sympy_term
-    return e.Expr(sympy_expr)
+    return Expr(sympy_expr)
 
 
 def evaluate_deltas(expr, target_idx=None):
@@ -205,29 +208,54 @@ def evaluate_deltas(expr, target_idx=None):
                         indices[s] += 1
                     else:
                         indices[s] = 0
-                if isinstance(obj, Delta):
+                if isinstance(obj, KroneckerDelta):
                     deltas.append(obj)
+            # extract the target indices and use them in next recursion
+            # so they only need to be determined once
             target_idx = [s for s, n in indices.items() if not n]
         else:
             # find all occurrences of kronecker delta
-            deltas = [d for d in expr.args if isinstance(d, Delta)]
+            deltas = [d for d in expr.args if isinstance(d, KroneckerDelta)]
             target_idx = get_symbols(target_idx)
 
         for d in deltas:
-            # If we do something, and there are more deltas, we should recurse
-            # to treat the resulting expression properly
-            if d._get_preferred_index():
-                preferred, killable = d.args[1], d.args[0]
+            # determine the killable and preferred index
+            # in the case we have delta_{i p_alpha} we want to keep i_alpha
+            # -> a new index has to be created and both delta indices
+            #    have to be substituted with the new index
+            idx = d.preferred_and_killable
+            preferred, killable = idx[0], idx[1:]
+            # try to remove killable
+            if len(killable) == 1:
+                killable = killable[0]
+                if killable not in target_idx:
+                    expr = expr.subs(killable, preferred)
+                    if len(deltas) > 1:
+                        return evaluate_deltas(expr, target_idx)
+                    continue
             else:
-                preferred, killable = d.args[0], d.args[1]
-            # killable is contracted -> remove killable
-            if killable.is_Symbol and killable not in target_idx:
-                expr = expr.subs(killable, preferred)
-                if len(deltas) > 1:
-                    return evaluate_deltas(expr, target_idx)
-            # preferred is a contracted index that can be removed
-            elif preferred.is_Symbol and preferred not in target_idx \
-                    and preferred.space == killable.space:
+                # we want to substitute: a -> c, b -> c
+                # here c is a new generic index that has not been used anywhere
+                # it is fine that either a or b is a target index
+                # -> it is possible to change the target indices here!
+                n_target = [s in target_idx for s in killable].count(True)
+                if n_target == 0:
+                    expr = expr.subs({s: preferred for s in killable})
+                    if len(deltas) > 1:
+                        return evaluate_deltas(expr, target_idx)
+                    continue
+                elif n_target == 1:
+                    subs = {s: preferred for s in killable}
+                    expr = expr.subs(subs)
+                    if len(deltas) > 1:
+                        target_idx = tuple(subs.get(s, s) for s in target_idx)
+                        return evaluate_deltas(expr, target_idx)
+                    continue
+            # try to remove preferred.
+            # But only if no information is lost if doing so
+            # -> killable has to be of length 1
+            if preferred not in target_idx \
+                    and d.indices_contain_equal_information:
                 expr = expr.subs(preferred, killable)
                 if len(deltas) > 1:
                     return evaluate_deltas(expr, target_idx)
@@ -326,19 +354,19 @@ def _contraction(p, q):
             return S.Zero
         elif p.state.assumptions0.get("above_fermi") or \
                 q.state.assumptions0.get("above_fermi"):
-            return Delta(p.state, q.state)
+            return KroneckerDelta(p.state, q.state)
         else:
-            return (Delta(p.state, q.state) *
-                    Delta(q.state, Index('a', above_fermi=True)))
+            return (KroneckerDelta(p.state, q.state) *
+                    KroneckerDelta(q.state, Index('a', above_fermi=True)))
     elif isinstance(p, Fd) and isinstance(q, F):
         if q.state.assumptions0.get("above_fermi") or \
                 p.state.assumptions0.get("above_fermi"):
             return S.Zero
         elif q.state.assumptions0.get("below_fermi") or \
                 p.state.assumptions0.get("below_fermi"):
-            return Delta(p.state, q.state)
+            return KroneckerDelta(p.state, q.state)
         else:
-            return (Delta(p.state, q.state) *
-                    Delta(q.state, Index('i', below_fermi=True)))
+            return (KroneckerDelta(p.state, q.state) *
+                    KroneckerDelta(q.state, Index('i', below_fermi=True)))
     else:  # vanish if 2xAnnihilator or 2xCreator
         return S.Zero

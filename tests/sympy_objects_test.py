@@ -1,28 +1,34 @@
 from sympy_adc.indices import Index
-from sympy_adc.sympy_objects import Delta
+from sympy_adc.sympy_objects import KroneckerDelta
 from sympy import S
 
 
-class TestDelta:
+class TestKroneckerDelta:
     def test_evaluation(self):
         i, j = Index("i"), Index("j")
-        assert Delta(i, j) - Delta(j, i) is S.Zero
-        assert Delta(i, j) is not S.Zero
+        assert KroneckerDelta(i, j) - KroneckerDelta(j, i) is S.Zero
+        assert KroneckerDelta(i, j) is not S.Zero
 
         i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
-        assert Delta(i, j) is not S.Zero
+        assert KroneckerDelta(i, j) is not S.Zero
         a = Index("a", above_fermi=True)
-        assert Delta(i, a) is S.Zero
+        assert KroneckerDelta(i, a) is S.Zero
         p, q = Index("p", alpha=True), Index("q", beta=True)
-        assert Delta(p, q) is S.Zero
+        assert KroneckerDelta(p, q) is S.Zero
 
-    def test_preferred_index(self):
+    def test_preferred_killable_index(self):
         p, q = Index("p"), Index("q")
-        i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
-        a, b = Index("a", above_fermi=True), Index("b", above_fermi=True)
+        pa, qa = Index("p", alpha=True), Index("q", alpha=True)
+        i = Index("i", below_fermi=True)
+        ia = Index("i", below_fermi=True, alpha=True)
 
-        assert Delta(q, p).preferred_index is p
-        assert Delta(j, i).preferred_index is i
-        assert Delta(a, b).preferred_index is a
-        assert Delta(i, p).preferred_index is i
-        assert Delta(a, p).preferred_index is a
+        assert KroneckerDelta(q, p).preferred_and_killable == (p, q)
+        assert KroneckerDelta(pa, p).preferred_and_killable == (pa, p)
+        assert KroneckerDelta(pa, qa).preferred_and_killable == (pa, qa)
+        assert KroneckerDelta(i, p).preferred_and_killable == (i, p)
+        assert KroneckerDelta(ia, p).preferred_and_killable == (ia, p)
+        assert KroneckerDelta(ia, pa).preferred_and_killable == (ia, pa)
+        idx = KroneckerDelta(i, pa).preferred_and_killable
+        assert len(idx) == 3
+        assert idx[0].space == "occ" and idx[0].spin == "a"
+        assert idx[1:] == (pa, i)

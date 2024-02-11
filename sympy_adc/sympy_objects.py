@@ -1,10 +1,10 @@
 from sympy.physics.secondquant import TensorSymbol, \
     _sort_anticommuting_fermions, ViolationOfPauliPrinciple
-from sympy.functions.special.tensor_functions import KroneckerDelta
+from sympy.core.function import Function
 from sympy.core.logic import fuzzy_not
 from sympy import sympify, Tuple, Symbol, S
 from .misc import Inputerror
-from .indices import Index
+from .indices import Index, Indices
 
 
 class AntiSymmetricTensor(TensorSymbol):
@@ -146,16 +146,11 @@ class NonSymmetricTensor(TensorSymbol):
         return "%s%s" % self.args
 
 
-class Delta(KroneckerDelta):
+class KroneckerDelta(Function):
     @classmethod
-    def eval(cls, i: Index, j: Index, delta_range=None):
+    def eval(cls, i: Index, j: Index):
         """Evaluates the KroneckerDelta.
            Adapted from sympy to also cover Spin."""
-
-        if delta_range is not None:
-            dinf, dsup = delta_range
-            if dinf - i > 0 or dinf - j > 0 or dsup - i < 0 or dsup - j < 0:
-                return S.Zero
 
         diff = i - j
         if diff.is_zero or fuzzy_not(diff.is_zero):
@@ -169,10 +164,7 @@ class Delta(KroneckerDelta):
             return S.Zero
         # sort the indices of the delta
         if i != min(i, j, key=cls._sort_canonical):
-            if delta_range:
-                return cls(j, i, delta_range)
-            else:
-                return cls(j, i)
+            return cls(j, i)
 
     @classmethod
     def _sort_canonical(cls, idx):
@@ -186,21 +178,47 @@ class Delta(KroneckerDelta):
         else:  # necessary for subs to work correctly with simultaneous=True
             return ('', 0, str(idx), hash(idx))
 
-    def _get_preferred_index(self) -> int:
+    def _latex(self, printer):
+        return (
+            "\\delta_{" + " ".join(s._latex(printer) for s in self.args) + "}"
+        )
+
+    @property
+    def preferred_and_killable(self) -> tuple[Index]:
         """Returns the index which is preferred to keep in the final
            expression."""
-        space1, spin1 = self.args[0].space[0], self.args[0].spin
-        space2, spin2 = self.args[1].space[0], self.args[1].spin
-        if spin1 != spin2:
-            raise NotImplementedError("Preferred index can not be determined "
-                                      "for indices with different spin: ",
-                                      self)
-        if space1 == space2:  # oo / vv / gg
-            return 0
-        elif space2 == "g":  # og / vg
-            return 0
-        elif space1 == "g":  # go / gv
-            return 1
+        i, j = self.args[0], self.args[1]
+        space1, spin1 = i.space[0], i.spin
+        space2, spin2 = j.space[0], j.spin
+
+        if spin1 == spin2:  # nn / aa / bb  -> equal information
+            if space1 == space2 or space2 == "g":  # oo / vv / gg / og / vg
+                return (i, j)
+            else:  # go / gv
+                return (j, i)
+        elif spin2:  # na / nb  -> 2 holds more information
+            if space1 == space2 or space1 == "g":  # oo / vv / gg / go / gv
+                return (j, i)
+            else:  # og / vg  -> 1 holds more space information
+                # create a new generic index that combines space and spin
+                # information of both indices
+                n_ov = {f"n_{space1}_{spin2}": 1}
+                pref = Indices().get_generic_indices(**n_ov).popitem()[1][0]
+                return (pref, i, j)
+        else:  # an / bn  -> 1 holds more information
+            if space1 == space2 or space2 == "g":  # oo / vv / gg / og / vg
+                return (i, j)
+            else:  # go / gv  -> 2 holds more space information
+                # create a new generic index that combines space and spin
+                # information of both indices
+                n_ov = {f"n_{space2}_{spin1}": 1}
+                pref = Indices().get_generic_indices(**n_ov).popitem()[1][0]
+                return (pref, i, j)
+
+    @property
+    def indices_contain_equal_information(self):
+        return self.args[0].space == self.args[1].space and \
+            self.args[0].spin == self.args[1].spin
 
 
 class SingleSymmetryTensor(TensorSymbol):
