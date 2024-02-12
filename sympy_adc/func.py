@@ -221,40 +221,22 @@ def evaluate_deltas(expr, target_idx=None):
         for d in deltas:
             # determine the killable and preferred index
             # in the case we have delta_{i p_alpha} we want to keep i_alpha
-            # -> a new index has to be created and both delta indices
-            #    have to be substituted with the new index
+            # -> a new index is required. But for now just don't evaluate
+            #    these deltas
             idx = d.preferred_and_killable
-            preferred, killable = idx[0], idx[1:]
+            if idx is None:  # delta_{i p_alpha}
+                continue
+            preferred, killable = idx
             # try to remove killable
-            if len(killable) == 1:
-                killable = killable[0]
-                if killable not in target_idx:
-                    expr = expr.subs(killable, preferred)
-                    if len(deltas) > 1:
-                        return evaluate_deltas(expr, target_idx)
-                    continue
-            else:
-                # we want to substitute: a -> c, b -> c
-                # here c is a new generic index that has not been used anywhere
-                # it is fine that either a or b is a target index
-                # -> it is possible to change the target indices here!
-                n_target = [s in target_idx for s in killable].count(True)
-                if n_target == 0:
-                    expr = expr.subs({s: preferred for s in killable})
-                    if len(deltas) > 1:
-                        return evaluate_deltas(expr, target_idx)
-                    continue
-                elif n_target == 1:
-                    subs = {s: preferred for s in killable}
-                    expr = expr.subs(subs)
-                    if len(deltas) > 1:
-                        target_idx = tuple(subs.get(s, s) for s in target_idx)
-                        return evaluate_deltas(expr, target_idx)
-                    continue
+            if killable not in target_idx:
+                expr = expr.subs(killable, preferred)
+                if len(deltas) > 1:
+                    return evaluate_deltas(expr, target_idx)
+                continue
             # try to remove preferred.
             # But only if no information is lost if doing so
             # -> killable has to be of length 1
-            if preferred not in target_idx \
+            elif preferred not in target_idx \
                     and d.indices_contain_equal_information:
                 expr = expr.subs(preferred, killable)
                 if len(deltas) > 1:

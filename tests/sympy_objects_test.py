@@ -28,7 +28,4 @@ class TestKroneckerDelta:
         assert KroneckerDelta(i, p).preferred_and_killable == (i, p)
         assert KroneckerDelta(ia, p).preferred_and_killable == (ia, p)
         assert KroneckerDelta(ia, pa).preferred_and_killable == (ia, pa)
-        idx = KroneckerDelta(i, pa).preferred_and_killable
-        assert len(idx) == 3
-        assert idx[0].space == "occ" and idx[0].spin == "a"
-        assert idx[1:] == (pa, i)
+        assert KroneckerDelta(i, pa).preferred_and_killable is None

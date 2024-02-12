@@ -4,7 +4,7 @@ from sympy.core.function import Function
 from sympy.core.logic import fuzzy_not
 from sympy import sympify, Tuple, Symbol, S
 from .misc import Inputerror
-from .indices import Index, Indices
+from .indices import Index
 
 
 class AntiSymmetricTensor(TensorSymbol):
@@ -184,7 +184,7 @@ class KroneckerDelta(Function):
         )
 
     @property
-    def preferred_and_killable(self) -> tuple[Index]:
+    def preferred_and_killable(self) -> tuple[Index] | None:
         """Returns the index which is preferred to keep in the final
            expression."""
         i, j = self.args[0], self.args[1]
@@ -200,20 +200,12 @@ class KroneckerDelta(Function):
             if space1 == space2 or space1 == "g":  # oo / vv / gg / go / gv
                 return (j, i)
             else:  # og / vg  -> 1 holds more space information
-                # create a new generic index that combines space and spin
-                # information of both indices
-                n_ov = {f"n_{space1}_{spin2}": 1}
-                pref = Indices().get_generic_indices(**n_ov).popitem()[1][0]
-                return (pref, i, j)
+                return None
         else:  # an / bn  -> 1 holds more information
             if space1 == space2 or space2 == "g":  # oo / vv / gg / og / vg
                 return (i, j)
             else:  # go / gv  -> 2 holds more space information
-                # create a new generic index that combines space and spin
-                # information of both indices
-                n_ov = {f"n_{space2}_{spin1}": 1}
-                pref = Indices().get_generic_indices(**n_ov).popitem()[1][0]
-                return (pref, i, j)
+                return None
 
     @property
     def indices_contain_equal_information(self):

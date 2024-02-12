@@ -25,11 +25,7 @@ class TestEvaluateDeltas:
         test = KroneckerDelta(i, j) * F(p)
         assert evaluate_deltas(test) == test
         test = KroneckerDelta(i, pa) * F(i)
-        test = evaluate_deltas(test)
-        assert isinstance(test, F)
-        s = test.atoms(Index).pop()
-        assert s is not i and s is not pa
-        assert s.space == "occ" and s.spin == "a"
+        assert evaluate_deltas(test) == test
 
     def test_with_target_idx(self):
         i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
