@@ -147,6 +147,9 @@ class NonSymmetricTensor(TensorSymbol):
 
 
 class KroneckerDelta(Function):
+    """Represents a Kronecker delta. Based on the implementation in
+       sympy.physics.secondquant."""
+
     @classmethod
     def eval(cls, i: Index, j: Index):
         """Evaluates the KroneckerDelta.
@@ -185,8 +188,9 @@ class KroneckerDelta(Function):
 
     @property
     def preferred_and_killable(self) -> tuple[Index] | None:
-        """Returns the index which is preferred to keep in the final
-           expression."""
+        """Returns the preferred and the killable index of the delta, i.e.,
+           the index that we want to keep and the one to remove in the
+           in the final expression."""
         i, j = self.args[0], self.args[1]
         space1, spin1 = i.space[0], i.spin
         space2, spin2 = j.space[0], j.spin

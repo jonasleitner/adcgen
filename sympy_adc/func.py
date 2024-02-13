@@ -40,25 +40,106 @@ def gen_term_orders(order, term_length, min_order):
     return [comb for comb in combinations if sum(comb) == order]
 
 
-def import_from_sympy_latex(expr_string: str):
-    """Function for importing an expression from sympy latex output string.
-       Returns an expression container - without any assumptions."""
-    import re
-    from sympy.physics.secondquant import KroneckerDelta, NO, Fd, F
-    from sympy import Pow, sqrt
-    from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
-    from .indices import get_symbols
-    from . import expr_container as e
+def import_from_sympy_latex(expr_string: str) -> Expr:
+    """Function for importing an expression from a sympy latex string:
+       latex(expression) -> string.
+       The returned expression does not contain any assumptions."""
+
+    def import_indices(indices: str):
+        # split at the end of each index with a spin label
+        # -> n1n2n3_{spin}
+        idx = []
+        for sub_part in indices.split("}"):
+            if not sub_part:  # skip empty string
+                continue
+            if "_{\\" in sub_part:  # the last index has a spin label
+                names, spin = sub_part.split("_{\\")
+                if spin not in ["alpha", "beta"]:
+                    raise RuntimeError(f"Found invalid spin on Index: {spin}. "
+                                       f"Input: {indices}")
+                names = split_idx_string(names)
+                idx.extend(get_symbols(names[:-1]))
+                idx.extend(get_symbols(names[-1], spin[0]))
+            else:  # no index has a spin label
+                idx.extend(get_symbols(sub_part))
+        return idx
+
+    def import_tensor(tensor: str):
+        # split the tensor in base and exponent
+        stack = []
+        separator = None
+        for i, c in enumerate(tensor):
+            if c == "{":
+                stack.append(c)
+            elif c == "}":
+                assert stack.pop() == "{"
+            elif not stack and c == "^":
+                separator = i
+                break
+        if separator is None:
+            exponent = 1
+        else:
+            exponent = tensor[separator+1:]
+            exponent = int(exponent.lstrip("{").rstrip("}"))
+            tensor = tensor[:separator]
+        # done with processing the exponent
+        # -> deal with the tensor. remove 1 layer of curly brackets and
+        #    afterwards split the tensor string into its components
+        if tensor[0] == "{":
+            tensor = tensor[1:]
+        if tensor[-1] == "}":
+            tensor = tensor[:-1]
+        stack.clear()
+        components = []
+        temp = []
+        for i, c in enumerate(tensor):
+            if c == "{":
+                stack.append(c)
+            elif c == "}":
+                assert stack.pop() == "{"
+            elif not stack and c in ["^", "_"]:
+                components.append("".join(temp))
+                temp.clear()
+                continue
+            temp.append(c)
+        if temp:
+            components.append("".join(temp))
+        name, indices = components[0], components[1:]
+        # remove 1 layer of brackets from all indices
+        for i, idx in enumerate(indices):
+            if idx[0] == "{":
+                idx = idx[1:]
+            if idx[-1] == "}":
+                idx = idx[:-1]
+            indices[i] = idx
+
+        if name == "a":  # create / annihilate
+            if len(indices) == 2 and indices[0] == "\\dagger":
+                base = Fd(*import_indices(indices[1]))
+            elif len(indices) == 1:
+                base = F(*import_indices(indices[0]))
+            else:
+                raise RuntimeError("Unknown second quantized operator: ",
+                                   tensor)
+        elif len(indices) == 2:  # antisymtensor
+            upper = import_indices(indices[0])
+            lower = import_indices(indices[1])
+            base = AntiSymmetricTensor(name, upper, lower)
+        elif len(indices) == 1:  # nonsymtensor
+            base = NonSymmetricTensor(name, import_indices(indices[0]))
+        else:
+            raise RuntimeError(f"Unknown tensor object: {tensor}")
+        return Pow(base, exponent)
 
     def import_obj(obj_str: str):
-
+        # import an individial object
         if obj_str.isnumeric():  # prefactor
             return int(obj_str)
         elif obj_str.startswith("\\sqrt{"):  # sqrt{x} prefactor
             return sqrt(int(obj_str[:-1].replace("\\sqrt{", "", 1)))
         elif obj_str.startswith("\\delta_"):  # KroneckerDelta
             idx = obj_str[:-1].replace("\\delta_{", "", 1).split()
-            idx = get_symbols(idx)
+            idx = import_indices("".join(idx))
             if len(idx) != 2:
                 raise RuntimeError(f"Invalid indices for delta: {idx}.")
             return KroneckerDelta(*idx)
@@ -78,38 +159,7 @@ def import_from_sympy_latex(expr_string: str):
             obj_str = no.replace("\\left\\{", "", 1)
             return NO(import_from_sympy_latex(obj_str).sympy)
         else:  # tensor or creation/annihilation operator
-            obj = []
-            exponent = None
-            for component in re.split('\\^|_', obj_str):
-                component = component.lstrip("{").rstrip("}")
-                if component.isnumeric():
-                    if exponent is not None:
-                        raise RuntimeError("Found more than one exponent in "
-                                           f"{obj_str}.")
-                    exponent = int(component)
-                else:
-                    obj.append(component)
-            name, idx = obj[0], obj[1:]
-            if name == 'a':  # creation / annihilation operator
-                if len(idx) == 2 and idx[0] == "\\dagger":  # creation
-                    return Fd(get_symbols(idx[1])[0])
-                elif len(idx) == 1:  # annihilation
-                    return F(get_symbols(idx[0])[0])
-                else:
-                    raise NotImplementedError("Unknown second quantized "
-                                              f"operator: {obj_str}.")
-            elif len(idx) == 1:  # NonSymmetricTensor
-                idx = get_symbols(*idx)
-                base = NonSymmetricTensor(name, idx)
-            elif len(idx) == 2:  # AntiSymmetricTensor
-                upper, lower = get_symbols(idx[0]), get_symbols(idx[1])
-                base = AntiSymmetricTensor(name, upper, lower)
-            else:
-                raise NotImplementedError(f"Unknown tensor object: {obj_str}")
-            if exponent is not None:
-                return Pow(base, exponent)
-            else:
-                return base
+            return import_tensor(obj_str)
 
     def split_terms(expr_string: str) -> list[str]:
         stack: list[str] = []
