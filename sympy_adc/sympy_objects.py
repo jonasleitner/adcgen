@@ -28,33 +28,17 @@ class AntiSymmetricTensor(TensorSymbol):
         except ViolationOfPauliPrinciple:
             return S.Zero
         # additionally account for the bra ket symmetry
-        # add the check for Dummy indices for subs to work correctly
+        # add the Index check for subs to work correctly
         bra_ket_sym = sympify(bra_ket_sym)
         if bra_ket_sym is not S.Zero and all(isinstance(s, Index) for s
                                              in upper+lower):
             if bra_ket_sym not in [S.One, S.NegativeOne]:
                 raise Inputerror("Invalid bra ket symmetry given "
                                  f"{bra_ket_sym}. Valid are 0, 1 or -1.")
-            if len(upper) != len(lower):
-                raise NotImplementedError("Bra Ket symmetry only implemented "
-                                          "for tensors with an equal amount "
-                                          "of upper and lower indices.")
-            space_u = "".join([s.space[0] for s in upper])
-            space_l = "".join([s.space[0] for s in lower])
-            if space_l < space_u:  # space with more occ should be the lowest
+            if cls._need_bra_ket_swap(upper, lower):
                 upper, lower = lower, upper  # swap
                 if bra_ket_sym is S.NegativeOne:  # add another -1
                     sign_u += 1
-            # diagonal block: compare the names of the indices
-            elif space_l == space_u:
-                lower_names = [(int(s.name[1:]) if s.name[1:] else 0,
-                                s.name[0]) for s in lower]
-                upper_names = [(int(s.name[1:]) if s.name[1:] else 0,
-                                s.name[0]) for s in upper]
-                if lower_names < upper_names:
-                    upper, lower = lower, upper  # swap
-                    if bra_ket_sym is S.NegativeOne:  # add another -1
-                        sign_u += 1
         # import all quantities to sympy
         symbol = sympify(symbol)
         upper, lower = Tuple(*upper), Tuple(*lower)
@@ -77,6 +61,35 @@ class AntiSymmetricTensor(TensorSymbol):
                     hash(idx))
         else:  # necessary for subs to work correctly with simultaneous=True
             return ('', 0, str(idx), hash(idx))
+
+    @classmethod
+    def _need_bra_ket_swap(cls, upper: tuple[Index],
+                           lower: tuple[Index]) -> bool:
+        if len(upper) != len(lower):
+            raise NotImplementedError("Bra Ket symmetry only implemented "
+                                      "for tensors with an equal amount "
+                                      "of upper and lower indices.")
+        # compare the space of upper and lower indices
+        space_u = "".join([s.space[0] for s in upper])
+        space_l = "".join([s.space[0] for s in lower])
+        if space_l < space_u:  # space with more occ should be upper
+            return True
+        elif space_l == space_u:  # diagonal block
+            # compare the spin of both index blocks:
+            # space with more spin orbitals or alpha spin should be upper.
+            spin_u = "".join(s.spin for s in upper)
+            spin_l = "".join(s.spin for s in lower)
+            if spin_l < spin_u:
+                return True
+            elif spin_l == spin_u:  # diagonal spin block
+                # compare the names of indices
+                lower_names = [(int(s.name[1:]) if s.name[1:] else 0,
+                               s.name[0]) for s in lower]
+                upper_names = [(int(s.name[1:]) if s.name[1:] else 0,
+                               s.name[0]) for s in upper]
+                if lower_names < upper_names:
+                    return True
+        return False
 
     def _latex(self, printer) -> str:
         return "{%s^{%s}_{%s}}" % (
@@ -107,15 +120,64 @@ class AntiSymmetricTensor(TensorSymbol):
     def bra_ket_sym(self):
         return self.args[3]
 
-    def add_bra_ket_sym(self, bra_ket_sym: int):
+    def add_bra_ket_sym(self, bra_ket_sym: int) -> 'AntiSymmetricTensor':
         """Adds a bra ket symmetry to the tensor if none has been set yet.
            Valid bra ket symmetries are 0, 1 and -1."""
 
-        if bra_ket_sym and self.bra_ket_sym is S.Zero:
+        if bra_ket_sym == self.bra_ket_sym:
+            return self
+        elif self.bra_ket_sym is S.Zero:
             return AntiSymmetricTensor(self.symbol, self.upper, self.lower,
                                        bra_ket_sym)
-        elif not bra_ket_sym:
+        else:
+            raise Inputerror("bra ket symmetry already set. The original "
+                             "indices are no longer available. Can not apply "
+                             "any other bra ket sym.")
+
+
+class SymmetricTensor(AntiSymmetricTensor):
+    """Represents a symmetric tensor. A symmetric tensor has the same symmetry
+       as an antisymmetric tensor, but no sign change occurs when two
+       neighbouring indices are swapped, i.e.,
+       d^{ab}_{ij} = d^{ba}_{ij} = d^{ab}_{ji} = d^{ba}_{ji}."""
+
+    def __new__(cls, symbol: str, upper: tuple[Index], lower: tuple[Index],
+                bra_ket_sym: int = 0) -> TensorSymbol:
+        # sort upper and lower. No need to track the number of swaps
+        upper = sorted(upper, key=cls._sort_canonical)
+        lower = sorted(lower, key=cls._sort_canonical)
+        # account for the bra ket symmetry
+        # add the Index check for subs to work correctly
+        negative_sign = False
+        bra_ket_sym = sympify(bra_ket_sym)
+        if bra_ket_sym is not S.Zero and all(isinstance(s, Index) for s
+                                             in upper+lower):
+            if bra_ket_sym not in [S.One, S.NegativeOne]:
+                raise Inputerror("Invalid bra ket symmetry given "
+                                 f"{bra_ket_sym}. Valid are 0, 1 or -1.")
+            if cls._need_bra_ket_swap(upper, lower):
+                upper, lower = lower, upper  # swap
+                if bra_ket_sym is S.NegativeOne:
+                    negative_sign = True
+        # import all quantities to sympy
+        symbol = sympify(symbol)
+        upper, lower = Tuple(*upper), Tuple(*lower)
+        # attach -1 if necessary
+        if negative_sign:
+            return - TensorSymbol.__new__(cls, symbol, upper, lower,
+                                          bra_ket_sym)
+        else:
+            return TensorSymbol.__new__(cls, symbol, upper, lower, bra_ket_sym)
+
+    def add_bra_ket_sym(self, bra_ket_sym: int) -> 'SymmetricTensor':
+        """Adds a bra ket symmetry to the tensor if none has been set yet.
+           Valid bra ket symmetries are 0, 1 and -1."""
+
+        if bra_ket_sym == self.bra_ket_sym:
             return self
+        elif self.bra_ket_sym is S.Zero:
+            return SymmetricTensor(self.symbol, self.upper, self.lower,
+                                   bra_ket_sym)
         else:
             raise Inputerror("bra ket symmetry already set. The original "
                              "indices are no longer available. Can not apply "
