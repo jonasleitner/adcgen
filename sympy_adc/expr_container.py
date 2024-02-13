@@ -1595,36 +1595,43 @@ class Obj(Container):
         return descr
 
     @property
-    def allowed_spin_blocks(self) -> tuple[str]:
+    def allowed_spin_blocks(self) -> tuple[str] | None:
         """Returns the valid spin blocks of tensors."""
         from .intermediates import Intermediates
         from itertools import product
 
-        if "tensor" not in self.type:
-            raise NotImplementedError("Only implemented for tensors.")
-
-        name = self.name
-        if name == "V":  # hardcode the ERI spin blocks
-            return ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
-        # t-amplitudes: all spin conserving spin blocks are allowed, i.e.,
-        # all blocks with the same amount of alpha and beta indices
-        # in upper and lower
-        elif name[0] == 't' and name[1:].replace('c', '').isnumeric():
-            if len(self.idx) % 2:
-                raise ValueError("Expected t-amplitude to have the same "
-                                 f"of upper and lower indices: {self}.")
-            n = len(self.idx)//2
-            return tuple(
-                sorted(["".join(block)
-                        for block in product("ab", repeat=len(self.idx))
-                        if block[:n].count("a") == block[n:].count("a")])
-            )
-        # the known spin blocks of eri and t-amplitudes may be used to
-        # generate the spin blocks of other intermediates
+        if "tensor" in (t := self.type):
+            name = self.name
+            if name == "V":  # hardcode the ERI spin blocks
+                return ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
+            # t-amplitudes: all spin conserving spin blocks are allowed, i.e.,
+            # all blocks with the same amount of alpha and beta indices
+            # in upper and lower
+            elif name[0] == 't' and name[1:].replace('c', '').isnumeric():
+                if len(self.idx) % 2:
+                    raise ValueError("Expected t-amplitude to have the same "
+                                     f"of upper and lower indices: {self}.")
+                n = len(self.idx)//2
+                return tuple(
+                    sorted(["".join(block)
+                            for block in product("ab", repeat=len(self.idx))
+                            if block[:n].count("a") == block[n:].count("a")])
+                )
+        elif t == "delta":
+            # spins have to be equal
+            return ("oo", "vv")
+        elif t in ["create", "annihilate"]:
+            # both spins allowed!
+            return ("o", "v")
+        elif t == "prefactor":
+            return None
+        # the known allowed spin blocks of eri, t-amplitudes and deltas
+        # may be used to generate the spin blocks of other intermediates
         itmd = Intermediates().available.get(self.pretty_name, None)
         if itmd is None:
             raise NotImplementedError("Can not determine spin blocks for "
-                                      f"{self}. Not available as intermediate")
+                                      f" {self}. Not available as "
+                                      "intermediate.")
         return itmd.allowed_spin_blocks
 
     @property
@@ -1784,6 +1791,12 @@ class NormalOrdered(Obj):
             obj_contribs.append(op_str)
         return f"{self.type}-{'-'.join(sorted(obj_contribs))}"
 
+    @property
+    def allowed_spin_blocks(self) -> tuple[str]:
+        from itertools import product
+        allowed_blocks = [o.allowed_spin_blocks for o in self.objects]
+        return tuple("".join(b) for b in product(*allowed_blocks))
+
     def print_latex(self, only_pull_out_pref=False):
         # no prefs possible in NO
         return " ".join([o.print_latex(only_pull_out_pref)
@@ -1897,6 +1910,11 @@ class Polynom(Obj):
     def description(self, *args, **kwargs):
         raise NotImplementedError("description not implemented for polynoms:",
                                   f"{self} in {self.term}")
+
+    @property
+    def allowed_spin_blocks(self) -> None:
+        # allowed spin blocks not available for Polynoms
+        return None
 
     @property
     def contains_only_orb_energies(self):
