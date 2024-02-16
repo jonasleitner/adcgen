@@ -3,7 +3,7 @@ from .misc import Inputerror
 from .rules import Rules
 from .indices import Index, get_symbols, split_idx_string
 from .sympy_objects import (
-    KroneckerDelta, NonSymmetricTensor, AntiSymmetricTensor
+    KroneckerDelta, NonSymmetricTensor, AntiSymmetricTensor, SymmetricTensor
 )
 
 from sympy.physics.secondquant import (
@@ -124,7 +124,10 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
         elif len(indices) == 2:  # antisymtensor
             upper = import_indices(indices[0])
             lower = import_indices(indices[1])
-            base = AntiSymmetricTensor(name, upper, lower)
+            if name == "v":
+                base = SymmetricTensor(name, upper, lower)
+            else:
+                base = AntiSymmetricTensor(name, upper, lower)
         elif len(indices) == 1:  # nonsymtensor
             base = NonSymmetricTensor(name, import_indices(indices[0]))
         else:
