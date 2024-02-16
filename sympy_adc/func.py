@@ -337,6 +337,8 @@ def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
             result = (Mul(*c_part) * result).expand()
             if simplify_kronecker_deltas:
                 result = evaluate_deltas(result)
+    else:  # neither add, Mul, NO or Operator -> maybe a number or a tensor
+        return expr
 
     # apply rules to the result
     if rules is None:

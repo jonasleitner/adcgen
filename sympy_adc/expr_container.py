@@ -2,7 +2,7 @@ from .indices import (get_lowest_avail_indices, get_symbols,
                       order_substitutions, idx_sort_key, Index)
 from .misc import Inputerror, cached_property, cached_member
 from .sympy_objects import (
-    NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta
+    NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, SymmetricTensor
 )
 from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify
 from sympy.physics.secondquant import NO, F, Fd
@@ -175,7 +175,7 @@ class Expr(Container):
             return 'obj'
 
     @property
-    def terms(self):
+    def terms(self) -> tuple['Term']:
         return tuple(Term(self, i) for i in range(len(self)))
 
     def set_sym_tensors(self, sym_tensors: list[str]) -> None:
@@ -267,6 +267,17 @@ class Expr(Container):
         self._expr = renamed
         return self
 
+    def expand_antisym_eri(self):
+        """Expands the antisymmetric ERI using chemists notation
+           <pq||rs> = (pr|qs) - (ps|qr).
+           ERI's in chemists notation are denoted as 'v'
+           Currently this only works for real orbitals, i.e., for
+           symmetric ERI's <pq||rs> = <rs||pq>."""
+        self._expr = Add(*[term.expand_antisym_eri(return_sympy=True)
+                           for term in self.terms])
+        self._sym_tensors.add("v")
+        return self
+
     def expand(self):
         self._expr = self.sympy.expand()
         return self
@@ -322,13 +333,15 @@ class Expr(Container):
     def copy(self):
         return Expr(self.sympy, **self.assumptions)
 
-    def print_latex(self, terms_per_line=None, only_pull_out_pref=False):
+    def print_latex(self, terms_per_line: int = None,
+                    only_pull_out_pref: bool = False,
+                    spin_as_overbar: bool = False) -> str:
         """Returns a Latex string of the canonical form of the expr.
            The output may be adjusted to be compatible with the Latex align
            environment, where the parameter terms_per_line defines the number
            of terms that should be printed per line.
            """
-        tex_terms = [term.print_latex(only_pull_out_pref)
+        tex_terms = [term.print_latex(only_pull_out_pref, spin_as_overbar)
                      for term in self.terms]
         # remove '+' in the first term
         if tex_terms[0][0] == '+':
@@ -626,6 +639,22 @@ class Term(Container):
         else:
             return Expr(renamed, **self.assumptions)
 
+    def expand_antisym_eri(self, return_sympy: bool = False):
+        """Expands the antisymmetric ERI using chemists notation
+           <pq||rs> = (pr|qs) - (ps|qr).
+           ERI's in chemists notation are denoted as 'v'
+           Currently this only works for real orbitals, i.e., for
+           symmetric ERI's <pq||rs> = <rs||pq>."""
+        expanded = Mul(*[o.expand_antisym_eri(return_sympy=True)
+                         for o in self.objects])
+        if return_sympy:
+            return expanded
+        else:
+            # add chemist notation eri to sym_tensors
+            assumptions = self.assumptions
+            assumptions['sym_tensors'] = assumptions['sym_tensors'] + ("v",)
+            return Expr(expanded, **assumptions)
+
     def factor(self):
         from sympy import factor
         return Expr(factor(self.sympy), **self.assumptions)
@@ -892,7 +921,8 @@ class Term(Container):
         return all(o.contains_only_orb_energies for o in self.objects
                    if not o.type == 'prefactor')
 
-    def print_latex(self, only_pull_out_pref=False):
+    def print_latex(self, only_pull_out_pref: bool = False,
+                    spin_as_overbar: bool = False):
         """Returns a Latex string of the canonical form of the term."""
         # - sign and prefactor
         pref = self.prefactor
@@ -902,8 +932,8 @@ class Term(Container):
 
         # - latex strings for the remaining objects
         tex_str += " ".join(
-            [o.print_latex(only_pull_out_pref) for o in self.objects
-             if o.type != 'prefactor']
+            [o.print_latex(only_pull_out_pref, spin_as_overbar)
+             for o in self.objects if o.type != 'prefactor']
         )
         return tex_str
 
@@ -1205,7 +1235,7 @@ class Obj(Container):
         return Expr(real_obj, **assumptions)
 
     def _apply_tensor_braket_sym(self, return_sympy: bool = False):
-        if self.type == 'antisymtensor':
+        if self.type in ["antisymtensor", "symtensor"]:
             tensor = self.extract_pow
             bra_ket_sym = None
             if (name := self.name) in self.sym_tensors and \
@@ -1282,12 +1312,16 @@ class Obj(Container):
         """Renames a tensor object."""
         if 'tensor' in (o_type := self.type) and self.name == current:
             base = self.extract_pow
-            if o_type == 'antisymtensor':
+            if o_type == "antisymtensor":
                 base = AntiSymmetricTensor(
                         new, base.upper, base.lower, base.bra_ket_sym
                     )
-            elif o_type == 'nonsymtensor':
+            elif o_type == "nonsymtensor":
                 base = NonSymmetricTensor(new, base.indices)
+            elif o_type == "symtensor":
+                base = SymmetricTensor(
+                    new, base.upper, base.lower, base.bra_ket_sym
+                )
             new_obj = Pow(base, self.exponent)
         else:
             new_obj = self.sympy
@@ -1295,6 +1329,31 @@ class Obj(Container):
             return new_obj
         else:
             return Expr(new_obj, **self.assumptions)
+
+    def expand_antisym_eri(self, return_sympy: bool = True):
+        """Expands the antisymmetric ERI using chemists notation
+           <pq||rs> = (pr|qs) - (ps|qr).
+           ERI's in chemists notation are denoted as 'v'
+           Currently this only works for real orbitals, i.e., for
+           symmetric ERI's <pq||rs> = <rs||pq>."""
+        if self.name == "V":
+            # ensure that the eri is Symmetric. Otherwise we would introduce
+            # additional unwanted symmetry in the result
+            if self.bra_ket_sym != 1:
+                raise NotImplementedError("Can only expand antisymmetric ERI "
+                                          "in a real orbital basis.")
+            p, q, r, s = self.idx  # <pq||rs>
+            res = (SymmetricTensor("v", (p, r), (q, s), 1) -
+                   SymmetricTensor("v", (p, s), (q, r), 1))
+        else:  # nothing to do
+            res = self.sympy
+
+        if return_sympy:
+            return res
+        else:
+            assumptions = self.assumptions
+            assumptions['sym_tensors'] = assumptions['sym_tensors'] + ("v",)
+            return Expr(res, **assumptions)
 
     @property
     def exponent(self):
@@ -1313,6 +1372,7 @@ class Obj(Container):
             F: 'annihilate',
             Fd: 'create',
             NonSymmetricTensor: 'nonsymtensor',
+            SymmetricTensor: 'symtensor',
         }
         try:
             return types[type(self.extract_pow)]
@@ -1391,7 +1451,7 @@ class Obj(Container):
     @property
     def bra_ket_sym(self):
         # nonsym_tensors are assumed to not have any symmetry atm!.
-        if self.type == 'antisymtensor':
+        if self.type in ["antisymtensor", "symtensor"]:
             return self.extract_pow.bra_ket_sym
 
     def symmetry(self, only_contracted: bool = False,
@@ -1426,7 +1486,10 @@ class Obj(Container):
             'delta': lambda o: o.args,
             'annihilate': lambda o: o.args,
             'create': lambda o: o.args,
-            'nonsymtensor': lambda o: o.indices
+            'nonsymtensor': lambda o: o.indices,
+            'symtensor': lambda o: (
+                o.lower + o.upper if self.is_amplitude else o.upper + o.lower
+            ),
         }
         try:
             return get_idx[self.type](self.extract_pow)
@@ -1460,7 +1523,7 @@ class Obj(Container):
         description = self.description(include_exponent=include_exponent,
                                        include_target_idx=include_target_idx)
         o_type = self.type
-        if o_type == 'antisymtensor':
+        if o_type in ["antisymtensor", "symtensor"]:
             tensor = self.extract_pow
             for uplo, idx_tpl in \
                     {'u': tensor.upper, 'l': tensor.lower}.items():
@@ -1486,14 +1549,14 @@ class Obj(Container):
                     if s not in ret:
                         ret[s] = []
                     ret[s].append(pos)
-        elif o_type == 'nonsymtensor':
+        elif o_type == "nonsymtensor":
             # target idx position is already in the description
             idx = self.idx
             for i, s in enumerate(idx):
                 if s not in ret:
                     ret[s] = []
                 ret[s].append(f"{description}_{i}")
-        elif o_type in ['delta', 'annihilate', 'create']:
+        elif o_type in ["delta", "annihilate", "create"]:
             for s in self.idx:
                 if s not in ret:
                     ret[s] = []
@@ -1547,7 +1610,7 @@ class Obj(Container):
         if include_target_idx:
             target = self.term.target
 
-        if descr == 'antisymtensor':
+        if descr in ['antisymtensor', 'symtensor']:
             # - space separated in upper and lower part
             tensor = self.extract_pow
             upper, lower = tensor.upper, tensor.lower
@@ -1617,12 +1680,14 @@ class Obj(Container):
                             for block in product("ab", repeat=len(self.idx))
                             if block[:n].count("a") == block[n:].count("a")])
                 )
+            elif name == "v":  # ERI in chemist notation
+                return ("aaaa", "aabb", "bbaa", "bbbb")
         elif t == "delta":
             # spins have to be equal
-            return ("oo", "vv")
+            return ("aa", "bb")
         elif t in ["create", "annihilate"]:
             # both spins allowed!
-            return ("o", "v")
+            return ("a", "b")
         elif t == "prefactor":
             return None
         # the known allowed spin blocks of eri, t-amplitudes and deltas
@@ -1639,15 +1704,39 @@ class Obj(Container):
         # all orb energies should be nonsym_tensors actually
         return self.name == 'e' and len(self.idx) == 1
 
-    def print_latex(self, only_pull_out_pref: bool = False) -> str:
+    def print_latex(self, only_pull_out_pref: bool = False,
+                    spin_as_overbar: bool = False) -> str:
         """Returns a Latex string of the canonical form of the object."""
 
-        def tensor_string(upper=None, lower=None):
+        def format_indices(indices: tuple[Index]) -> str:
+            if indices is None:
+                return None
+            if spin_as_overbar:
+                ret = ""
+                for i in indices:
+                    spin = i.spin
+                    if not spin:
+                        raise ValueError(f"Index {i} has no spin and would "
+                                         "not be distinguishable from indices"
+                                         " with alpha spin.")
+                    if spin == "b":
+                        ret += f"\\overline{{{i.name}}}"
+                    else:
+                        ret += i.name
+                return ret
+            else:
+                return "".join(latex(i) for i in indices)
+
+        def tensor_string(upper: tuple[Index] = None,
+                          lower: tuple[Index] = None) -> str:
+            upper, lower = format_indices(upper), format_indices(lower)
             name = self.name
             if name == 'V':  # ERI
                 tex_string = f"\\langle {upper}\\vert\\vert {lower}\\rangle"
             elif name == 'f':  # fock matrix: only lower indices
                 tex_string = "f_{" + upper + lower + "}"
+            elif name == 'v':  # chemist notation ERI
+                tex_string = f"({upper}\\vert {lower})"
             else:  # arbitrary other tensor and amplitudes
                 order_str = ""
                 # t-amplitudes
@@ -1684,11 +1773,10 @@ class Obj(Container):
 
         # Only For Tensors!
         tensor = self.extract_pow
-        if o_type == 'antisymtensor':  # t/ADC-amplitudes etc.
-            kwargs = {'upper': "".join(s.name for s in tensor.upper),
-                      'lower': "".join(s.name for s in tensor.lower)}
+        if o_type in ['antisymtensor', 'symtensor']:  # t/ADC-amplitudes etc.
+            kwargs = {'upper': tensor.upper, 'lower': tensor.lower}
         elif o_type == 'nonsymtensor':  # orb energy + some special itmds
-            kwargs = {'lower': "".join(s.name for s in tensor.indices)}
+            kwargs = {'lower': tensor.indices}
         return tensor_string(**kwargs)
 
 
@@ -1797,9 +1885,10 @@ class NormalOrdered(Obj):
         allowed_blocks = [o.allowed_spin_blocks for o in self.objects]
         return tuple("".join(b) for b in product(*allowed_blocks))
 
-    def print_latex(self, only_pull_out_pref=False):
+    def print_latex(self, only_pull_out_pref: bool = False,
+                    spin_as_overbar: bool = False) -> str:
         # no prefs possible in NO
-        return " ".join([o.print_latex(only_pull_out_pref)
+        return " ".join([o.print_latex(only_pull_out_pref, spin_as_overbar)
                         for o in self.objects])
 
 
@@ -1827,7 +1916,7 @@ class Polynom(Obj):
         return self.extract_pow.args
 
     @cached_property
-    def terms(self) -> list[Term]:
+    def terms(self) -> tuple[Term]:
         # overwriting args allows to pass self to the term instances
         return tuple(Term(self, i) for i in range(len(self)))
 
@@ -1883,6 +1972,17 @@ class Polynom(Obj):
         else:
             return Expr(renamed, **self.assumptions)
 
+    def expand_antisym_eri(self, return_sympy: bool = False):
+        expanded = Add(*(term.expand_antisym_eri(return_sympy=True)
+                         for term in self.terms))
+        expanded = Pow(expanded, self.exponent)
+        if return_sympy:
+            return expanded
+        else:
+            assumptions = self.assumptions
+            assumptions['sym_tensors'] = assumptions['sym_tensors'] + ("v",)
+            return Expr(expanded, **assumptions)
+
     @property
     def order(self):
         raise NotImplementedError("Order not implemented for polynoms: "
@@ -1920,9 +2020,11 @@ class Polynom(Obj):
     def contains_only_orb_energies(self):
         return all(term.contains_only_orb_energies for term in self.terms)
 
-    def print_latex(self, only_pull_out_pref=False):
+    def print_latex(self, only_pull_out_pref: bool = False,
+                    spin_as_overbar: bool = False):
         tex_str = " ".join(
-            [term.print_latex(only_pull_out_pref) for term in self.terms]
+            [term.print_latex(only_pull_out_pref, spin_as_overbar)
+             for term in self.terms]
         )
         tex_str = f"\\bigl({tex_str}\\bigr)"
         if self.exponent != 1:

@@ -7,7 +7,7 @@ from itertools import product
 
 
 def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
-    """Transorm an expression from spin to spatial orbitals by integrating
+    """Transform an expression from spin to spatial orbitals by integrating
        over the spin, i.e., a spin is attached to all indices in the
        expression."""
 

@@ -43,6 +43,8 @@ class TestAntiSymmetricTensor:
             AntiSymmetricTensor("V", (k, l), (i, ia), 1) is S.Zero
         assert AntiSymmetricTensor("V", (i, j), (ia, ib), 1) - \
             AntiSymmetricTensor("V", (ia, ib), (i, j), 1) is S.Zero
+        assert AntiSymmetricTensor("V", (i, j, ib), (i, ia, ib), 1) - \
+            AntiSymmetricTensor("V", (i, ia, ib), (i, j, ib), 1) is S.Zero
 
 
 class TestSymmetricTensor:

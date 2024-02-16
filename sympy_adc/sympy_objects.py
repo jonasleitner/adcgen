@@ -70,15 +70,15 @@ class AntiSymmetricTensor(TensorSymbol):
                                       "for tensors with an equal amount "
                                       "of upper and lower indices.")
         # compare the space of upper and lower indices
-        space_u = "".join([s.space[0] for s in upper])
-        space_l = "".join([s.space[0] for s in lower])
+        space_u = [s.space[0] for s in upper]
+        space_l = [s.space[0] for s in lower]
         if space_l < space_u:  # space with more occ should be upper
             return True
         elif space_l == space_u:  # diagonal block
             # compare the spin of both index blocks:
             # space with more spin orbitals or alpha spin should be upper.
-            spin_u = "".join(s.spin for s in upper)
-            spin_l = "".join(s.spin for s in lower)
+            spin_u = [s.spin for s in upper]
+            spin_l = [s.spin for s in lower]
             if spin_l < spin_u:
                 return True
             elif spin_l == spin_u:  # diagonal spin block

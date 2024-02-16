@@ -3,9 +3,39 @@ from sympy_adc.indices import Index, get_symbols
 from sympy_adc.intermediates import Intermediates
 from sympy_adc.simplify import simplify
 from sympy_adc.spatial_orbitals import integrate_spin
-from sympy_adc.sympy_objects import AntiSymmetricTensor
+from sympy_adc.sympy_objects import AntiSymmetricTensor, SymmetricTensor, \
+    NonSymmetricTensor, KroneckerDelta
 
 from sympy import S, Rational
+from sympy.physics.secondquant import F, Fd
+
+
+class TestExpandAntiSymEri:
+    def test_t2_1(self):
+        t2 = Intermediates().available["t2_1"]
+        t2 = t2.expand_itmd(fully_expand=False).make_real()
+        res = t2.expand_antisym_eri()
+        i, j, a, b = get_symbols('ijab')
+        ref = (SymmetricTensor("v", (i, a), (j, b), 1)
+               - SymmetricTensor("v", (i, b), (j, a), 1))
+        ref /= (NonSymmetricTensor("e", (a,)) + NonSymmetricTensor("e", (b,))
+                - NonSymmetricTensor("e", (i,))
+                - NonSymmetricTensor("e", (j,)))
+        assert ref - res.sympy is S.Zero
+
+    def test_t1_2(self):
+        t1 = Intermediates().available["t1_2"]
+        t1 = t1.expand_itmd(fully_expand=False).make_real()
+        res = t1.expand_antisym_eri().substitute_contracted()
+        i, j, k, a, b, c = get_symbols("ijkabc")
+        ref = (Rational(1, 2) * AntiSymmetricTensor("t1", (b, c), (i, j))
+               * (SymmetricTensor("v", (j, b), (a, c), 1)
+                  - SymmetricTensor("v", (j, c), (a, b), 1)))
+        ref += (Rational(1, 2) * AntiSymmetricTensor("t1", (a, b), (j, k))
+                * (SymmetricTensor("v", (j, i), (k, b), 1)
+                   - SymmetricTensor("v", (j, b), (k, i), 1)))
+        ref /= NonSymmetricTensor("e", (i,)) - NonSymmetricTensor("e", (a,))
+        assert res.sympy.expand() - ref.expand() is S.Zero
 
 
 class TestIntegrateSpin:
@@ -57,6 +87,26 @@ class TestIntegrateSpin:
 
 
 class TestAllowedSpinBlocks:
+    def test_single_objects(self):
+        p, q, r, s = get_symbols("pqrs")
+        # ERI
+        obj = Expr(AntiSymmetricTensor("V", (p, q), (r, s)))
+        obj = obj.terms[0].objects[0]
+        ref = ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
+        assert obj.allowed_spin_blocks == ref
+        # ERI: chemist notation
+        obj = Expr(SymmetricTensor("v", (p, q), (r, s)))
+        obj = obj.terms[0].objects[0]
+        ref = ("aaaa", "aabb", "bbaa", "bbbb")
+        assert obj.allowed_spin_blocks == ref
+        # delta
+        obj = Expr(KroneckerDelta(p, q)).terms[0].objects[0]
+        ref = ("aa", "bb")
+        assert obj.allowed_spin_blocks == ref
+        # create / annihilate
+        for obj in Expr(F(p) * Fd(q)).terms[0].objects:
+            assert obj.allowed_spin_blocks == ("a", "b")
+
     def test_t2_1(self):
         ref = ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
         t2 = Intermediates().available["t2_1"]
