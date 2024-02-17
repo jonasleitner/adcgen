@@ -279,6 +279,27 @@ class Expr(Container):
         self._sym_tensors.add("v")
         return self
 
+    def use_symbolic_denominators(self):
+        """Replace all orbital energy denominators in the expression by
+           tensors, e.g., (e_a + e_b - e_i - e_j)^{-1} will be replaced by
+           D^{ab}_{ij}, where D is a SymmetricTensor."""
+        symbolic_denom = 0
+        for term in self.terms:
+            symbolic_denom += term.use_symbolic_denominators()
+        # the symbolic denominators have additional antisymmetry
+        # for bra ket swaps
+        self._expr = symbolic_denom.sympy
+        self._antisym_tensors.update(symbolic_denom.antisym_tensors)
+        return self
+
+    def use_explicit_denominators(self):
+        """Switch to an explicit representation of orbital energy denominators
+           by replacing all symbolic denominators by their explicit counter
+           part, i.e., D^{ij}_{ab} -> (e_i + e_j - e_a - e_b)^{-1}."""
+        self._expr = Add(*[term.use_explicit_denominators(return_sympy=True)
+                           for term in self.terms])
+        return self
+
     def expand(self):
         self._expr = self.sympy.expand()
         return self
@@ -894,6 +915,28 @@ class Term(Container):
                     [p for s in matches for p in other_idx_pos[s]]
                 )
         return coupling
+
+    def use_symbolic_denominators(self):
+        """Replace all orbital energy denominators in the expression by
+           tensors, e.g., (e_a + e_b - e_i - e_j)^{-1} will be replaced by
+           D^{ab}_{ij}, where D is a SymmetricTensor."""
+        from .eri_orbenergy import EriOrbenergy
+
+        term = EriOrbenergy(self)
+        symbolic_denom = term.symbolic_denominator()
+        # symbolic denom might additionaly have D set as antisym tensor
+        return symbolic_denom * term.pref * term.num.sympy * term.eri.sympy
+
+    def use_explicit_denominators(self, return_sympy: bool = False):
+        """Switch to an explicit representation of orbital energy denominators
+           by replacing all symbolic denominators by their explicit counter
+           part, i.e., D^{ij}_{ab} -> (e_i + e_j - e_a - e_b)^{-1}."""
+        explicit_denom = Mul(*[obj.use_explicit_denominators(return_sympy=True)
+                               for obj in self.objects])
+        if return_sympy:
+            return explicit_denom
+        else:
+            return Expr(explicit_denom, **self.assumptions)
 
     def split_orb_energy(self) -> dict:
         """Splits the term in a orbital energy fraction and a remainder, e.g.
@@ -1704,6 +1747,26 @@ class Obj(Container):
         else:
             return itmd.allowed_spin_blocks
 
+    def use_explicit_denominators(self, return_sympy: bool = False):
+        """Switch to an explicit representation of orbital energy denominators
+           by replacing all symbolic denominators by their explicit counter
+           part, i.e., D^{ij}_{ab} -> (e_i + e_j - e_a - e_b)^{-1}."""
+        if self.name == "D":
+            tensor = self.extract_pow
+            # upper indices are added, lower indices subtracted
+            explicit_denom = 0
+            for s in tensor.upper:
+                explicit_denom += NonSymmetricTensor("e", (s,))
+            for s in tensor.lower:
+                explicit_denom -= NonSymmetricTensor("e", (s,))
+            explicit_denom = Pow(explicit_denom, -self.exponent)
+        else:
+            explicit_denom = self.sympy
+        if return_sympy:
+            return explicit_denom
+        else:
+            return Expr(explicit_denom, **self.assumptions)
+
     @property
     def contains_only_orb_energies(self):
         # all orb energies should be nonsym_tensors actually
@@ -2005,12 +2068,22 @@ class Polynom(Obj):
 
         expanded = Add(*[t.expand_intermediates(target, return_sympy=True)
                          for t in self.terms])
+        expanded = Pow(expanded, self.exponent)
         if return_sympy:
             return expanded
         else:
             assumptions = self.assumptions
             assumptions['target_idx'] = target
-            return Expr(Pow(expanded, self.exponent), **assumptions)
+            return Expr(expanded, **assumptions)
+
+    def use_explicit_denominators(self, return_sympy: bool = False):
+        explicit_denom = Add(*[t.use_explicit_denominators(return_sympy=True)
+                               for t in self.terms])
+        explicit_denom = Pow(explicit_denom, self.exponent)
+        if return_sympy:
+            return explicit_denom
+        else:
+            return Expr(explicit_denom, **self.assumptions)
 
     def description(self, *args, **kwargs):
         raise NotImplementedError("description not implemented for polynoms:",

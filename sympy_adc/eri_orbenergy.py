@@ -1,5 +1,6 @@
 from .misc import Inputerror
 from . import expr_container as e
+from .sympy_objects import SymmetricTensor
 from sympy import Pow, S, Mul, Basic
 
 
@@ -288,7 +289,7 @@ class EriOrbenergy:
             for term in expr.terms:
                 idx = term.idx
                 if len(idx) != 1:
-                    raise RuntimeError("Expected a braket to consist of "
+                    raise RuntimeError("Expected a bracket to consist of "
                                        "epsilons that each hold a single index"
                                        f". Found: {term} in {expr}.")
                 ov = idx[0].space[0]
@@ -451,3 +452,37 @@ class EriOrbenergy:
         denom = sorted(self.denom_brackets, key=bracket_sort_key)
 
         return cancel(self.num, denom, self.pref)
+
+    def symbolic_denominator(self):
+        symbolic_denom = e.Expr(1, **self.denom.assumptions)
+        has_symbolic_denom = False
+        for bracket in self.denom_brackets:
+            signs = {'-': set(), '+': set()}
+            for term in bracket.terms:
+                idx = term.idx
+                if len(idx) != 1:
+                    raise RuntimeError("Expected a denominator bracket to "
+                                       "consists of orbital energies that each"
+                                       " hold a single index. "
+                                       f"Found: {term} in {bracket}.")
+                pref = term.prefactor
+                if pref is S.One:
+                    signs['+'].add(idx[0])
+                elif pref is S.NegativeOne:
+                    signs['-'].add(idx[0])
+                else:
+                    raise RuntimeError(f"Found invalid prefactor {pref} in "
+                                       f"denominator bracket {bracket}.")
+            if signs['+'] & signs['-']:
+                raise RuntimeError(f"Found index {idx} that is added and "
+                                   f"subtracted in a denominator: {bracket}.")
+            has_symbolic_denom = True
+            exponent = 1 if isinstance(bracket, e.Expr) else bracket.exponent
+            symbolic_denom *= Pow(
+                SymmetricTensor("D", signs['+'], signs['-'], -1), exponent
+            )
+        if has_symbolic_denom:
+            symbolic_denom.set_antisym_tensors(
+                symbolic_denom.antisym_tensors + ("D",)
+            )
+        return symbolic_denom
