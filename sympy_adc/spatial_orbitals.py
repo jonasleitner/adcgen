@@ -6,6 +6,52 @@ from .simplify import simplify
 from itertools import product
 
 
+def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
+                                  target_spin: str,
+                                  restricted: bool = False,
+                                  expand_eri: bool = True) -> Expr:
+    """Transforms an expression from spin to spatial orbitals by integrating
+       over the spin, i.e., attaching a spin to all indices and replacing the
+       antisymemtric ERI's with coulomb integras in chemist notation."""
+
+    # perform the integration first, since the intermediates are defined
+    # in terms of the antisymmetric ERI
+    expr = integrate_spin(expr, target_idx, target_spin)
+    if expand_eri:
+        expr.expand_antisym_eri().expand()
+    if not restricted:
+        return expr
+    # in the restricted case we can replace all beta orbitals by the
+    # corresponding alpha orbitals.
+    # It should be fine to keep the name and only adjust the spin of the
+    # indices:
+    # - in the input expression we only have spin orbitals
+    # - during the integration we generate multiple terms mapping each index
+    #   to a spin
+    #  -> the names are still unique, i.e., at this point each term might only
+    #     hold an index of a certain name with either alpha or beta spin but
+    #     both of them simultaneously
+    restricted_expr = Expr(0, **expr.assumptions)
+    for term in expr.terms:
+        idx = set(term.idx)
+        beta_idx = [i for i in idx if i.spin == "b"]
+        if not beta_idx:
+            restricted_expr += term
+            continue
+        new_idx = get_symbols([i.name for i in beta_idx], "a"*len(beta_idx))
+        sub = {}
+        for old, new in zip(beta_idx, new_idx):
+            # conststruct the alpha index
+            if new in idx:
+                raise RuntimeError("It is not safe to replace the beta index "
+                                   f"{old} with the corresponding alpha index,"
+                                   " because the index with alpha spin is "
+                                   f"already used in the term: {term}.")
+            sub[old] = new
+        restricted_expr += term.subs(order_substitutions(sub))
+    return restricted_expr
+
+
 def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
     """Transform an expression from spin to spatial orbitals by integrating
        over the spin, i.e., a spin is attached to all indices in the
@@ -46,7 +92,8 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
         term_spin_idx_maps = []
         for obj in term.objects:
             allowed_blocks = obj.allowed_spin_blocks
-            if allowed_blocks is None:  # hit a Polynom or Prefactor
+            # hit a Polynom, Prefactor or unknown tensor
+            if allowed_blocks is None:
                 continue
             obj_idx = obj.idx
             obj_spin_idx_maps = []
@@ -182,7 +229,8 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
         term_idx_maps = []
         for obj in term.objects:
             allowed_object_blocks = obj.allowed_spin_blocks
-            if allowed_object_blocks is None:  # hit a Polynom or Prefactor
+            # hit a Polynom, Prefactor or unknown tensor
+            if allowed_object_blocks is None:
                 continue
             obj_indices = obj.idx
             n_target = len([idx for idx in obj_indices if idx in target_idx])

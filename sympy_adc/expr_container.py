@@ -6,6 +6,7 @@ from .sympy_objects import (
 )
 from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify
 from sympy.physics.secondquant import NO, F, Fd
+import warnings
 
 
 class Container:
@@ -1343,8 +1344,11 @@ class Obj(Container):
                 raise NotImplementedError("Can only expand antisymmetric ERI "
                                           "in a real orbital basis.")
             p, q, r, s = self.idx  # <pq||rs>
-            res = (SymmetricTensor("v", (p, r), (q, s), 1) -
-                   SymmetricTensor("v", (p, s), (q, r), 1))
+            res = S.Zero
+            if p.spin == r.spin and q.spin == s.spin:
+                res += SymmetricTensor("v", (p, r), (q, s), 1)
+            if p.spin == s.spin and q.spin == r.spin:
+                res -= SymmetricTensor("v", (p, s), (q, r), 1)
         else:  # nothing to do
             res = self.sympy
 
@@ -1694,10 +1698,11 @@ class Obj(Container):
         # may be used to generate the spin blocks of other intermediates
         itmd = Intermediates().available.get(self.pretty_name, None)
         if itmd is None:
-            raise NotImplementedError("Can not determine spin blocks for "
-                                      f" {self}. Not available as "
-                                      "intermediate.")
-        return itmd.allowed_spin_blocks
+            warnings.warn(f"Could not determine valid spin blocks for {self}.",
+                          RuntimeWarning,)
+            return None
+        else:
+            return itmd.allowed_spin_blocks
 
     @property
     def contains_only_orb_energies(self):
