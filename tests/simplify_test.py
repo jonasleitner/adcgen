@@ -59,5 +59,4 @@ class TestSimplify:
             * NonSymmetricTensor('U', (i, k))
         )
         res = NonSymmetricTensor('U', (i, k))
-        print(simplify_unitary(expr, 'U'))
         assert simplify_unitary(expr, 'U').sympy - res is S.Zero

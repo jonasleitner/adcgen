@@ -422,8 +422,7 @@ class t2_1(RegisteredIntermediate):
                         bk_exponent = 1
                         bk = bk.sympy
                     else:
-                        bk_exponent = bk.exponent
-                        bk = bk.extract_pow
+                        bk, bk_exponent = bk.base_and_exponent
                     # found matching bracket in denominator
                     if bk == sub_t2_denom:
                         # can possibly factor multiple times, depending

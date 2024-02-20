@@ -179,8 +179,7 @@ class EriOrbenergy:
                 exponent = 1
                 base = braket.sympy
             else:
-                exponent = braket.exponent
-                base = braket.extract_pow
+                base, exponent = braket.base_and_exponent
             if (new_exp := exponent - n) == 0:
                 denom[idx] = None
             else:
@@ -199,10 +198,11 @@ class EriOrbenergy:
         objects = list(self.eri.objects)
         for idx, n in Counter(obj_idx_list).items():
             obj = objects[idx]
-            if (new_exp := obj.exponent - n) == 0:
+            base, exponent = obj.base_and_exponent
+            if (new_exp := exponent - n) == 0:
                 objects[idx] = None
             else:
-                objects[idx] = Pow(obj.extract_pow, new_exp)
+                objects[idx] = Pow(base, new_exp)
         new_eri = Mul(*(obj if isinstance(obj, Basic) else obj.sympy
                         for obj in objects if obj is not None))
         return e.Expr(new_eri, **self.eri.assumptions)
@@ -337,8 +337,7 @@ class EriOrbenergy:
                         exponent = 1
                         base = bracket.sympy
                     else:
-                        exponent = bracket.exponent
-                        base = bracket.extract_pow
+                        base, exponent = bracket.base_and_exponent
                     if exponent % 2:
                         self._pref *= -1
                     bracket = e.Expr(Pow(-1*base, exponent),
@@ -403,8 +402,7 @@ class EriOrbenergy:
                     exponent = 1
                     base = bracket.sympy
                 else:  # polynom
-                    exponent = bracket.exponent
-                    base = bracket.extract_pow
+                    base, exponent = bracket.base_and_exponent
                 print(f"Cancelling: {e.Expr(base)}")
                 num -= base
                 # build the new denominator -> lower bracket exponent by 1

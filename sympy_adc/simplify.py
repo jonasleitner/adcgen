@@ -201,7 +201,7 @@ def find_compatible_terms(terms: list[e.Term]):
             if (descr := o.description()) == 'prefactor':
                 continue
             elif 'antisymtensor' in descr:
-                tensor = o.extract_pow
+                tensor = o.base
                 tensor_idx_list.append(
                     (descr, set(tensor.upper), set(tensor.lower))
                 )
@@ -328,10 +328,13 @@ def simplify_unitary(expr: e.Expr, t_name: str,
             # add the created delta to the term
             new_term = e.Expr(delta, **term.assumptions)
             if i1 == i2:
-                new_term *= Pow(obj[i1].extract_pow, obj[i1].exponent - 2)
+                base, exponent = obj[i1].base_and_exponent
+                new_term *= Pow(base, exponent - 2)
             else:
-                new_term *= Pow(obj[i1].extract_pow, obj[i1].exponent - 1)
-                new_term *= Pow(obj[i2].extract_pow, obj[i2].exponent - 1)
+                b1, exponent1 = obj[i1].base_and_exponent
+                b2, exponent2 = obj[i2].base_and_exponent
+                new_term *= Pow(b1, exponent1 - 1)
+                new_term *= Pow(b2, exponent2 - 1)
 
             # add remaining objects
             for i, o in enumerate(obj):
@@ -581,8 +584,8 @@ def remove_tensor(expr: e.Expr, t_name: str):
             remaining_term *= remaining_t
         # the tensor might have an exponent that we need to take care of!
         tensor = tensors[0]
-        if (exponent := tensor.exponent) > 1:  # lower exponent by 1
-            base = tensor.extract_pow
+        base, exponent = tensor.base_and_exponent
+        if exponent > 1:  # lower exponent by 1
             tensor = e.Expr(base, **tensor.assumptions).terms[0].objects[0]
             remaining_term *= Pow(base, exponent - 1)
         elif exponent < 1:
