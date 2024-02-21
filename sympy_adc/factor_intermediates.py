@@ -1044,7 +1044,7 @@ class LongItmdVariants(dict):
         # loop completed -> no complete variant found
         return None
 
-    def _complete_base_variants(self, pool: dict) -> tuple:
+    def _complete_base_variants(self, pool: dict):
         """Iterator over the base variants for complete intermediates."""
 
         def sort_matches(pool: dict, matches_to_sort: list) -> list:
@@ -1215,7 +1215,7 @@ class LongItmdVariants(dict):
         # loop completed -> no mixed variant found
         return None
 
-    def _mixed_pref_base_variants(self, pool: dict) -> tuple:
+    def _mixed_pref_base_variants(self, pool: dict):
         """Iterator over the base variants for intermediates with
            mixed prefactors."""
         # find the positions with the lowest number of matches
