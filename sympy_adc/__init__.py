@@ -32,4 +32,4 @@ __all__ = ["AntiSymmetricTensor", "SymmetricTensor", "NonSymmetricTensor",
            "generate_code"]
 
 __authors__ = ["Jonas Leitner", "Linus Dittmer"]
-__version__ = "0.0.3"
+__version__ = "0.0.4"
