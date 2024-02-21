@@ -1,5 +1,6 @@
 from .misc import Inputerror
 from . import expr_container as e
+from .sympy_objects import SymmetricTensor
 from sympy import Pow, S, Mul, Basic
 
 
@@ -178,8 +179,7 @@ class EriOrbenergy:
                 exponent = 1
                 base = braket.sympy
             else:
-                exponent = braket.exponent
-                base = braket.extract_pow
+                base, exponent = braket.base_and_exponent
             if (new_exp := exponent - n) == 0:
                 denom[idx] = None
             else:
@@ -198,10 +198,11 @@ class EriOrbenergy:
         objects = list(self.eri.objects)
         for idx, n in Counter(obj_idx_list).items():
             obj = objects[idx]
-            if (new_exp := obj.exponent - n) == 0:
+            base, exponent = obj.base_and_exponent
+            if (new_exp := exponent - n) == 0:
                 objects[idx] = None
             else:
-                objects[idx] = Pow(obj.extract_pow, new_exp)
+                objects[idx] = Pow(base, new_exp)
         new_eri = Mul(*(obj if isinstance(obj, Basic) else obj.sympy
                         for obj in objects if obj is not None))
         return e.Expr(new_eri, **self.eri.assumptions)
@@ -279,7 +280,6 @@ class EriOrbenergy:
            all virtual orbital energies will be subtracted, while all occupied
            energies are added. This might change numerator, denominator
            and prefactor."""
-        from .indices import index_space
 
         def adjust_sign(expr: e.Expr | e.Polynom) -> bool:
             # function that extracts the sign of the occupied and virtual
@@ -289,10 +289,10 @@ class EriOrbenergy:
             for term in expr.terms:
                 idx = term.idx
                 if len(idx) != 1:
-                    raise RuntimeError("Expected a braket to consist of "
+                    raise RuntimeError("Expected a bracket to consist of "
                                        "epsilons that each hold a single index"
                                        f". Found: {term} in {expr}.")
-                ov = index_space(idx[0].name)[0]
+                ov = idx[0].space[0]
                 if ov not in signs:
                     signs[ov] = []
                 signs[ov].append(term.sign)
@@ -337,8 +337,7 @@ class EriOrbenergy:
                         exponent = 1
                         base = bracket.sympy
                     else:
-                        exponent = bracket.exponent
-                        base = bracket.extract_pow
+                        base, exponent = bracket.base_and_exponent
                     if exponent % 2:
                         self._pref *= -1
                     bracket = e.Expr(Pow(-1*base, exponent),
@@ -403,8 +402,7 @@ class EriOrbenergy:
                     exponent = 1
                     base = bracket.sympy
                 else:  # polynom
-                    exponent = bracket.exponent
-                    base = bracket.extract_pow
+                    base, exponent = bracket.base_and_exponent
                 print(f"Cancelling: {e.Expr(base)}")
                 num -= base
                 # build the new denominator -> lower bracket exponent by 1
@@ -452,3 +450,37 @@ class EriOrbenergy:
         denom = sorted(self.denom_brackets, key=bracket_sort_key)
 
         return cancel(self.num, denom, self.pref)
+
+    def symbolic_denominator(self):
+        symbolic_denom = e.Expr(1, **self.denom.assumptions)
+        has_symbolic_denom = False
+        for bracket in self.denom_brackets:
+            signs = {'-': set(), '+': set()}
+            for term in bracket.terms:
+                idx = term.idx
+                if len(idx) != 1:
+                    raise RuntimeError("Expected a denominator bracket to "
+                                       "consists of orbital energies that each"
+                                       " hold a single index. "
+                                       f"Found: {term} in {bracket}.")
+                pref = term.prefactor
+                if pref is S.One:
+                    signs['+'].add(idx[0])
+                elif pref is S.NegativeOne:
+                    signs['-'].add(idx[0])
+                else:
+                    raise RuntimeError(f"Found invalid prefactor {pref} in "
+                                       f"denominator bracket {bracket}.")
+            if signs['+'] & signs['-']:
+                raise RuntimeError(f"Found index {idx} that is added and "
+                                   f"subtracted in a denominator: {bracket}.")
+            has_symbolic_denom = True
+            exponent = 1 if isinstance(bracket, e.Expr) else bracket.exponent
+            symbolic_denom *= Pow(
+                SymmetricTensor("D", signs['+'], signs['-'], -1), exponent
+            )
+        if has_symbolic_denom:
+            symbolic_denom.set_antisym_tensors(
+                symbolic_denom.antisym_tensors + ("D",)
+            )
+        return symbolic_denom

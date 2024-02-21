@@ -34,8 +34,7 @@ class GroundState:
         ket = self.psi(order=0, braket='ket') if order == 0 else \
             self.psi(order=order-1, braket='ket')
         e = bra * h * ket
-        e = wicks(e, keep_only_fully_contracted=True,
-                  simplify_kronecker_deltas=True, rules=rules)
+        e = wicks(e, simplify_kronecker_deltas=True, rules=rules)
         # option 1: return the not simplified energy -> will give a lot more
         #           terms later on
         # option 2: simplify the energy expression and replace the indices with
@@ -172,8 +171,7 @@ class GroundState:
         # construct <k|H1|psi^(n-1)>
         h1, rules = self.h.h1
         ret = bra * h1 * self.psi(order-1, "ket")
-        ret = wicks(ret, keep_only_fully_contracted=True,
-                    simplify_kronecker_deltas=True, rules=rules)
+        ret = wicks(ret, simplify_kronecker_deltas=True, rules=rules)
         # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
         terms = gen_term_orders(order=order, term_length=2, min_order=1)
         for o1, o2 in terms:
@@ -235,13 +233,11 @@ class GroundState:
         # - compute (<Phi_k|0|n> + <Phi_k|1|n-1>)
         h0, rule = self.h.h0
         term = bra * h0 * self.psi(order, 'ket')
-        res = wicks(term, keep_only_fully_contracted=True, rules=rule,
-                    simplify_kronecker_deltas=True)
+        res = wicks(term, rules=rule, simplify_kronecker_deltas=True)
 
         h1, rule = self.h.h1
         term = bra * h1 * self.psi(order - 1, 'ket')
-        res += wicks(term, keep_only_fully_contracted=True, rules=rule,
-                     simplify_kronecker_deltas=True)
+        res += wicks(term, rules=rule, simplify_kronecker_deltas=True)
 
         # - subtract sum_{m=0}^n E^{(m)} t_k^{(n-m)}
         for e_order, t_order in gen_term_orders(order, 2, 0):
@@ -277,8 +273,7 @@ class GroundState:
             # cache
             i1 = self.psi(order=term[0], braket='bra') * \
                 self.psi(order=term[1], braket='ket')
-            res += wicks(i1, keep_only_fully_contracted=True,
-                         simplify_kronecker_deltas=True)
+            res += wicks(i1, simplify_kronecker_deltas=True)
         # simplify the result by permuting contracted indices
         res = simplify(Expr(res))
         print(f"Build GS S^({order}) = {res}")
@@ -318,8 +313,7 @@ class GroundState:
             d = 0
             for term in orders_d:
                 i1 = wfn[term[0]]['bra'] * op * wfn[term[1]]['ket']
-                d += wicks(i1, keep_only_fully_contracted=True,
-                           simplify_kronecker_deltas=True, rules=rules)
+                d += wicks(i1, simplify_kronecker_deltas=True, rules=rules)
             res += (norm * d).expand()
         return simplify(Expr(res)).sympy
 

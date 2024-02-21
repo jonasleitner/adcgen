@@ -1,9 +1,43 @@
-from sympy import symbols, Dummy, S
+from sympy import S, Dummy
 from .misc import Inputerror, Singleton
 
 
 # base names for all used indices
 idx_base = {'occ': 'ijklmno', 'virt': 'abcdefgh', 'general': 'pqrstuvw'}
+
+
+class Index(Dummy):
+    """Class to represent Indices. Inherits it's behaviour from the sympy
+       'Dummy' class, i.e.,
+        Index("x") != Index("x").
+        Additional functionality:
+         - assigning a spin to the variable via alpha/beta=True
+    """
+
+    @property
+    def spin(self) -> str:
+        if self.assumptions0.get("alpha"):
+            return "a"
+        elif self.assumptions0.get("beta"):
+            return "b"
+        else:
+            return ""
+
+    @property
+    def space(self) -> str:
+        if self.assumptions0.get("below_fermi"):
+            return "occ"
+        elif self.assumptions0.get("above_fermi"):
+            return "virt"
+        else:
+            return "general"
+
+    def _latex(self, printer) -> str:
+        ret = self.name
+        if (spin := self.spin):
+            spin = "alpha" if spin == "a" else "beta"
+            ret += "_{\\" + spin + "}"
+        return ret
 
 
 class Indices(metaclass=Singleton):
@@ -13,10 +47,16 @@ class Indices(metaclass=Singleton):
        """
     def __init__(self):
         # dict that holds all symbols that have been created previously.
-        self._symbols = {'occ': [], 'virt': [], 'general': []}
+        self._symbols = {'occ': {}, 'virt': {}, 'general': {},
+                         'occ_a': {}, 'occ_b': {},
+                         'virt_a': {}, 'virt_b': {},
+                         'general_a': {}, 'general_b': {}}
         # dict that holds the generic indices. Automatically filled by
         # generated index strings.
-        self.generic_indices = {'occ': [], 'virt': [], 'general': []}
+        self._generic_indices = {'occ': [], 'occ_a': [], 'occ_b': [],
+                                 'virt': [], 'virt_a': [], 'virt_b': [],
+                                 'general': [], 'general_a': [],
+                                 'general_b': []}
         # o/v indices that are exclusively available for direct request via
         # get_indices, i.e. they can't be generic indices.
         self._occ = ('i', 'j', 'k', 'l', 'm', 'n', 'o',
@@ -27,92 +67,125 @@ class Indices(metaclass=Singleton):
                       'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2')
         self._general = ('p', 'q', 'r', 's', 't', 'u', 'v', 'w')
 
-    def __gen_generic_idx(self, ov):
+    def _gen_generic_idx(self, space, spin):
         """Generated the next 'generation' of generic indices, i.e. extends
            generic indice list incrementing the integer attached to the index
            base. The first generic indices will increment the integer found
            at the last element of self.o/self.v by one.
            """
         # first call -> counter has not been initialized yet.
-        if not hasattr(self, f'counter_{ov}'):
+        key = space if spin is None else f"{space}_{spin}"
+        if not hasattr(self, f'counter_{key}'):
             idx_list = sorted(
-                getattr(self, f'_{ov}'), key=lambda idx:
+                getattr(self, f'_{space}'), key=lambda idx:
                 (int(idx[1:]) if idx[1:].isdigit() else 0, idx[0])
             )
-            specific = int(idx_list[-1][1:]) \
-                if idx_list[-1][1:].isdigit() else 0
-            setattr(self, 'counter_' + ov, specific + 1)
+            n = int(idx_list[-1][1:]) if idx_list[-1][1:].isdigit() else 0
+            setattr(self, f'counter_{key}', n + 1)
 
         # generate the new index strings
-        counter = getattr(self, f'counter_{ov}')
-        used = {s.name for s in self._symbols[ov]}
-        new_idx = [idx + str(counter) for idx in idx_base[ov]
+        counter = getattr(self, f'counter_{key}')
+        used = self._symbols[key]
+        new_idx = [idx + str(counter) for idx in idx_base[space]
                    if idx + str(counter) not in used]
 
         # extend the generic list and increment the counter
-        self.generic_indices[ov].extend(new_idx)
-        setattr(self, 'counter_' + ov, counter + 1)
+        self._generic_indices[key].extend(new_idx)
+        setattr(self, f'counter_{key}', counter + 1)
 
-    def get_indices(self, indices):
+    def get_indices(self, indices: str, spins: str = None) -> dict:
         """Obtain the symbols for the provided index string."""
         if not isinstance(indices, str):
             raise Inputerror(f"Indices {indices} need to be of type string.")
+        indices = split_idx_string(indices)
+        if spins is not None and len(indices) != len(spins):
+            raise Inputerror(f"Indices {indices} and spin {spins} do not "
+                             "match.")
 
         ret = {}
-        for idx in split_idx_string(indices):
-            ov = index_space(idx)
-            if ov not in ret:
-                ret[ov] = []
+        for i, idx in enumerate(indices):
+            space = index_space(idx)
+            if spins is None:
+                spin = None
+                key = space
+            else:
+                spin = spins[i]
+                key = space + "_" + spin
+            if key not in ret:
+                ret[key] = []
             # check whether the symbol is already available
-            found = False
-            for s in self._symbols[ov]:
-                if idx == s.name:
-                    ret[ov].append(s)
-                    found = True
-                    break
+            s = self._symbols[key].get(idx, None)
+            if s is not None:
+                ret[key].append(s)
+                continue
             # did not find -> create a new symbol + add it to self._symbols
             # and if it is a generic index -> remove it from the current
             # generic index list.
-            if not found:
-                s = self.__new_symbol(idx, ov)
-                ret[ov].append(s)
-                self._symbols[ov].append(s)
-                try:
-                    self.generic_indices[ov].remove(idx)
-                except ValueError:
-                    pass
+            s = self._new_symbol(idx, space, spin)
+            ret[key].append(s)
+            self._symbols[key][idx] = s
+            try:
+                self._generic_indices[key].remove(idx)
+            except ValueError:
+                pass
         return ret
 
     def get_generic_indices(self, **kwargs):
         """Method to request a number of genrated indices that has not been
            used yet. Indices obtained via this function may be reobtained using
            get_indices. Request indices with: n_occ=3, n_virt=2"""
-        valid = {'n_occ': 'occ', 'n_o': 'occ', 'n_virt': 'virt', 'n_v': 'virt',
-                 'n_general': 'general', 'n_g': 'general'}
-        if not all(var in valid and isinstance(n, int)
-                   for var, n in kwargs.items()):
-            raise Inputerror(f"{kwargs} is not a valid input. Use e.g. "
-                             "n_occ=2")
+
         ret = {}
-        for n_ov, n in kwargs.items():
+        for key, n in kwargs.items():
             if n == 0:
                 continue
-            ov = valid[n_ov]
-            # generate new index strings until enough are available
-            while n > len(self.generic_indices[ov]):
-                self.__gen_generic_idx(ov)
-            idx = "".join(self.generic_indices[ov][:n])
-            ret[ov] = self.get_indices(idx)[ov]
+            # n_space(_spin)   where spin is optional
+            key = key.split("_")[1:]
+            if not key:
+                raise Inputerror(f"{key} is not a valid input for requesting "
+                                 "generic indices. Use e.g. 'n_occ=2'.")
+            space = key[0]  # expand o/v/g
+            if space == 'o':
+                space = 'occ'
+            elif space == 'v':
+                space = 'virt'
+            elif space == 'g':
+                space = 'general'
+
+            if len(key) == 1:
+                spin = None
+                spins = None
+                key = space
+            elif len(key) == 2:
+                spin = key[1]
+                spins = "".join(spin for _ in range(n))
+                key = f"{space}_{spin}"
+            else:
+                raise ValueError(f"Invalid input argument {key}. Use e.g. "
+                                 "'n_occ=2'.")
+            while n > len(self._generic_indices[key]):
+                self._gen_generic_idx(space, spin)
+            idx = "".join(self._generic_indices[key][:n])
+            ret.update(self.get_indices(idx, spins))
         return ret
 
-    def __new_symbol(self, idx, ov):
+    def _new_symbol(self, idx: str, ov: str, spin: str | None) -> Index:
         """Creates the new symbol from the index string."""
-        if ov == 'occ':
-            return symbols(idx, below_fermi=True, cls=Dummy)
-        elif ov == 'virt':
-            return symbols(idx, above_fermi=True, cls=Dummy)
-        elif ov == 'general':
-            return symbols(idx, cls=Dummy)
+        assumptions = {}
+        if ov == "occ":
+            assumptions["below_fermi"] = True
+        elif ov == "virt":
+            assumptions["above_fermi"] = True
+        elif ov != "general":
+            raise ValueError(f"Invalid space {ov}")
+        if spin is not None:
+            if spin == "a":
+                assumptions["alpha"] = True
+            elif spin == "b":
+                assumptions["beta"] = True
+            else:
+                raise ValueError(f"Invalid spin {spin}.")
+        return Index(idx, **assumptions)
 
     def substitute_with_generic(self, expr):
         """Substitute all contracted indices with new, generic indices."""
@@ -122,25 +195,28 @@ class Indices(metaclass=Singleton):
             # count how many indices need to be replaced and get new indices
             old = {}
             for s in term.contracted:
-                ov = index_space(s.name)
-                if ov not in old:
-                    old[ov] = []
-                old[ov].append(s)
+                key = s.space
+                if s.spin:
+                    key += "_" + s.spin
+                if key not in old:
+                    old[key] = []
+                old[key].append(s)
 
             if not old:
                 return term
 
-            n_ov = {'occ': 'n_o', 'virt': 'n_v', 'general': 'n_g'}
-            kwargs = {n_ov[ov]: len(sym_list) for ov, sym_list in old.items()}
+            kwargs = {"n_" + key: len(idx) for key, idx in old.items()}
             new = self.get_generic_indices(**kwargs)
 
-            # match the old: new pairs and substitute the term
             sub = {}
-            for ov, sym_list in old.items():
-                if len(sym_list) != len(new[ov]):
-                    raise RuntimeError(f"{len(sym_list)} {ov} indices needed "
-                                       f"but got {len(new[ov])} new indices.")
-                sub.update({s: new_s for s, new_s in zip(sym_list, new[ov])})
+            for idx_type, old_idx in old.items():
+                new_idx = new[idx_type]
+                if len(old_idx) != len(new_idx):
+                    raise RuntimeError(f"{len(old_idx)} {idx_type} indices "
+                                       "needed but generated only "
+                                       f"{len(new_idx)} indices.")
+                sub.update({s: new_s for s, new_s in zip(old_idx, new_idx)})
+
             new_term = term.subs(order_substitutions(sub))
 
             # ensure substitutions are valid
@@ -224,32 +300,44 @@ def extract_names(syms):
     return [s.name for s in syms]
 
 
-def get_symbols(idx: str | list[str] | list[Dummy]) -> list[Dummy]:
+def get_symbols(idx: str | list[str] | list[Index],
+                spins: str = None) -> list[Index]:
     """Ensure that all provided indices are sympy symbols. If a string of
        indices is provided the corresponding sympy symbols are
        created automatically."""
 
     if not idx:
         return []
-    elif isinstance(idx, Dummy):  # a single symbol is not iterable
+    elif isinstance(idx, Index):  # a single symbol is not iterable
         return [idx]
-    elif all(isinstance(i, Dummy) for i in idx):
+    elif all(isinstance(i, Index) for i in idx):
         return idx
     elif all(isinstance(i, str) for i in idx):
-        idx_cls = Indices()
+        symbols = Indices().get_indices("".join(idx), spins)
+        for val in symbols.values():
+            val.reverse()
+        # idx and spins have to be compatible at this point
         idx = split_idx_string(idx)
-        return [
-            idx_cls.get_indices(i)[index_space(i)][0] for i in idx
-        ]
+        if spins is None:
+            return [
+                symbols[index_space(i)].pop() for i in idx
+            ]
+        else:
+            return [
+                symbols[f"{index_space(i)}_{spin}"].pop()
+                for i, spin in zip(idx, spins)
+            ]
     else:
         raise Inputerror("Indices need to be provided as string or a list "
-                         "of sympy Dummy objects.")
+                         f"of {Index} objects.")
 
 
-def order_substitutions(subsdict: dict[Dummy, Dummy]) -> list:
+def order_substitutions(subsdict: dict[Index, Index]) -> list:
     """Returns substitutions ordered in a way one can use the subs method
        without the need to use the 'sumiltanous=True' option. Essentially
        identical to a part of the substitute_dummies function of sympy."""
+    from .sympy_objects import Index
+
     subs = []
     final_subs = []
     for o, n in subsdict.items():
@@ -260,7 +348,7 @@ def order_substitutions(subsdict: dict[Dummy, Dummy]) -> list:
             if other_n in subsdict:
                 # i -> j / j -> i
                 # temporary variable is needed
-                p = Dummy('p')
+                p = Index('p')
                 subs.append((o, p))
                 final_subs.append((p, n))
             else:
@@ -294,7 +382,7 @@ def minimize_tensor_indices(tensor_indices: tuple,
     for s in tensor_indices:
         if s in minimized:
             continue
-        space = index_space(s.name)
+        space = s.space
         # target indices of the corresponding space
         space_target = target_idx.get(space, [])
         # index is a target idx -> keep as is
