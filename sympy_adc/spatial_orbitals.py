@@ -1,6 +1,6 @@
 from .expr_container import Expr
 from .misc import Inputerror
-from .indices import idx_sort_key, get_symbols, order_substitutions
+from .indices import get_symbols, order_substitutions, sort_idx_canonical
 from .simplify import simplify
 
 from itertools import product
@@ -63,7 +63,7 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
     if len(target_idx) != len(target_spin):
         raise Inputerror(f"Spin {target_spin} and indices {target_idx} are "
                          "not compatible.")
-    sorted_target = tuple(sorted(target_idx, key=idx_sort_key))
+    sorted_target = tuple(sorted(target_idx, key=sort_idx_canonical))
     # - assign the target indices to a spin
     target_idx_spin_map = {}
     for idx, spin in zip(target_idx, target_spin):
@@ -212,7 +212,7 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
         raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
 
     target_idx = get_symbols(target_idx)
-    sorted_target = tuple(sorted(target_idx, key=idx_sort_key))
+    sorted_target = tuple(sorted(target_idx, key=sort_idx_canonical))
 
     # - determine all possible spin blocks
     spin_blocks = ["".join(b) for b in product("ab", repeat=len(target_idx))]

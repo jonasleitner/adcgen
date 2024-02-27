@@ -1,5 +1,5 @@
 from .indices import (get_lowest_avail_indices, get_symbols,
-                      order_substitutions, idx_sort_key, Index)
+                      order_substitutions, Index, sort_idx_canonical)
 from .misc import Inputerror, cached_property, cached_member
 from .sympy_objects import (
     NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, SymmetricTensor
@@ -203,7 +203,8 @@ class Expr(Container):
             self._target_idx = None
         else:
             target_idx = set(get_symbols(target_idx))
-            self._target_idx = tuple(sorted(target_idx, key=idx_sort_key))
+            self._target_idx = tuple(sorted(target_idx,
+                                            key=sort_idx_canonical))
 
     def make_real(self):
         """Makes the expression real by removing all 'c' in tensor names.
@@ -348,9 +349,7 @@ class Expr(Container):
         """Returns all indices that occur in the expression. Indices that occur
            multiple times will be listed multiple times."""
         idx = [s for t in self.terms for s in t.idx]
-        return tuple(sorted(
-            idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
-        ))
+        return tuple(sorted(idx, key=sort_idx_canonical))
 
     def copy(self):
         return Expr(self.sympy, **self.assumptions)
@@ -838,7 +837,8 @@ class Term(Container):
                     idx[s] += n
                 else:  # start counting at 0
                     idx[s] = n - 1
-        return tuple(sorted(idx.items(), key=lambda tpl: idx_sort_key(tpl[0])))
+        return tuple(sorted(idx.items(),
+                            key=lambda tpl: sort_idx_canonical(tpl[0])))
 
     @cached_property
     def prefactor(self):
@@ -993,12 +993,6 @@ class Term(Container):
         from collections import Counter
         from itertools import combinations
 
-        def sort_canonical(idx):
-            # duplicate of antisym tensor sort function. Hash was omitted
-            return (idx.space[0],
-                    int(idx.name[1:]) if idx.name[1:] else 0,
-                    idx.name[0])
-
         def extract_data(o):
             if isinstance(o, Obj):
                 return o.idx, o.pretty_name
@@ -1050,8 +1044,8 @@ class Term(Container):
             scal = scaling(total, general, virt, occ, mem)
 
             # sort contracted and target indices canonical and store as tuple
-            contracted = tuple(sorted(contracted, key=sort_canonical))
-            target = tuple(sorted(target, key=sort_canonical))
+            contracted = tuple(sorted(contracted, key=sort_idx_canonical))
+            target = tuple(sorted(target, key=sort_idx_canonical))
 
             # is it the outermost contraction?
             # rather use the provided target indices -> correct order
@@ -1128,12 +1122,12 @@ class Term(Container):
 
         # use the canonical target indices of the term
         if target_indices is None:
-            target_indices = sorted(self.target, key=sort_canonical)
+            target_indices = self.target  # already sorted canonical
             canonical_target = tuple(target_indices)
         else:  # or transform the provided target indices to sympy symbols
             target_indices = tuple(get_symbols(target_indices))
             canonical_target = tuple(sorted(target_indices,
-                                            key=sort_canonical))
+                                            key=sort_idx_canonical))
 
         if len(relevant_objects) == 0:
             return []
@@ -2010,9 +2004,7 @@ class Polynom(Obj):
         """Returns all indices that occur in the polynom. Indices that occur
            multiple times will be listed multiple times."""
         idx = [s for t in self.terms for s in t.idx]
-        return tuple(sorted(
-            idx, key=lambda s: (int(s.name[1:]) if s.name[1:] else 0, s.name)
-        ))
+        return tuple(sorted(idx, key=sort_idx_canonical))
 
     def make_real(self, return_sympy: bool = False) -> Expr:
         real = Add(*[t.make_real(return_sympy=True) for t in self.terms])

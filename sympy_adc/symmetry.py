@@ -1,4 +1,4 @@
-from .indices import idx_sort_key, Index
+from .indices import Index, sort_idx_canonical
 from . import expr_container as e
 from .misc import cached_member, cached_property, Inputerror
 from .eri_orbenergy import EriOrbenergy
@@ -12,7 +12,7 @@ class Permutation(tuple):
        The provided indices are sorted according to their name."""
 
     def __new__(cls, p: Index, q: Index):
-        if idx_sort_key(p) < idx_sort_key(q):
+        if sort_idx_canonical(p) < sort_idx_canonical(q):
             args = (p, q)
         else:
             args = (q, p)

@@ -1,6 +1,6 @@
 from . import expr_container as e
 from .misc import Inputerror
-from .indices import get_symbols, idx_sort_key
+from .indices import get_symbols, sort_idx_canonical
 
 
 def by_delta_types(expr: e.Expr) -> dict[tuple[str], e.Expr]:
@@ -216,7 +216,8 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
                                  "has bra-ket-symmetry.")
             upper, lower = target_indices, ""
         upper, lower = get_symbols(upper), get_symbols(lower)
-        sorted_provided_target = tuple(sorted(upper + lower, key=idx_sort_key))
+        sorted_provided_target = tuple(sorted(upper + lower,
+                                              key=sort_idx_canonical))
         if sorted_provided_target != ref_target:
             raise Inputerror(f"The provided target indices {target_indices} "
                              "are not equal to the target indices found in "

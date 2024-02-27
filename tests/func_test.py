@@ -2,7 +2,7 @@ from sympy_adc.expr_container import Expr
 from sympy_adc.func import (
     _contraction, _contract_operator_string, wicks, evaluate_deltas
 )
-from sympy_adc.indices import Index
+from sympy_adc.indices import Index, get_symbols
 from sympy_adc.sympy_objects import KroneckerDelta
 
 from sympy import S
@@ -80,9 +80,7 @@ class TestWicks:
         assert _contraction(Fd(i), F(a)) is S.Zero
 
     def test_contract_operator_string(self):
-        i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
-        a, b = Index("a", above_fermi=True), Index("b", above_fermi=True)
-        p, q = Index("p"), Index("q")
+        i, j, a, b, p, q = get_symbols("ijabpq")
 
         op_string = Fd(i) * F(a) * Fd(b) * F(j)
         ref = KroneckerDelta(i, j) * KroneckerDelta(a, b)
@@ -96,14 +94,12 @@ class TestWicks:
                + KroneckerDelta(i, j) * KroneckerDelta(a, b)
                * KroneckerDelta(p, q)
                * KroneckerDelta(q, Index("i", below_fermi=True)))
-        res = _contract_operator_string(op_string.args)
-        assert Expr(ref - res, target_idx="").substitute_contracted().sympy \
-            is S.Zero
+        res = _contract_operator_string(op_string.args).expand()
+        zero = Expr(ref - res, target_idx="ijab").substitute_contracted()
+        assert zero.sympy is S.Zero
 
     def test_wicks(self):
-        i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
-        a, b = Index("a", above_fermi=True), Index("b", above_fermi=True)
-        p, q = Index("p"), Index("q")
+        i, j, a, b, p, q = get_symbols("ijabpq")
 
         expr = (Fd(i) * F(a) * Fd(p) * F(q) * Fd(b) * F(j) * 2
                 * KroneckerDelta(i, j))
@@ -116,5 +112,5 @@ class TestWicks:
                * KroneckerDelta(q, Index("i", below_fermi=True)))
         ref *= 2 * KroneckerDelta(i, j)
         res = wicks(expr)
-        assert Expr(ref - res, target_idx="").substitute_contracted().sympy \
-            is S.Zero
+        zero = Expr(ref - res, target_idx="ijab").substitute_contracted()
+        assert zero.sympy is S.Zero

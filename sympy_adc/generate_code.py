@@ -1,6 +1,7 @@
 from . import expr_container as e
 from .misc import Inputerror
 from .sort_expr import exploit_perm_sym
+from .indices import sort_idx_canonical
 from collections import namedtuple
 
 scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
@@ -43,10 +44,7 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
                 raise NotImplementedError("Contractions not implemented for "
                                           "polynoms, creation and annihilation"
                                           f"operators: {term}")
-        contracted = sorted(contracted, key=lambda s:
-                            (s.space[0],
-                             int(s.name[1:]) if s.name[1:] else 0,
-                             s.name[0]))
+        contracted = sorted(contracted, key=sort_idx_canonical)
         # determine the scaling
         target_sp = [s.space[0] for s in target]
         contracted_sp = [s.space[0] for s in contracted]

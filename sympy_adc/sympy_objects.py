@@ -4,7 +4,7 @@ from sympy.core.function import Function
 from sympy.core.logic import fuzzy_not
 from sympy import sympify, Tuple, Symbol, S
 from .misc import Inputerror
-from .indices import Index
+from .indices import Index, sort_idx_canonical
 
 
 class AntiSymmetricTensor(TensorSymbol):
@@ -20,10 +20,10 @@ class AntiSymmetricTensor(TensorSymbol):
         # sort the upper and lower indices
         try:
             upper, sign_u = _sort_anticommuting_fermions(
-                upper, key=cls._sort_canonical
+                upper, key=sort_idx_canonical
             )
             lower, sign_l = _sort_anticommuting_fermions(
-                lower, key=cls._sort_canonical
+                lower, key=sort_idx_canonical
             )
         except ViolationOfPauliPrinciple:
             return S.Zero
@@ -49,18 +49,6 @@ class AntiSymmetricTensor(TensorSymbol):
                                           bra_ket_sym)
         else:
             return TensorSymbol.__new__(cls, symbol, upper, lower, bra_ket_sym)
-
-    @classmethod
-    def _sort_canonical(cls, idx):
-        if isinstance(idx, Index):
-            # also add the hash here for wicks, where multiple i are around
-            return (idx.space[0],
-                    idx.spin,
-                    int(idx.name[1:]) if idx.name[1:] else 0,
-                    idx.name[0],
-                    hash(idx))
-        else:  # necessary for subs to work correctly with simultaneous=True
-            return ('', 0, str(idx), hash(idx))
 
     @classmethod
     def _need_bra_ket_swap(cls, upper: tuple[Index],
@@ -144,8 +132,8 @@ class SymmetricTensor(AntiSymmetricTensor):
     def __new__(cls, symbol: str, upper: tuple[Index], lower: tuple[Index],
                 bra_ket_sym: int = 0) -> TensorSymbol:
         # sort upper and lower. No need to track the number of swaps
-        upper = sorted(upper, key=cls._sort_canonical)
-        lower = sorted(lower, key=cls._sort_canonical)
+        upper = sorted(upper, key=sort_idx_canonical)
+        lower = sorted(lower, key=sort_idx_canonical)
         # account for the bra ket symmetry
         # add the Index check for subs to work correctly
         negative_sign = False
@@ -228,20 +216,8 @@ class KroneckerDelta(Function):
         if spi and spj and spi != spj:  # delta_ab / delta_ba
             return S.Zero
         # sort the indices of the delta
-        if i != min(i, j, key=cls._sort_canonical):
+        if i != min(i, j, key=sort_idx_canonical):
             return cls(j, i)
-
-    @classmethod
-    def _sort_canonical(cls, idx):
-        if isinstance(idx, Index):
-            # also add the hash here for wicks, where multiple i are around
-            return (idx.space[0],
-                    idx.spin,
-                    int(idx.name[1:]) if idx.name[1:] else 0,
-                    idx.name[0],
-                    hash(idx))
-        else:  # necessary for subs to work correctly with simultaneous=True
-            return ('', 0, str(idx), hash(idx))
 
     def _latex(self, printer):
         return (
@@ -304,7 +280,7 @@ class SingleSymmetryTensor(TensorSymbol):
             p, q = indices[i], indices[j]  # p occurs before q
             if factor is S.NegativeOne and p == q:
                 return S.Zero
-            p_val, q_val = cls._sort_canonical(p), cls._sort_canonical(q)
+            p_val, q_val = sort_idx_canonical(p), sort_idx_canonical(q)
             if q_val < p_val:
                 apply.append(True)
                 if min_apply is None or q_val < min_apply:
@@ -329,18 +305,6 @@ class SingleSymmetryTensor(TensorSymbol):
             return - TensorSymbol.__new__(cls, symbol, indices, perms, factor)
         else:
             return TensorSymbol.__new__(cls, symbol, indices, perms, factor)
-
-    @classmethod
-    def _sort_canonical(cls, idx):
-        if isinstance(idx, Index):
-            # also add the hash here for wicks, where multiple i are around
-            return (idx.space[0],
-                    idx.spin,
-                    int(idx.name[1:]) if idx.name[1:] else 0,
-                    idx.name[0],
-                    hash(idx))
-        else:  # necessary for subs to work correctly with simultaneous=True
-            return ('', 0, str(idx), hash(idx))
 
     def _latex(self, printer) -> str:
         return "{%s_{%s}}" % (self.symbol, "".join([i._latex(printer)
