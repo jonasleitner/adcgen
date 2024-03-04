@@ -219,6 +219,13 @@ class KroneckerDelta(Function):
         if i != min(i, j, key=sort_idx_canonical):
             return cls(j, i)
 
+    def _eval_power(self, exp):
+        # we don't want exponents > 1 on deltas!
+        if exp.is_positive:
+            return self
+        elif exp.is_negative and exp is not S.NegativeOne:
+            return 1/self
+
     def _latex(self, printer):
         return (
             "\\delta_{" + " ".join(s._latex(printer) for s in self.args) + "}"
