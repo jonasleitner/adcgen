@@ -1387,6 +1387,7 @@ class Obj(Container):
                 res += SymmetricTensor("v", (p, r), (q, s), 1)
             if p.spin == s.spin and q.spin == r.spin:
                 res -= SymmetricTensor("v", (p, s), (q, r), 1)
+            res = Pow(res, self.exponent)
         else:  # nothing to do
             res = self.sympy
 
