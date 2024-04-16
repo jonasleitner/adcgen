@@ -78,6 +78,10 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
         if term.target != sorted_target:
             raise ValueError(f"Target indices of {term} {term.target} dont "
                              f"match the desired target indices {target_idx}")
+        # - check if the term is just a number: nothing to do but the term
+        #   would be dropped below
+        if term.sympy.is_number:
+            result += term
         # - ensure that no index in the term is holding a spin
         term_indices = set(term.idx)
         if any(s.spin for s in term_indices):

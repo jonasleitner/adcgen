@@ -55,6 +55,24 @@ class TestIntegrateSpin:
         res = integrate_spin(t2, 'ijab', "baab")
         assert res.sympy.atoms(Index) == set(get_symbols("ijab", "baab"))
 
+    def test_number(self):
+        # ensure that numbers are pure number terms are not dropped
+        # during the spin integration
+        num = 42
+        assert integrate_spin(Expr(num), "", "").sympy - num is S.Zero
+        i, j, a, b = get_symbols('ijab')
+        ia, ja, aa, ba = get_symbols('ijab', "aaaa")
+        ib, jb, ab, bb = get_symbols('ijab', "bbbb")
+        tensors = (Rational(1, 4) *
+                   AntiSymmetricTensor("V", (i, j), (a, b)) *
+                   AntiSymmetricTensor("t1", (a, b), (i, j)))
+        test = Expr(tensors + num)
+        ref = tensors.subs({i: ia, j: ja, a: aa, b: ba})
+        ref += 4 * tensors.subs({i: ia, j: jb, a: aa, b: bb})
+        ref += tensors.subs({i: ib, j: jb, a: ab, b: bb})
+        ref += num
+        assert integrate_spin(test, "", "").sympy - ref is S.Zero
+
     def test_t1_2(self):
         # use one of the 2 t1_2 terms as test case (without denominator)
         i, j, a, b, c = get_symbols('ijabc')

@@ -354,18 +354,18 @@ class Expr(Container):
     def copy(self):
         return Expr(self.sympy, **self.assumptions)
 
-    def print_latex(self, terms_per_line: int = None,
-                    only_pull_out_pref: bool = False,
-                    spin_as_overbar: bool = False) -> str:
+    def to_latex_str(self, terms_per_line: int = None,
+                     only_pull_out_pref: bool = False,
+                     spin_as_overbar: bool = False) -> str:
         """Returns a Latex string of the canonical form of the expr.
            The output may be adjusted to be compatible with the Latex align
            environment, where the parameter terms_per_line defines the number
            of terms that should be printed per line.
            """
-        tex_terms = [term.print_latex(only_pull_out_pref, spin_as_overbar)
+        tex_terms = [term.to_latex_str(only_pull_out_pref, spin_as_overbar)
                      for term in self.terms]
         # remove '+' in the first term
-        if tex_terms[0][0] == '+':
+        if tex_terms[0].lstrip().startswith("+"):
             tex_terms[0] = tex_terms[0].replace('+', '', 1).lstrip()
         # just the raw output without linebreaks
         if terms_per_line is None:
@@ -966,18 +966,22 @@ class Term(Container):
         return all(o.contains_only_orb_energies for o in self.objects
                    if not o.type == 'prefactor')
 
-    def print_latex(self, only_pull_out_pref: bool = False,
-                    spin_as_overbar: bool = False):
+    def to_latex_str(self, only_pull_out_pref: bool = False,
+                     spin_as_overbar: bool = False):
         """Returns a Latex string of the canonical form of the term."""
         # - sign and prefactor
         pref = self.prefactor
         tex_str = "+ " if pref >= 0 else "- "
+        # term only consists of a number (only pref)
+        if self.sympy.is_number:
+            return tex_str + f"{latex(abs(pref))}"
+        # avoid printing +- 1 prefactors
         if pref not in [+1, -1]:
             tex_str += f"{latex(abs(pref))} "
 
         # - latex strings for the remaining objects
         tex_str += " ".join(
-            [o.print_latex(only_pull_out_pref, spin_as_overbar)
+            [o.to_latex_str(only_pull_out_pref, spin_as_overbar)
              for o in self.objects if o.type != 'prefactor']
         )
         return tex_str
@@ -1780,8 +1784,8 @@ class Obj(Container):
         # all orb energies should be nonsym_tensors actually
         return self.name == 'e' and len(self.idx) == 1
 
-    def print_latex(self, only_pull_out_pref: bool = False,
-                    spin_as_overbar: bool = False) -> str:
+    def to_latex_str(self, only_pull_out_pref: bool = False,
+                     spin_as_overbar: bool = False) -> str:
         """Returns a Latex string of the canonical form of the object."""
 
         def format_indices(indices: tuple[Index]) -> str:
@@ -1961,10 +1965,10 @@ class NormalOrdered(Obj):
         allowed_blocks = [o.allowed_spin_blocks for o in self.objects]
         return tuple("".join(b) for b in product(*allowed_blocks))
 
-    def print_latex(self, only_pull_out_pref: bool = False,
-                    spin_as_overbar: bool = False) -> str:
+    def to_latex_str(self, only_pull_out_pref: bool = False,
+                     spin_as_overbar: bool = False) -> str:
         # no prefs possible in NO
-        return " ".join([o.print_latex(only_pull_out_pref, spin_as_overbar)
+        return " ".join([o.to_latex_str(only_pull_out_pref, spin_as_overbar)
                         for o in self.objects])
 
 
@@ -2104,10 +2108,10 @@ class Polynom(Obj):
     def contains_only_orb_energies(self):
         return all(term.contains_only_orb_energies for term in self.terms)
 
-    def print_latex(self, only_pull_out_pref: bool = False,
-                    spin_as_overbar: bool = False):
+    def to_latex_str(self, only_pull_out_pref: bool = False,
+                     spin_as_overbar: bool = False):
         tex_str = " ".join(
-            [term.print_latex(only_pull_out_pref, spin_as_overbar)
+            [term.to_latex_str(only_pull_out_pref, spin_as_overbar)
              for term in self.terms]
         )
         tex_str = f"\\bigl({tex_str}\\bigr)"
