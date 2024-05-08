@@ -1,5 +1,5 @@
-from sympy_adc.indices import Index
-from sympy_adc.sympy_objects import (
+from adcgen.indices import Index
+from adcgen.sympy_objects import (
     KroneckerDelta, AntiSymmetricTensor, SymmetricTensor
 )
 from sympy import S

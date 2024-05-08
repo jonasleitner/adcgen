@@ -1,7 +1,7 @@
-from sympy_adc.expr_container import Expr
-from sympy_adc.simplify import simplify, remove_tensor
-from sympy_adc import sort_expr as sort
-from sympy_adc.reduce_expr import factor_eri_parts, factor_denom
+from adcgen.expr_container import Expr
+from adcgen.simplify import simplify, remove_tensor
+from adcgen import sort_expr as sort
+from adcgen.reduce_expr import factor_eri_parts, factor_denom
 
 from sympy import S
 

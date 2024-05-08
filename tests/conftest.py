@@ -2,14 +2,14 @@ import pytest
 import pathlib
 import json
 
-from sympy_adc.func import import_from_sympy_latex
+from adcgen.func import import_from_sympy_latex
 
 
 @pytest.fixture(scope='session')
 def cls_instances():
-    from sympy_adc.groundstate import Operators, GroundState
-    from sympy_adc.isr import IntermediateStates
-    from sympy_adc.secular_matrix import SecularMatrix
+    from adcgen.groundstate import Operators, GroundState
+    from adcgen.isr import IntermediateStates
+    from adcgen.secular_matrix import SecularMatrix
 
     mp_op = Operators(variant='mp')
     re_op = Operators(variant='re')

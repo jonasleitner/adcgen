@@ -1,6 +1,6 @@
-from sympy_adc.factor_intermediates import factor_intermediates
-from sympy_adc.func import import_from_sympy_latex
-from sympy_adc.simplify import simplify
+from adcgen.factor_intermediates import factor_intermediates
+from adcgen.func import import_from_sympy_latex
+from adcgen.simplify import simplify
 
 from sympy import S
 

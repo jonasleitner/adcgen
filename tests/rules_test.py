@@ -1,7 +1,7 @@
-from sympy_adc.rules import Rules
-from sympy_adc.expr_container import Expr
-from sympy_adc.sympy_objects import AntiSymmetricTensor
-from sympy_adc.indices import get_symbols
+from adcgen.rules import Rules
+from adcgen.expr_container import Expr
+from adcgen.sympy_objects import AntiSymmetricTensor
+from adcgen.indices import get_symbols
 
 from sympy import S
 

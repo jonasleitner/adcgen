@@ -1,5 +1,5 @@
-from sympy_adc.expr_container import Expr
-from sympy_adc.simplify import simplify
+from adcgen.expr_container import Expr
+from adcgen.simplify import simplify
 
 from sympy import S
 

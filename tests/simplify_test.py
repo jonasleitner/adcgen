@@ -1,8 +1,8 @@
-from sympy_adc.simplify import simplify_unitary
-from sympy_adc.sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, \
+from adcgen.simplify import simplify_unitary
+from adcgen.sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, \
     KroneckerDelta
-from sympy_adc.expr_container import Expr
-from sympy_adc.indices import get_symbols
+from adcgen.expr_container import Expr
+from adcgen.indices import get_symbols
 
 from sympy import S
 

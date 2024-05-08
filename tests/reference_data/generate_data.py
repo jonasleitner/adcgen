@@ -1,9 +1,9 @@
-from sympy_adc.operators import Operators
-from sympy_adc.groundstate import GroundState
-from sympy_adc.isr import IntermediateStates
-from sympy_adc.expr_container import Expr
-from sympy_adc.reduce_expr import factor_eri_parts, factor_denom
-from sympy_adc.simplify import simplify
+from adcgen.operators import Operators
+from adcgen.groundstate import GroundState
+from adcgen.isr import IntermediateStates
+from adcgen.expr_container import Expr
+from adcgen.reduce_expr import factor_eri_parts, factor_denom
+from adcgen.simplify import simplify
 
 import itertools
 import json

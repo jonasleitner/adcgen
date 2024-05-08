@@ -1,8 +1,8 @@
-from sympy_adc.expr_container import Expr
-from sympy_adc.eri_orbenergy import EriOrbenergy
-from sympy_adc.indices import get_symbols
-from sympy_adc.intermediates import Intermediates
-from sympy_adc.sympy_objects import AntiSymmetricTensor, SymmetricTensor, \
+from adcgen.expr_container import Expr
+from adcgen.eri_orbenergy import EriOrbenergy
+from adcgen.indices import get_symbols
+from adcgen.intermediates import Intermediates
+from adcgen.sympy_objects import AntiSymmetricTensor, SymmetricTensor, \
     NonSymmetricTensor
 
 from sympy import S, Rational

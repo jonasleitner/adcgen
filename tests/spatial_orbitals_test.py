@@ -1,11 +1,11 @@
-from sympy_adc.expr_container import Expr
-from sympy_adc.indices import Index, get_symbols
-from sympy_adc.intermediates import Intermediates
-from sympy_adc.simplify import simplify
-from sympy_adc.spatial_orbitals import (
+from adcgen.expr_container import Expr
+from adcgen.indices import Index, get_symbols
+from adcgen.intermediates import Intermediates
+from adcgen.simplify import simplify
+from adcgen.spatial_orbitals import (
     integrate_spin, transform_to_spatial_orbitals
 )
-from sympy_adc.sympy_objects import AntiSymmetricTensor, SymmetricTensor, \
+from adcgen.sympy_objects import AntiSymmetricTensor, SymmetricTensor, \
     NonSymmetricTensor, KroneckerDelta
 
 from sympy import S, Rational

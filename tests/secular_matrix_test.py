@@ -1,9 +1,9 @@
-from sympy_adc.expr_container import Expr
-from sympy_adc.simplify import simplify
-import sympy_adc.sort_expr as sort
-from sympy_adc.reduce_expr import reduce_expr
-from sympy_adc.factor_intermediates import factor_intermediates
-from sympy_adc.eri_orbenergy import EriOrbenergy
+from adcgen.expr_container import Expr
+from adcgen.simplify import simplify
+import adcgen.sort_expr as sort
+from adcgen.reduce_expr import reduce_expr
+from adcgen.factor_intermediates import factor_intermediates
+from adcgen.eri_orbenergy import EriOrbenergy
 
 from sympy import S
 

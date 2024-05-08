@@ -1,9 +1,9 @@
-from sympy_adc.expr_container import Expr
-from sympy_adc.func import (
+from adcgen.expr_container import Expr
+from adcgen.func import (
     _contraction, _contract_operator_string, wicks, evaluate_deltas
 )
-from sympy_adc.indices import Index, get_symbols
-from sympy_adc.sympy_objects import KroneckerDelta
+from adcgen.indices import Index, get_symbols
+from adcgen.sympy_objects import KroneckerDelta
 
 from sympy import S
 from sympy.physics.secondquant import F, Fd

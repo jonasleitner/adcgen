@@ -1,4 +1,4 @@
-from sympy_adc.indices import Indices
+from adcgen.indices import Indices
 
 
 class TestIndices:

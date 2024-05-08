@@ -1,4 +1,4 @@
-from sympy_adc.rules import Rules
+from adcgen.rules import Rules
 
 from sympy import S
 import pytest
