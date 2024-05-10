@@ -2,8 +2,10 @@ from adcgen.operators import Operators
 from adcgen.groundstate import GroundState
 from adcgen.isr import IntermediateStates
 from adcgen.expr_container import Expr
+from adcgen.properties import Properties
 from adcgen.reduce_expr import factor_eri_parts, factor_denom
-from adcgen.simplify import simplify
+from adcgen.simplify import simplify, remove_tensor
+from adcgen.factor_intermediates import factor_intermediates
 
 import itertools
 import json
@@ -168,6 +170,47 @@ class Generator:
                 for o in orders:
                     res = Expr(isr.overlap_precursor(o, b, indices))
                     results[variant][b][o] = str(res)
+        write_json(results, outfile)
+
+    def gen_adc_properties_expectation_value(self):
+        outfile = "properties_expectation_value.json"
+
+        to_generate = {'pp': {'ca': [0, 1, 2]}}
+
+        results = {}
+        for adc_variant, operators in to_generate.items():
+            results[adc_variant] = {}
+            isr = self.isr[adc_variant]
+            prop = Properties(isr)
+            for opstring, orders in operators.items():
+                results[adc_variant][opstring] = {}
+                for adc_order in orders:
+                    results[adc_variant][opstring][adc_order] = {}
+                    dump = results[adc_variant][opstring][adc_order]
+                    # dump the complex non symmetric result
+                    res = Expr(prop.expectation_value(
+                        adc_order=adc_order, opstring=opstring
+                    ))
+                    res.substitute_contracted()
+                    res = simplify(res)
+                    dump["expectation_value"] = str(res)
+                    # dump the real result for a symmetric operator
+                    # for a single state
+                    res.make_real()
+                    res.set_sym_tensors(["d"])
+                    res.rename_tensor("X", "Y")
+                    res = simplify(res)
+                    dump["real_symmetric_state_expectation_value"] = str(res)
+                    # dump the real symmetric density matrix
+                    dump["real_symmetric_state_dm"] = {}
+                    res = factor_intermediates(
+                        res, ['t_amplitude', 'mp_density'], adc_order
+                    )
+                    density = remove_tensor(res, "d")
+                    for block, expr in density.items():
+                        assert len(block) == 1
+                        block = block[0]
+                        dump["real_symmetric_state_dm"][block] = str(expr)
         write_json(results, outfile)
 
 

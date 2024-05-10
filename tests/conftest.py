@@ -10,6 +10,7 @@ def cls_instances():
     from adcgen.groundstate import Operators, GroundState
     from adcgen.isr import IntermediateStates
     from adcgen.secular_matrix import SecularMatrix
+    from adcgen.properties import Properties
 
     mp_op = Operators(variant='mp')
     re_op = Operators(variant='re')
@@ -20,13 +21,15 @@ def cls_instances():
     isr_pp = IntermediateStates(mp, variant='pp')
     isr_re_pp = IntermediateStates(re, variant='pp')
     m_pp = SecularMatrix(isr_pp)
+    prop_pp = Properties(isr_pp)
     return {
         'mp': {
             'op': mp_op,
             'gs': mp,
             'gs_with_singles': mp_singles,
             'isr_pp': isr_pp,
-            'm': m_pp
+            'm': m_pp,
+            'prop_pp': prop_pp,
         },
         're': {
             'op': re_op,
