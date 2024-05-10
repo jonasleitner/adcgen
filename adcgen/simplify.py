@@ -8,25 +8,35 @@ from sympy import Add, Pow, S, sqrt, Rational
 from collections import Counter, defaultdict
 
 
-def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
-    """Filter an expression and only return terms that contain certain tensors.
-       The names of the desired tensors need to be provided as list/tuple of
-       strings.
-       This filtering is implemented in 3 different ways, controlled by strict:
-        - 'high': return all terms that ONLY contain the desired tensors in the
-                  requested amount. E.g.: ['V', 'V'] returns only
+def filter_tensor(expr, t_strings: list[str], strict: str = 'low',
+                  ignore_amplitudes: bool = True) -> e.Expr:
+    """
+    Filter an expression keeping only terms that contain the desired tensors.
+
+    Parameters
+    ----------
+    t_strings : list[str]
+        List containing the desired tensor names.
+    struct : str, optional
+        3 possible options:
+        - 'high': return all terms that ONLY contain the desired tensors the
+                  requested amount of times, e.g., ['V', 'V'] returns only
                   terms that contain not other tensors than 'V*V'
                   Setting ignore_amplitudes, ignores all not requested
-                  amplitudes for this.
-        - 'medium': return all terms that contain the desired tensors in the
+                  t and ADC ampltiudes amplitudes.
+        - 'medium': return all terms that contain the desired tensors the
                     requested amount, but other tensors may additionally be
                     present in the term. E.g. ['V', 'V'] also returns terms
                     that contain 'V*V*x', where x may be any amount of
                     arbitrary other tensors.
-        - 'low': return all terms that contain all of the requested tensors.
-                 E.g. ['V', 'V'] return all terms that contain 'V' at least
+        - 'low': return all terms that contain all of the requested tensors,
+                 e.g., ['V', 'V'] returns all terms that contain 'V' at least
                  once.
-       """
+
+    Returns
+    Expr
+        The filtered expression.
+    """
 
     def check_term(term):
         available = [o.name for o in term.tensors for _ in range(o.exponent)]
@@ -70,7 +80,26 @@ def filter_tensor(expr, t_strings, strict='low', ignore_amplitudes=True):
     return e.Expr(filtered, **expr.assumptions)
 
 
-def find_compatible_terms(terms: list[e.Term]):
+def find_compatible_terms(terms: list[e.Term]) -> dict:
+    """
+    Determines the substitutions of contracted needed to map terms onto each
+    other.
+
+    Parameters
+    ----------
+    terms: list[Term]
+        The list of terms to compare and map onto each other.
+
+    Returns
+    -------
+    dict
+        Nested dictionary containing the indices of terms and the substitution
+        dict to map the terms onto each other, e.g., the substitutions to
+        map term j onto term i are stored as
+        {i: {j: substitutions}}.
+        If it was not possible to find a match for term_i, the inner dictionary
+        will be empty {i: {}}.
+    """
     from itertools import product, combinations
 
     def compare_terms(pattern: dict, other_pattern: dict, target: tuple,
@@ -246,7 +275,26 @@ def find_compatible_terms(terms: list[e.Term]):
 
 
 def simplify(expr: e.Expr) -> e.Expr:
-    """Simplify an expression by renaming indices. The new index names are
+    """
+    Simplify an expression by permuting contracted indices. Thereby, terms
+    are mapped onto each other reducing the number of terms.
+    Currently this does not work for denominators of the form (a + b + ...).
+    However, this restriction can often be bypassed by using symbolic,
+    denominators, i.e., using a tensor of the correct symmetry to represent the
+    denominator. Alternatively, the functions found in 'reduce_expr' are
+    capable to handle orbital energy denominators.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression to simplify
+
+    Returns
+    -------
+    Expr
+        The simplified expression.
+
+    Simplify an expression by renaming indices. The new index names are
        determined by establishing a mapping between the indices in different
        terms. If all indices in two terms share the same pattern (essentially
        occur on the same tensors), but have different names. The function will
@@ -278,9 +326,26 @@ def simplify(expr: e.Expr) -> e.Expr:
 
 def simplify_unitary(expr: e.Expr, t_name: str,
                      evaluate_deltas: bool = False) -> e.Expr:
-    """Simplifies an expression that contains unitary tensors by applying
-       U_pq * U_pr * Remainder = delta_qr * Remainder,
-       where the Remainder does not contain the index p."""
+    """
+    Simplifies an expression that contains unitary tensors by exploiting
+    U_pq * U_pr * Remainder = delta_qr * Remainder,
+    where the Remainder does not contain the index p.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression to simplify.
+    t_name : str
+        Name of the unitary tensor.
+    evaluate_deltas: bool, optional
+        If this is set, the generated KroneckerDeltas will be evaluated
+        before returning.
+
+    Returns
+    -------
+    Expr
+        The simplified expression.
+    """
     from . import func
     from itertools import combinations
 
@@ -359,10 +424,34 @@ def simplify_unitary(expr: e.Expr, t_name: str,
     return res
 
 
-def remove_tensor(expr: e.Expr, t_name: str):
-    """Removes the given tensor in each term of an expr by reverting the
-       contraction.
-       """
+def remove_tensor(expr: e.Expr, t_name: str) -> dict:
+    """
+    Removes a tensor from each term of an expression by undoing the contraction
+    of the remaining term with the tensor. The resulting expression is split
+    according to the blocks of the removed tensor. Note that only canonical
+    tensor blocks are considered, because the non-canonical blocks can be
+    generated from the canonical ones, e.g., removing a symmetric matrix d_{pq}
+    from an expression can only result in expressions for the 'oo', 'ov' and
+    'vv' blocks, since f_{ai} = f_{ia}.
+    The symmetry of the removed tensor is taken into account, such that the
+    original expression can be restored if all block expressions are
+    contracted with the corresponding tensor blocks again.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression where the tensor should be removed.
+    t_name : str
+        Name of the tensor that should be removed.
+
+    Returns
+    -------
+    dict
+        key: Tuple of removed tensor blocks
+        value: Part of the original expression that contained the corresponding
+               blocks. If contracted with the tensor blocks again, a part of
+               the original expression is recovered.
+    """
     from .sympy_objects import AntiSymmetricTensor, NonSymmetricTensor
 
     def remove(term: e.Term, tensor: e.Obj, target_indices: dict) -> e.Expr:
