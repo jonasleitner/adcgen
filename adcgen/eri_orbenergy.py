@@ -215,7 +215,7 @@ class EriOrbenergy:
            """
         # if the denominator is a number -> just return symmetry of eri part
         if self.denom.sympy.is_number:
-            return self.eri.symmetry(**kwargs)
+            return self.eri.symmetry(**kwargs) if eri_sym is None else eri_sym
         # if the eri part is just a number all possible permutations of the
         # denom would be required with their symmetry
         elif self.eri.sympy.is_number:

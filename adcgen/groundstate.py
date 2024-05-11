@@ -4,8 +4,7 @@ from math import factorial
 
 from .sympy_objects import AntiSymmetricTensor
 from .indices import Indices, n_ov_from_space
-from .misc import (cached_member, Inputerror,
-                   process_arguments, transform_to_tuple, validate_input)
+from .misc import cached_member, Inputerror, validate_input
 from .simplify import simplify
 from .func import gen_term_orders, wicks
 from .expr_container import Expr
@@ -13,17 +12,38 @@ from .operators import Operators
 
 
 class GroundState:
-    def __init__(self, hamiltonian, first_order_singles=False):
+    """
+    Constructs ground state expressions using Rayleigh-Schrödinger
+    perturbation theory.
+
+    Parameters
+    ----------
+    hamiltonian : Operators
+        An Operators instance to request the partitioned Hamiltonian and
+        other Operators.
+    first_order_singles : bool, optional
+        If set, the first order wavefunction will contain single amplitudes.
+        (Defaults to False)
+    """
+    def __init__(self, hamiltonian: Operators,
+                 first_order_singles: bool = False):
         if not isinstance(hamiltonian, Operators):
-            raise Inputerror('Invalid hamiltonian.')
+            raise Inputerror("Invalid hamiltonian.")
         self.indices = Indices()
         self.h = hamiltonian
         self.singles = first_order_singles
 
-    @process_arguments
     @cached_member
-    def energy(self, order):
-        """Returns the ground state energy of specified order."""
+    def energy(self, order: int):
+        """
+        Constructs an expression for the n'th-order ground state energy
+        contribution.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        """
         # NOTE: this function assumes a block diagonal H0
         # in the general case we have to include <0|H0|n>
 
@@ -45,10 +65,19 @@ class GroundState:
         print(f"E^({order}) = {e}")
         return e.sympy
 
-    def psi(self, order, braket):
-        """Returns the ground state wave function. The type of the wave
-           function needs to be specified via the braket string: 'bra' or
-           'ket'."""
+    def psi(self, order: int, braket: str):
+        """
+        Constructs the n'th-order ground state wavefunction without inserting
+        definitions of the respective ground state amplitudes.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        braket: str
+            Possible values: 'bra', 'ket'. Defines whether a bra or ket
+            wavefunction is constructed.
+        """
         # Can't cache ground state wave function!
         # Leads to an error for terms of the form:
         #  |1><2|1>... the two |1> need to have different indices!!
@@ -107,31 +136,47 @@ class GroundState:
         print(f"Build gs({order}) {braket} = ", latex(psi))
         return psi
 
-    def amplitude(self, order, space, indices):
-        """Return the n'th order ground state t-amplitude as defined by
-           Rayleigh-Schrödinger perturbation theory."""
+    def amplitude(self, order: int, space: str, indices: str):
+        """
+        Constructs the n'th-order definition for the ground state t-amplitudes.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        space : str
+            The excitation space, e.g., 'ph' or 'pphh' for singly or doubly
+            excited configurations.
+        indices : str
+            The indices the t-amplitude.
+        """
         variant = self.h._variant
         if variant == 'mp':
             return self.mp_amplitude(order, space, indices)
         elif variant == 're':
-            return self.re_amplitude(order, space, indices)
+            return self.amplitude_residual(order, space, indices)
         else:
             raise NotImplementedError("Amplitudes not implemented for "
                                       f"{self.h._variant}")
 
-    @process_arguments
     @cached_member
-    def mp_amplitude(self, order, space, indices):
-        """Computes the n'th order t-amplitude for the given space as computed
-           according to the MP amplitude equation, i.e., for a diagonal
-           0th order Hamiltonian."""
+    def mp_amplitude(self, order: int, space: str, indices: str):
+        """
+        Constructs the n'th-order definition for the MP t-amplitudes.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        space : str
+            The excitation space, e.g., 'ph' or 'pphh' for singly or doubly
+            excited configurations.
+        indices : str
+            The indices of the constructed t-amplitude.
+        """
         from .intermediates import orb_energy
 
-        space = transform_to_tuple(space)
-        indices = transform_to_tuple(indices)
         validate_input(order=order, space=space, indices=indices)
-        space = space[0]
-        indices = indices[0]
 
         n_ov = n_ov_from_space(space)
         if n_ov["n_occ"] != n_ov["n_virt"]:
@@ -192,13 +237,21 @@ class GroundState:
                 ).expand()
         return ret / denom
 
-    @process_arguments
     @cached_member
-    def re_amplitude(self, order, space, indices):
-        """Compute the n'th order amplitude for the given space according to
-           the RE amplitude equation, which should be valid for an arbitrary
-           0th order Hamiltonian.
-           """
+    def amplitude_residual(self, order: int, space: str, indices: str):
+        """
+        Constructs the n'th-order residual for ground state amplitudes.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        space : str
+            The excitation space, e.g., 'ph' or 'pphh' for singly or doubly
+            excited configurations.
+        indices : str
+            The indices of the constructed t-amplitude.
+        """
         # <Phi_k|0|n> + <Phi_k|1|n-1> - sum_{m=0}^n E^{(m)} t_k^{(n-m)} = 0
 
         # NOTE: Currently the implementation is general and should work for
@@ -208,6 +261,7 @@ class GroundState:
         #       wicks theorem! (Currently its done afterwards)
 
         # validate the input
+        validate_input(order=order, space=space, indices=indices)
         n_ov = n_ov_from_space(space)
         if n_ov['n_occ'] != n_ov['n_virt']:
             raise Inputerror(f"Invalid space for a RE t-amplitude: {space}.")
@@ -258,8 +312,16 @@ class GroundState:
                 ).expand()
         return res
 
-    def overlap(self, order):
-        """Computes the ground state overlap matrix."""
+    def overlap(self, order: int):
+        """
+        Computes the n'th-order contribution to the ground state overlap
+        matrix.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        """
         validate_input(order=order)
 
         # catch zeroth order
@@ -279,14 +341,24 @@ class GroundState:
         print(f"Build GS S^({order}) = {res}")
         return res.sympy
 
-    @process_arguments
     @cached_member
-    def expectation_value(self, order, opstring):
-        """Computes the expectation value for a given operator. The operator
-           is defined by the number of creation and annihilation operators
-           that must be provided as string. For example a two particle
-           operator is defined as 'ccaa'.
-           """
+    def expectation_value(self, order: int, opstring: str):
+        """
+        Constructs the n'th-order contribution to the expectation value for
+        the given operator.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        opstring : str
+            String that only contains the character 'c' and 'a', where
+            'c' and 'a' refer to creation and annihilation operators,
+            respectively. For instance, 'ccaa' requests a 2-particle operator.
+            Currently the order is not important as only the number of 'c' and
+            'a' characters is counted and creation operators are placed to the
+            left of annihilation operators.
+        """
         validate_input(order=order, opstring=opstring)
         # - import all mp wavefunctions. It should be possible here, because
         #   it is not possible to obtain a term |1>*x*|1>.
@@ -317,13 +389,19 @@ class GroundState:
             res += (norm * d).expand()
         return simplify(Expr(res)).sympy
 
-    def norm_factor(self, order):
-        """Computes all nth order terms of:
-           1 - sum_i S^(i) + (sum_i S^(i))^2 - ...
-           This accounts in the one and two particle dm for the
-           normalization of higher order terms.
-           S = a^2 sum_i=0 S^(i) = 1 -> a^2 = [sum_i=0 S^(i)]^(-1)
-           """
+    def norm_factor(self, order: int):
+        """
+        Constructs the n'th-order contribution of the factor
+        that corrects the the norm of the ground state wavefunction:
+        1 - sum_i S^(i) + (sum_i S^(i))^2 - ...
+        which is the result of a taylor expansion of a^2
+        S = a^2 sum_{i=0} S^{(i)} = 1 -> a^2 = [sum_{i=0} S^{(i)}]^{(-1)}.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        """
         # This can not be cached!
         # in case there is something like a(2)*a(2)*x
         # do the two a(2) need to be different?
@@ -348,12 +426,30 @@ class GroundState:
         print(f"norm_factor^({order}): {latex(norm_factor)}")
         return norm_factor
 
-    def expand_norm_factor(self, order, min_order=2):
-        """Expands f = (1 + x)^(-1) in a taylor series, where x is defined as
-           x = sum_i S^(i) - the sum of overlap matrices of order i.
-           The parameter min_order defines the first non_vanishing contribution
-           to S. All lower contributions are assumed to give either 1 or 0.
-           """
+    def expand_norm_factor(self, order, min_order=2) -> list:
+        """
+        Constructs the taylor expansion of the n'th-order contribution to the
+        normalization factor a
+        f = (1 + x)^(-1),
+        where x is defined as x = sum_i S^{(i)}.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        min_order : int, optional
+            The lowest order non-vanishing contribution of the overlap matrix S
+            excluding the zeroth order contribution which is assumed to have
+            a value of 1.
+
+        Returns
+        -------
+        list
+            Iterable containing tuples of prefactors and perturbation
+            theoretical orders, for instance with a min_order of 2 the
+            5'th order contribution reads
+            [(-1, [(5,)]), (1, [(2, 3), (3, 2)])].
+        """
         from sympy import symbols, diff, nsimplify
 
         validate_input(order=order, min_order=min_order)

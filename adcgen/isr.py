@@ -5,8 +5,7 @@ from math import factorial
 from .indices import (
     n_ov_from_space, repeated_indices, Indices, extract_names
 )
-from .misc import (cached_member, Inputerror, transform_to_tuple,
-                   validate_input, process_arguments)
+from .misc import cached_member, Inputerror, transform_to_tuple, validate_input
 from .simplify import simplify
 from .func import gen_term_orders, wicks, evaluate_deltas
 from .groundstate import GroundState
@@ -34,9 +33,8 @@ class IntermediateStates:
         self.variant = variant
         self.min_space = variants[variant]
 
-    @process_arguments
     @cached_member
-    def precursor(self, order, space, braket, indices):
+    def precursor(self, order: int, space: str, braket: str, indices: str):
         """Method to obtain precursor states.
            The indices of the precursor wavefunction need to be provided as
            string in the input (e.g. indices='ia' produces |PSI_{ia}^#>).
@@ -44,14 +42,12 @@ class IntermediateStates:
         from sympy.physics.secondquant import F, Fd, NO, Dagger
 
         # check input parameters
-        space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
         validate_input(order=order, space=space, braket=braket,
                        indices=indices)
         if len(indices) != 1:
             raise Inputerror(f"{indices} are not valid for constructing a "
                              "precursor state.")
-        space = space[0]
         indices = indices[0]
         # check that the space is valid for the given ADC variant
         if not self.validate_space(space):
@@ -72,7 +68,7 @@ class IntermediateStates:
 
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
-        # ADC results.
+        # ADC literature.
         operators = 1
         if idx.get('virt'):
             operators *= Mul(*[Fd(s) for s in idx['virt']])
@@ -198,7 +194,6 @@ class IntermediateStates:
               f" {latex(res)}")
         return res
 
-    @process_arguments
     @cached_member
     def overlap_precursor(self, order, block, indices):
         """Method to obtain precursor overlap matrices
@@ -248,7 +243,6 @@ class IntermediateStates:
         print(f"Build overlap {block} S_{indices}^({order}) = {res}")
         return res.sympy
 
-    @process_arguments
     @cached_member
     def s_root(self, order, block, indices):
         """Method to obtain S^{-0.5} of a given order.
@@ -292,8 +286,9 @@ class IntermediateStates:
                 relevant_idx = idx[:len(term)] + [idx[-1]]
                 i1 = pref
                 for o in term:
-                    i1 *= self.overlap_precursor(order=o, block=block,
-                                                 indices=(relevant_idx[:2]))
+                    i1 *= self.overlap_precursor(
+                        order=o, block=block, indices=tuple(relevant_idx[:2])
+                    )
                     del relevant_idx[0]
                     if i1 is S.Zero:
                         break
@@ -304,7 +299,6 @@ class IntermediateStates:
         print(f"Build {block} S_root_{indices}^({order}) = {latex(res)}")
         return res
 
-    @process_arguments
     @cached_member
     def intermediate_state(self, order, space, braket, indices):
         """Method for constructing an intermediate state using the provided
@@ -312,14 +306,12 @@ class IntermediateStates:
            """
 
         indices = transform_to_tuple(indices)
-        space = transform_to_tuple(space)
         validate_input(order=order, space=space, braket=braket,
                        indices=indices)
         if len(indices) != 1:
             raise Inputerror(f"{indices} are not valid for "
                              "constructing an intermediate state.")
         indices = indices[0]
-        space = space[0]
 
         # generate additional indices for the precursor state
         n_ov = n_ov_from_space(space)
@@ -349,7 +341,6 @@ class IntermediateStates:
               f"{braket} = {latex(res)}")
         return res
 
-    @process_arguments
     @cached_member
     def overlap_isr(self, order, block, indices):
         """Computes a block of the overlap matrix in the ISR basis."""
@@ -388,7 +379,6 @@ class IntermediateStates:
               latex(res))
         return res
 
-    @process_arguments
     @cached_member
     def amplitude_vector(self, indices, lr="right"):
         """Returns an amplitude vector using the provided indices.

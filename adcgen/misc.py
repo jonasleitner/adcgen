@@ -28,7 +28,9 @@ def cached_member(function):
     def wrapper(self, *args, **kwargs):
         # - transform all arguments to positional arguments
         #   and add not provided default arguments
-        bound_args: inspect.BoundArguments = func_sig.bind(self, *args, **kwargs)  # noqa E5001
+        bound_args: inspect.BoundArguments = (
+            func_sig.bind(self, *args, **kwargs)
+        )
         bound_args.apply_defaults()
         assert len(bound_args.kwargs) == 0
         args = bound_args.args[1:]  # remove self from the positional arguments
@@ -46,66 +48,6 @@ def cached_member(function):
         except KeyError:
             fun_cache[args] = result = function(self, *args)
         return result
-
-    return wrapper
-
-
-def process_arguments(function):
-    """Decorator for a function thats called with at least one argument.
-       All provided arguments (args and kwargs) are processed (sorted) if
-       necessary to avoid unnecessary calculations. For instance,
-       indices='ijab' and indices='abji' will both be sorted to 'ijab'.
-       """
-    from .indices import split_idx_string, index_space
-
-    def sort_spaces(spaces):
-        if spaces is None:  # catch default value
-            return None
-        # 'hhp,ph' -> 'phh,ph'
-        # also works for operator strings: 'acac' -> 'ccaa'
-        return ",".join(["".join(sorted(s, reverse=True)) for s in
-                         transform_to_tuple(spaces)])
-
-    def sort_indices(idx_string):
-        if idx_string is None:  # catch default value
-            return None
-        # expects something like: 'ak,ji' -> 'ka,ij'
-        sorted_str = []
-        for sub_str in transform_to_tuple(idx_string):
-            sorted_str.append("".join(sorted(
-                split_idx_string(sub_str), key=sort_idxstr_canonical
-            )))
-        return ",".join(sorted_str)
-
-    def sort_idxstr_canonical(s):
-        return index_space(s)[0], int(s[1:]) if s[1:] else 0, s[0]
-
-    sig = inspect.signature(function)
-    # determine all parameters of the wrapped function
-    params = list(sig.parameters.keys())[1:]  # remove self from params
-
-    # dict that connects argument names to the corresponding sorting functions
-    # order, min_order, braket, lr, subtract_gs, adc_order are int/bool
-    # -> nothing to sort
-    process = {
-            'opstring': sort_spaces,
-            'space': sort_spaces,
-            'indices': sort_indices,
-            'block': sort_spaces
-    }
-
-    @wraps(function)
-    def wrapper(self, *args, **kwargs):
-        # - process positional arguments
-        args = list(args)
-        for i, val in enumerate(args):
-            if (fun := process.get(params[i], None)) is not None:
-                args[i] = fun(val)
-        # - process keyword arguments
-        for arg, val in kwargs.items():
-            if (fun := process.get(arg, None)) is not None:
-                kwargs[arg] = fun(val)
-        return function(self, *args, **kwargs)
 
     return wrapper
 
@@ -148,7 +90,7 @@ def validate_input(**kwargs):
     # order, min_order, adc_order are expected as int!
     # space, block and indices as list/tuple or ',' separated string
     for var, val in kwargs.items():
-        if var in {'space', 'opstring'}:
+        if var in ['space', 'opstring']:
             tpl = transform_to_tuple(val)
             if len(tpl) != 1:
                 raise Inputerror(f'Invalid input for {var}: {val}.')

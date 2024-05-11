@@ -1,7 +1,6 @@
 from .func import gen_term_orders, wicks
 from .indices import extract_names, Indices, n_ov_from_space
-from .misc import (Inputerror, cached_member, transform_to_tuple,
-                   process_arguments, validate_input)
+from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .simplify import simplify
 from .expr_container import Expr
 from .rules import Rules
@@ -68,7 +67,6 @@ class Properties:
         else:
             return d, rules
 
-    @process_arguments
     @cached_member
     def op_block(self, order, block, opstring, subtract_gs=True):
         """Computes the contribution of the IJ block to the expectation
@@ -130,7 +128,6 @@ class Properties:
             res += (norm * expec).expand()
         return simplify(Expr(res)).sympy
 
-    @process_arguments
     @cached_member
     def expectation_value(self, adc_order, opstring, order=None,
                           subtract_gs=True):
@@ -182,7 +179,6 @@ class Properties:
                                      subtract_gs=subtract_gs)
         return res
 
-    @process_arguments
     @cached_member
     def trans_moment_space(self, order, space, opstring=None, lr_isr='left',
                            subtract_gs=True):
@@ -253,7 +249,6 @@ class Properties:
             res += (norm * trans_mom).expand()
         return simplify(Expr(res)).sympy
 
-    @process_arguments
     @cached_member
     def trans_moment(self, adc_order, opstring=None, order=None, lr_isr='left',
                      subtract_gs=True):

@@ -3,8 +3,7 @@ from sympy import sqrt, S
 from math import factorial
 
 from .indices import repeated_indices, Indices
-from .misc import (Inputerror, cached_member, transform_to_tuple,
-                   process_arguments, validate_input)
+from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .func import gen_term_orders, wicks, evaluate_deltas
 from .simplify import simplify
 from .expr_container import Expr
@@ -30,7 +29,6 @@ class SecularMatrix:
         else:
             return h, rules
 
-    @process_arguments
     @cached_member
     def precursor_matrix_block(self, order: int, block: str, indices: str,
                                subtract_gs: bool = True):
@@ -79,7 +77,6 @@ class SecularMatrix:
             res += (norm * matrix).expand()
         return simplify(Expr(res)).sympy
 
-    @process_arguments
     @cached_member
     def isr_matrix_block(self, order: int, block: str, indices: str,
                          subtract_gs: bool = True):
@@ -131,7 +128,6 @@ class SecularMatrix:
             res += (norm * matrix).expand()
         return simplify(Expr(res)).sympy
 
-    @process_arguments
     @cached_member
     def mvp_block_order(self, order: int, space: str, block: str,
                         indices: str, subtract_gs: bool = True):
@@ -205,7 +201,6 @@ class SecularMatrix:
             (prefactor_mvp * prefactor_ampl * m * y).expand()
         )
 
-    @process_arguments
     @cached_member
     def mvp(self, adc_order: int, space: str, indices: str, order: int = None,
             subtract_gs: bool = True):
@@ -251,7 +246,6 @@ class SecularMatrix:
                                             subtract_gs=subtract_gs)
         return mvp
 
-    @process_arguments
     @cached_member
     def expectation_value_block_order(self, order: int, block: str,
                                       subtract_gs: bool = True):
@@ -279,7 +273,6 @@ class SecularMatrix:
         #    -> already included in the mvp function
         return simplify(Expr(left * mvp)).sympy
 
-    @process_arguments
     @cached_member
     def expectation_value(self, adc_order: int, order: int = None,
                           subtract_gs: bool = True):
