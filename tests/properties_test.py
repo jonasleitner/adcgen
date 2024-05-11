@@ -7,17 +7,18 @@ import pytest
 
 class TestProperties():
     @pytest.mark.parametrize('adc_variant', ['pp'])
-    @pytest.mark.parametrize('opstring', ['ca'])
+    @pytest.mark.parametrize('n_particles', [1])
     @pytest.mark.parametrize('adc_order', [0, 1, 2])
-    def test_expectation_value(self, adc_variant, opstring, adc_order,
+    def test_expectation_value(self, adc_variant, n_particles, adc_order,
                                cls_instances, reference_data):
         # load the reference data
         ref = reference_data['properties_expectation_value']
-        ref = ref[adc_variant][opstring][adc_order]
+        ref = ref[adc_variant][n_particles][adc_order]
 
         # compute the complex non-symmetric s2s expec value
-        res = cls_instances["mp"]["prop_pp"].expectation_value(adc_order,
-                                                               opstring)
+        res = cls_instances["mp"]["prop_pp"].expectation_value(
+            adc_order=adc_order, n_particles=1
+        )
         res = Expr(res).substitute_contracted()
         ref_expec = ref["expectation_value"]
         assert simplify(res - ref_expec).sympy is S.Zero

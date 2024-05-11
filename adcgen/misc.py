@@ -83,14 +83,13 @@ def validate_input(**kwargs):
         'lr': lambda lr: lr in ['left', 'right'],  # left/right
         'block': lambda b: all(validate['space'](sp) for sp in b),
         'adc_order': lambda o: isinstance(o, int) and o >= 0,  # int
-        'opstring': lambda op: all(o in ['a', 'c'] for o in op),
         'lr_isr': lambda lr: lr in ['left', 'right'],  # left/right
     }
     # braket, lr are exprected as str!
     # order, min_order, adc_order are expected as int!
     # space, block and indices as list/tuple or ',' separated string
     for var, val in kwargs.items():
-        if var in ['space', 'opstring']:
+        if var == 'space':
             tpl = transform_to_tuple(val)
             if len(tpl) != 1:
                 raise Inputerror(f'Invalid input for {var}: {val}.')

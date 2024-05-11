@@ -40,15 +40,19 @@ class TestOperators:
             })
             assert rules == ref_rules
 
-    @pytest.mark.parametrize('opstring', ['ca', 'ccaa', 'cccaaa'])
-    def test_operator(self, variant, opstring, cls_instances, reference_data):
+    @pytest.mark.parametrize("n_create", [1, 2, 3])
+    @pytest.mark.parametrize("n_annihilate", [1, 2, 3])
+    def test_operator(self, variant, n_create, n_annihilate, cls_instances,
+                      reference_data):
         # parametrize variant to ensure that the operators do not depend
         # on the variant
 
         # load the reference data
-        ref = reference_data['operators'][opstring]
+        ref = reference_data['operators'][f"{n_create}_{n_annihilate}"]
 
-        op, rules = cls_instances[variant]['op'].operator(opstring)
+        op, rules = cls_instances[variant]['op'].operator(
+            n_create=n_create, n_annihilate=n_annihilate
+        )
         # need to substitute the contracted indices
         assert (ref - op).substitute_contracted().sympy is S.Zero
 

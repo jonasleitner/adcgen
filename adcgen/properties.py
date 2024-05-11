@@ -43,40 +43,68 @@ class Properties:
         self.h = l_isr.gs.h
         self.indices = Indices()
 
-    def operator(self, order, opstring, subtract_gs=True):
-        """Returns a operator - defined by opstring. For instance, a one
-           particle operator may be obtained by requesting the opstring 'ca'.
-           If subtract_gs is set, the ground state expectation value of the
-           corresponding operator is subtracted."""
-        # if the operator string does not hold an equivalent amount of creation
-        # and annihilation operators, the ground state expectation value will
-        # be Zero. But I guess not preventing the computation should be fine,
-        # because it should not introduce a lot of overhead. Though I should
-        # probably introduce the operator counting in a custom wicks
-        # to reduce the overhead.
-        validate_input(order=order, opstring=opstring)
+    def operator(self, order: int, n_create: int, n_annihilate: int,
+                 subtract_gs=True):
+        """
+        Constructs an arbitrary n'th-order operator.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        n_create : int
+            The number of creation operators. Placed left of the annihilation
+            operators.
+        n_annihilate : int
+            The number of annihilation operators. Placed right of the
+            creation operators.
+        subtract_gs : bool, optional
+            If set, the ground state expectation value of the corresponding
+            operator is subtracted if the operator string contains an equal
+            amount of creation and annihilation operators (otherwise the
+            ground state contribution vanishes).
+            (Defaults to True)
+        """
+        validate_input(order=order)
 
         if order == 0:
-            d, rules = self.h.operator(opstring=opstring)
+            d, rules = self.h.operator(n_create=n_create,
+                                       n_annihilate=n_annihilate)
         else:
             d, rules = sympify(0), Rules()
 
-        if subtract_gs:
-            e0 = self.gs.expectation_value(order=order, opstring=opstring)
+        if subtract_gs and n_create == n_annihilate:
+            e0 = self.gs.expectation_value(order=order, n_particles=n_create)
             return d - e0, rules
         else:
             return d, rules
 
     @cached_member
-    def op_block(self, order, block, opstring, subtract_gs=True):
-        """Computes the contribution of the IJ block to the expectation
-           value of the given operator
-           d_{pq...} X_I <I|pq...|J>^(n) Y_J.
-           If subtract_gs is set, the ground state contribution is subtracted.
-           """
+    def expec_block_contribution(self, order: int, block: str,
+                                 n_particles: int = 1,
+                                 subtract_gs: bool = True):
+        """
+        Constructs the n'th order contribution of an individual block IJ to the
+        expectation value of the operator
+        d_{pq...} X_I <I|pq...|J>^(n) Y_J.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        block : str
+            The block of the ADC matrix for which the expectation value
+            is generated, e.g., 'ph,pphh' for the 1p-1h/2p-2h block.
+        n_particles : int
+            The number of creation and annihilation operators in the operator
+            string. (Defaults to 1.)
+        subtract_gs : bool, optional
+            If set, the ground state expectation value of the corresponding
+            operator is subtracted from the result. (Defaults to True)
+        """
 
         block = transform_to_tuple(block)
-        validate_input(order=order, block=block, opstring=opstring)
+        validate_input(order=order, block=block)
 
         # generate indices for the block and compute the prefactors for the
         # contraction over the block space
@@ -112,7 +140,12 @@ class Properties:
             )
             expec = 0
             for term in orders_d:
-                op, rules = self.operator(term[1], opstring, subtract_gs)
+                op, rules = self.operator(order=term[1],
+                                          n_create=n_particles,
+                                          n_annihilate=n_particles,
+                                          subtract_gs=subtract_gs)
+                if op is S.Zero:
+                    continue
                 i1 = (left_pref * right_pref * left_ampl *
                       self.l_isr.intermediate_state(order=term[0],
                                                     space=block[0],
@@ -129,21 +162,34 @@ class Properties:
         return simplify(Expr(res)).sympy
 
     @cached_member
-    def expectation_value(self, adc_order, opstring, order=None,
-                          subtract_gs=True):
-        """Computes: sum_IJ sum_pq... d_{pq...} X_I <I|pq...|J> Y_J
-           for ADC(n), i.e., for all blocks present in the ADC(n) matrix.
-           The desired operator may be defined via the operator
-           string, where e.g. 'ccaa' gives the expectation value for a two
-           particle operator.
-           If additionally order is specified, only the m'th
-           order contributions of all blocks that are present in the ADC(n)
-           secular matrix are determined - if the blocks are expanded through
-           the desired pt order.
-           If subtract_gs is set, the ground state contribution will be
-           subtracted.
-           """
-        validate_input(adc_order=adc_order, opstring=opstring)
+    def expectation_value(self, adc_order: int, n_particles: int = 1,
+                          order: int = None, subtract_gs: bool = True):
+        """
+        Constructs the expectation value taking all blocks into account
+        that are available at the specified order of perturbation theory
+        in the ADC secular matrix
+        sum_IJ sum_pq... d_{pq...} X_I <I|pq...|J> Y_J.
+        Note that also lower order contributions are considered, i.e., the
+        ADC(0) and ADC(1) expectation values are included in the ADC(2)
+        expectation value.
+
+        Parameters
+        ----------
+        adc_order : int
+            The perturbation theoretical order of the ADC scheme for which the
+            expectation value is generated.
+        n_particles : int
+            The number of creation and annihilation operators in the operator
+            string. (Defaults to 1)
+        order : int, optional
+            Only consider contributions of the specified order, e.g.,
+            only the zeroth order contributions of all available blocks in
+            the ADC(n) matrix.
+        subtract_gs : bool, optional
+            If set, the ground state expectation value is subtracted from the
+            result. (Defaults to True)
+        """
+        validate_input(adc_order=adc_order)
         if order is not None:
             validate_input(order=order)
         # get all blocks that are present in the ADC(n) secular matrix and
@@ -169,27 +215,56 @@ class Properties:
             # combine the two spaces to build the correct block with mixed
             # ADC variant spaces.
             block = (l_block[0], r_block[1])
-            if order is not None:
-                res += self.op_block(order=order, block=block,
-                                     opstring=opstring,
-                                     subtract_gs=subtract_gs)
-                continue
-            for o in range(max_order + 1):
-                res += self.op_block(order=o, block=block, opstring=opstring,
-                                     subtract_gs=subtract_gs)
+            if order is None:
+                for o in range(max_order + 1):
+                    res += self.expec_block_contribution(
+                        order=o, block=block, n_particles=n_particles,
+                        subtract_gs=subtract_gs
+                    )
+            else:
+                res += self.expec_block_contribution(
+                    order=order, block=block, n_particles=n_particles,
+                    subtract_gs=subtract_gs
+                )
         return res
 
     @cached_member
-    def trans_moment_space(self, order, space, opstring=None, lr_isr='left',
-                           subtract_gs=True):
-        """Computes d_pq... X_I <I|pq...|Psi_0>^(n).
-           The transition operator may be defined via the operator string
-           by the number of creation and annihilation operators it includes,
-           e.g. 'a' defines a single annihilation operator (IP-ADC).
-           If the class holds two different ISR, one may specify which ISR
-           object should be used for the computation of the transition moment
-           via the lr_isr argument, that takes either left or right.
-           """
+    def trans_moment_space(self, order: int, space: str, n_create: int = None,
+                           n_annihilate: int = None, lr_isr: str = 'left',
+                           subtract_gs: bool = True):
+        """
+        Constructs the n'th-order contribution to the transition moment
+        for the desired excitation space and operator
+        d_pq... X_I <I|pq...|Psi_0>^(n).
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        space : str
+            The excitation space, e.g., 'ph' or 'pphh' for singly or doubly
+            excited configurations, respectively.
+        n_create : int, optional
+            The number of creation operators in the operator string.
+            By default, the operator string with the lowest amount of
+            creation and annihilation operators is constructed for which in
+            general a non-zero result can be expected, e.g., 'ca' and 'a'
+            for PP- and IP-ADC, respectively.
+        n_annihilate : int, optional
+            The number of annihilation operators in the operator string.
+            By default, the operator string with the lowest amount of
+            creation and annihilation operators is constructed for which in
+            general a non-zero result can be expected, e.g., 'ca' and 'a'
+            for PP- and IP-ADC, respectively.
+        l_isr : str, optional
+            Controls whether the left or right 'IntermediateStates' instance
+            is used to construct the transition moment contribution.
+            (Defaults to 'left')
+        subtract_gs : bool, optional
+            If set, ground state contributions are subtracted if the
+            operator contains an equal amount of creation and annihilation
+            operators. (Defaults to True)
+        """
         # Subtraction of the ground state contribution is probably not
         # necessary, because all terms cancel (at least in second order
         # Singles PP-ADC). For all other ADC variants (IP/EA...) the ground
@@ -198,11 +273,7 @@ class Properties:
         # Give the option anyway, because I'm not sure whether it will be
         # required at higher orders for PP-ADC
 
-        space = transform_to_tuple(space)
         validate_input(order=order, space=space, lr_isr=lr_isr)
-        if opstring is not None:
-            validate_input(opstring=opstring)
-        space = space[0]
 
         # - generate indices for the ISR state
         n_ov = n_ov_from_space(space)
@@ -215,8 +286,13 @@ class Properties:
 
         # - if no operator string is given -> generate a default, i.e.
         #   'a' for IP- / 'ca' for PP-ADC
-        if opstring is None:
-            opstring = isr.min_space[0].replace('p', 'c').replace('h', 'a')
+        if n_create is None and n_annihilate is None:
+            n_create = isr.min_space[0].count('p')
+            n_annihilate = isr.min_space[0].count('h')
+        elif n_create is None:
+            n_create = 0
+        elif n_annihilate is None:
+            n_annihilate = 0
 
         # - generate amplitude vector and prefactor for the summation
         ampl = isr.amplitude_vector(indices=idx, lr='left')
@@ -238,7 +314,11 @@ class Properties:
             )
             trans_mom = 0
             for term in orders_d:
-                op, rules = self.operator(term[1], opstring, subtract_gs)
+                op, rules = self.operator(order=term[1], n_create=n_create,
+                                          n_annihilate=n_annihilate,
+                                          subtract_gs=subtract_gs)
+                if op is S.Zero:
+                    continue
                 i1 = (pref * ampl *
                       isr.intermediate_state(order=term[0], space=space,
                                              braket='bra', indices=idx) *
@@ -250,21 +330,46 @@ class Properties:
         return simplify(Expr(res)).sympy
 
     @cached_member
-    def trans_moment(self, adc_order, opstring=None, order=None, lr_isr='left',
-                     subtract_gs=True):
-        """Computes sum_I sum_pq... d_pq... X_I <I|pq...|Psi_0>
-           for ADC(n), taking all necessary excitation spaces I into
-           account.
-           The operator x may be defined via the operator string (e.g. 'ca'
-           gives a one_particle operator for PP-ADC). If no operator is
-           provided, the standard transition operator for the ADC variant will
-           be constructed by default, i.e. 'a' for IP and 'c' for EA.
-           If the parameter order is given, only contribution of the desired
-           order are computed.
-           The parameter lr_isr controls which isr of the possibly two
-           available isr instances should be used.
-           Subtract_gs controls, wether the ground state expectation value
-           is subtracted or not."""
+    def trans_moment(self, adc_order: int, n_create: int = None,
+                     n_annihilate: int = None, order: int = None,
+                     lr_isr: str = 'left', subtract_gs: bool = True):
+        """
+        Constructs the ADC(n) transition moment
+        sum_I sum_pq... d_pq... X_I <I|pq...|Psi_0>
+        considering all available configurations.
+        Note that also lower order contributions are considered, i.e.,
+        the ADC(0) and ADC(1) contributions are included in the ADC(2)
+        transition moments.
+
+        Parameters
+        ----------
+        adc_order : int
+            The perturbation theoretical order of the ADC scheme.
+        n_create : int, optional
+            The number of creation operators in the operator string.
+            By default, the operator string with the lowest amount of
+            creation and annihilation operators is constructed for which in
+            general a non-zero result can be expected, e.g., 'ca' and 'a'
+            for PP- and IP-ADC, respectively.
+        n_annihilate : int, optional
+            The number of annihilation operators in the operator string.
+            By default, the operator string with the lowest amount of
+            creation and annihilation operators is constructed for which in
+            general a non-zero result can be expected, e.g., 'ca' and 'a'
+            for PP- and IP-ADC, respectively.
+        order : int, optional
+            Only consider contributions of the specified order, e.g.,
+            only the zeroth order contributions of all available configurations
+            in the ADC(n) matrix.
+        lr_isr : str, optional
+            Constrols whether the left or right 'IntermediateStates' instance
+            is used to construct the transition moment.
+            (Defaults to 'left')
+        subtract_gs : bool, optional
+            If set, the ground state contributions are subtracted if the
+            operator contains an equal amount of creation and annihilation
+            operators. (Defaults to True)
+        """
 
         # obtain the maximum order through which all the spaces are expanded
         # in the secular matrix
@@ -274,18 +379,20 @@ class Properties:
 
         res = 0
         for space, max_order in max_orders.items():
-            # the space is not expanded through the desired order
-            if order is not None and max_order < order:
-                continue
-            if order is not None:
+            if order is None:
+                for o in range(max_order + 1):
+                    res += self.trans_moment_space(order=o, space=space,
+                                                   n_create=n_create,
+                                                   n_annihilate=n_annihilate,
+                                                   lr_isr=lr_isr,
+                                                   subtract_gs=subtract_gs)
+            else:
+                # the space is not expanded through the desired order
+                if max_order < order:
+                    continue
                 res += self.trans_moment_space(order=order, space=space,
-                                               opstring=opstring,
-                                               lr_isr=lr_isr,
-                                               subtract_gs=subtract_gs)
-                continue
-            for o in range(max_order + 1):
-                res += self.trans_moment_space(order=o, space=space,
-                                               opstring=opstring,
+                                               n_create=n_create,
+                                               n_annihilate=n_annihilate,
                                                lr_isr=lr_isr,
                                                subtract_gs=subtract_gs)
         return res

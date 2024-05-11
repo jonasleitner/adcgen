@@ -7,7 +7,13 @@
     "h0": "- {V^{pi}_{qi}} {a^\\dagger_{p}} a_{q} + \\frac{{V^{pq}_{rs}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{s} a_{r}}{4} + {f^{p}_{q}} {a^\\dagger_{p}} a_{q}",
     "h1": "- {V^{pi}_{qi}} {a^\\dagger_{p}} a_{q} + \\frac{{V^{pq}_{rs}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{s} a_{r}}{4} + {f^{p}_{q}} {a^\\dagger_{p}} a_{q}"
   },
-  "ca": "{d^{p}_{q}} {a^\\dagger_{p}} a_{q}",
-  "ccaa": "\\frac{{d^{pq}_{rs}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{s} a_{r}}{4}",
-  "cccaaa": "\\frac{{d^{pqr}_{stu}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{u} a_{t} a_{s}}{36}"
+  "1_1": "{d^{p}_{q}} {a^\\dagger_{p}} a_{q}",
+  "1_2": "\\frac{{d^{p}_{qr}} {a^\\dagger_{p}} a_{r} a_{q}}{2}",
+  "1_3": "\\frac{{d^{p}_{qrs}} {a^\\dagger_{p}} a_{s} a_{r} a_{q}}{6}",
+  "2_1": "\\frac{{d^{pq}_{r}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{r}}{2}",
+  "2_2": "\\frac{{d^{pq}_{rs}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{s} a_{r}}{4}",
+  "2_3": "\\frac{{d^{pq}_{rst}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{t} a_{s} a_{r}}{12}",
+  "3_1": "\\frac{{d^{pqr}_{s}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{s}}{6}",
+  "3_2": "\\frac{{d^{pqr}_{st}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{t} a_{s}}{12}",
+  "3_3": "\\frac{{d^{pqr}_{stu}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{u} a_{t} a_{s}}{36}"
 }

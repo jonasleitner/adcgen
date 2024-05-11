@@ -138,7 +138,7 @@ class GroundState:
 
     def amplitude(self, order: int, space: str, indices: str):
         """
-        Constructs the n'th-order definition for the ground state t-amplitudes.
+        Constructs the n'th-order expression for the ground state t-amplitudes.
 
         Parameters
         ----------
@@ -162,7 +162,7 @@ class GroundState:
     @cached_member
     def mp_amplitude(self, order: int, space: str, indices: str):
         """
-        Constructs the n'th-order definition for the MP t-amplitudes.
+        Constructs the closed n'th-order expression for the MP t-amplitudes.
 
         Parameters
         ----------
@@ -342,7 +342,7 @@ class GroundState:
         return res.sympy
 
     @cached_member
-    def expectation_value(self, order: int, opstring: str):
+    def expectation_value(self, order: int, n_particles: int):
         """
         Constructs the n'th-order contribution to the expectation value for
         the given operator.
@@ -351,15 +351,11 @@ class GroundState:
         ----------
         order : int
             The perturbation theoretical order.
-        opstring : str
-            String that only contains the character 'c' and 'a', where
-            'c' and 'a' refer to creation and annihilation operators,
-            respectively. For instance, 'ccaa' requests a 2-particle operator.
-            Currently the order is not important as only the number of 'c' and
-            'a' characters is counted and creation operators are placed to the
-            left of annihilation operators.
+        n_particles : int
+            The number of creation and annihilation operators in the operator
+            string.
         """
-        validate_input(order=order, opstring=opstring)
+        validate_input(order=order)
         # - import all mp wavefunctions. It should be possible here, because
         #   it is not possible to obtain a term |1>*x*|1>.
         wfn = {}
@@ -372,7 +368,8 @@ class GroundState:
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
         res = 0
         # get the operator
-        op, rules = self.h.operator(opstring=opstring)
+        op, rules = self.h.operator(n_create=n_particles,
+                                    n_annihilate=n_particles)
         # iterate over all norm*d combinations of n'th order
         for norm_term in orders:
             norm = self.norm_factor(norm_term[0])

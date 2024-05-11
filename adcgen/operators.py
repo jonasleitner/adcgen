@@ -1,4 +1,4 @@
-from .misc import cached_property, cached_member, validate_input
+from .misc import cached_property, cached_member
 from .indices import Indices
 from .rules import Rules
 from .sympy_objects import AntiSymmetricTensor
@@ -47,27 +47,26 @@ class Operators:
             )
 
     @cached_member
-    def operator(self, opstring: str):
+    def operator(self, n_create: int, n_annihilate: int):
         """
-        Constructs an arbitrary N-particle operator.
+        Constructs an arbitrary second quantized operator placing creation
+        operators to the left of annihilation operators.
 
         Parameters
         ----------
-        opstring : str
-            String that only contains the character 'c' and 'a', where
-            'c' and 'a' refer to creation and annihilation operators,
-            respectively. For instance, 'ccaa' requests a 2-particle operator.
-            Currently, the order is not important as only the number of
-            'c' and 'a' is counted and creation operators are placed to the
-            left of annihilation operators.
+        n_create : int
+            The number of creation operators. Placed left of the annihilation
+            operators.
+        n_annihilate : int
+            The number of annihilation operators. Placed right of the creation
+            operators.
         """
-        validate_input(opstring=opstring)
-        n_create = opstring.count('c')
-        idx = self._indices.get_generic_indices(n_g=len(opstring))["general"]
+        idx = self._indices.get_generic_indices(n_g=n_create + n_annihilate)
+        idx = idx["general"]
         create = idx[:n_create]
         annihilate = idx[n_create:]
 
-        pref = Rational(1, factorial(len(create)) * factorial(len(annihilate)))
+        pref = Rational(1, factorial(n_create) * factorial(n_annihilate))
         d = AntiSymmetricTensor('d', create, annihilate)
         op = Mul(*[Fd(s) for s in create]) * \
             Mul(*[F(s) for s in reversed(annihilate)])

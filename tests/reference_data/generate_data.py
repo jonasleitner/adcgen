@@ -56,11 +56,12 @@ class Generator:
                 Expr(op.h1[0]).substitute_contracted()
             )
         # general operators
-        for op_string in ['ca', 'ccaa', 'cccaaa']:
-            op = self.op['mp']  # does not depend on the variant
-            results[op_string] = str(
-                Expr(op.operator(op_string)[0]).substitute_contracted()
-            )
+        for n_create in range(1, 4):
+            for n_annihilate in range(1, 4):
+                op = self.op["mp"]
+                res = Expr(op.operator(n_create, n_annihilate)[0])
+                res.substitute_contracted()
+                results[f"{n_create}_{n_annihilate}"] = str(res)
         write_json(results, outfile)
 
     def gen_gs_energy(self):
@@ -175,21 +176,21 @@ class Generator:
     def gen_adc_properties_expectation_value(self):
         outfile = "properties_expectation_value.json"
 
-        to_generate = {'pp': {'ca': [0, 1, 2]}}
+        to_generate = {'pp': {1: [0, 1, 2]}}
 
         results = {}
         for adc_variant, operators in to_generate.items():
             results[adc_variant] = {}
             isr = self.isr[adc_variant]
             prop = Properties(isr)
-            for opstring, orders in operators.items():
-                results[adc_variant][opstring] = {}
+            for n_particles, orders in operators.items():
+                results[adc_variant][n_particles] = {}
                 for adc_order in orders:
-                    results[adc_variant][opstring][adc_order] = {}
-                    dump = results[adc_variant][opstring][adc_order]
+                    results[adc_variant][n_particles][adc_order] = {}
+                    dump = results[adc_variant][n_particles][adc_order]
                     # dump the complex non symmetric result
                     res = Expr(prop.expectation_value(
-                        adc_order=adc_order, opstring=opstring
+                        adc_order=adc_order, n_particles=n_particles
                     ))
                     res.substitute_contracted()
                     res = simplify(res)

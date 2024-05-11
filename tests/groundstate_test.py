@@ -86,14 +86,14 @@ class TestGroundState():
                 raise NotImplementedError()
             assert ampl.sympy is S.Zero
 
-    @pytest.mark.parametrize('operator', ['ca'])
-    def test_expectation_value(self, order: int, operator: str, cls_instances,
-                               reference_data):
+    @pytest.mark.parametrize('n_particles', [1])
+    def test_expectation_value(self, order: int, n_particles: int,
+                               cls_instances, reference_data):
         # load the reference data
         ref = reference_data["mp_1p_dm"][order]
 
         # compute the expectation value
-        expec = cls_instances['mp']['gs'].expectation_value(order, operator)
+        expec = cls_instances['mp']['gs'].expectation_value(order, n_particles)
         expec = Expr(expec)
         ref_expec = ref['expec_val']
         assert simplify(ref_expec - expec).sympy is S.Zero
