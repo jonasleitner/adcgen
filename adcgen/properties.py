@@ -19,7 +19,7 @@ class Properties:
        """
 
     def __init__(self, l_isr, r_isr=None):
-        from .isr import IntermediateStates
+        from .intermediate_states import IntermediateStates
         from .secular_matrix import SecularMatrix
 
         if not isinstance(l_isr, IntermediateStates) or r_isr is not None \

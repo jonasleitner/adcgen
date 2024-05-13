@@ -1,6 +1,6 @@
 from .operators import Operators
 from .groundstate import GroundState
-from .isr import IntermediateStates
+from .intermediate_states import IntermediateStates
 from .secular_matrix import SecularMatrix
 from .properties import Properties
 from .indices import Indices, get_symbols

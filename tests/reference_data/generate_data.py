@@ -1,6 +1,6 @@
 from adcgen.operators import Operators
 from adcgen.groundstate import GroundState
-from adcgen.isr import IntermediateStates
+from adcgen.intermediate_states import IntermediateStates
 from adcgen.expr_container import Expr
 from adcgen.properties import Properties
 from adcgen.reduce_expr import factor_eri_parts, factor_denom

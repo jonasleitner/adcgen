@@ -12,7 +12,7 @@ from .rules import Rules
 
 class SecularMatrix:
     def __init__(self, isr):
-        from .isr import IntermediateStates
+        from .intermediate_states import IntermediateStates
 
         if not isinstance(isr, IntermediateStates):
             raise Inputerror("Invalid intermediate states object.")

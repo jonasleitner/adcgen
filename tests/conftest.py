@@ -8,7 +8,7 @@ from adcgen.func import import_from_sympy_latex
 @pytest.fixture(scope='session')
 def cls_instances():
     from adcgen.groundstate import Operators, GroundState
-    from adcgen.isr import IntermediateStates
+    from adcgen.intermediate_states import IntermediateStates
     from adcgen.secular_matrix import SecularMatrix
     from adcgen.properties import Properties
 
