@@ -462,24 +462,16 @@ class IntermediateStates:
             Whether a left (X) or right (Y) amplitude vector is constructed
             (default: 'right').
         """
-        # TODO: this should probably be a function.
         from .sympy_objects import AntiSymmetricTensor
 
         validate_input(indices=indices, lr=lr)
 
         idx = self.indices.get_indices(indices)
-        # add empty list if e.g. only occ indices have been provided (IP)
-        for ov in ["occ", "virt"]:
-            if ov not in idx:
-                idx[ov] = []
+        occ = idx["occ"] if "occ" in idx else []
+        virt = idx["virt"] if "virt" in idx else []
 
-        t_string = {
-            "right": "Y",
-            "left": "X",
-        }
-        return AntiSymmetricTensor(
-            t_string[lr], tuple(idx["virt"]), tuple(idx["occ"])
-        )
+        name = "Y" if lr == "right" else "X"
+        return AntiSymmetricTensor(name, virt, occ)
 
     def expand_S_taylor(self, order: int, min_order=2) -> list:
         """

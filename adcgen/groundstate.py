@@ -1,5 +1,5 @@
 from sympy import Rational, latex, sympify, Mul, S
-from sympy.physics.secondquant import NO, F, Fd
+from sympy.physics.secondquant import NO, F, Fd, Dagger
 from math import factorial
 
 from .sympy_objects import AntiSymmetricTensor
@@ -95,33 +95,25 @@ class GroundState:
             return sympify(1)
 
         # generalized gs wavefunction generation
-        tensor_string = {
-            "bra": f"t{order}cc",
-            "ket": f"t{order}"
-        }
-        get_ov = {
-            "bra": lambda ov: [other for other in ["occ", "virt"]
-                               if other != ov][0],
-            "ket": lambda ov: ov
-        }
-        get_ov = get_ov[braket]
-        idx = {'occ': [], 'virt': []}
+        tensor_name = f"t{order}"
+        if braket == "bra":
+            tensor_name += "cc"
+        idx = self.indices.get_generic_indices(n_o=2*order, n_v=2*order)
         psi = 0
         for excitation in range(1, order * 2 + 1):
-            # generate 1 additional o/v symbol pair, e.g. singles: ia,
-            # doubles: ijab, etc. -> reuse the indices from the lower spaces.
-            additional_idx = self.indices.get_generic_indices(n_o=1, n_v=1)
-            idx['occ'].extend(additional_idx['occ'])
-            idx['virt'].extend(additional_idx['virt'])
             # skip singles for the first order wavefunction if
             # they are not requested
             if order == 1 and not self.singles and excitation == 1:
                 continue
-            t = AntiSymmetricTensor(
-                tensor_string[braket], idx["virt"], idx["occ"]
-            )
-            operators = Mul(*[Fd(s) for s in idx[get_ov('virt')]]) * \
-                Mul(*[F(s) for s in reversed(idx[get_ov('occ')])])
+            # build tensor
+            virt = idx["virt"][:excitation]
+            occ = idx["occ"][:excitation]
+            t = AntiSymmetricTensor(tensor_name, virt, occ)
+            # build operators
+            operators = (Mul(*[Fd(s) for s in virt]) *
+                         Mul(*[F(s) for s in reversed(occ)]))
+            if braket == "bra":
+                operators = Dagger(operators)
             # prefactor for lifting index restrictions
             prefactor = Rational(1, factorial(excitation) ** 2)
             # For signs: Decided to subtract all Doubles to stay consistent
@@ -129,7 +121,7 @@ class GroundState:
             #            The remaining amplitudes (S/T/Q...) are added!
             #            (denominator for Triples: i+j+k-a-b-c
             #                             Doubles: a+b-i-j)
-            if excitation == 2:
+            if excitation == 2:  # doubles
                 psi -= prefactor * t * NO(operators)
             else:
                 psi += prefactor * t * NO(operators)
