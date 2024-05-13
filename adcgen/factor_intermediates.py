@@ -37,6 +37,10 @@ def factor_intermediates(expr, types_or_names: str | list[str] = None,
     else:
         itmd_to_factor: dict = itmd.available
 
+    if max_order is not None:
+        itmd_to_factor = {n: itmd_cls for n, itmd_cls in itmd_to_factor.items()
+                          if itmd_cls.order <= max_order}
+
     print('\n\n', '#'*80, '\n', " "*25, "INTERMEDIATE FACTORIZATION\n", '#'*80,
           "\n", sep='')
     print(f"Trying to factor intermediates in expr of length {len(expr)}\n")

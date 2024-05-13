@@ -20,12 +20,14 @@ class Generator:
         mp_with_singles = GroundState(mp_op, first_order_singles=True)
         re = GroundState(re_op, first_order_singles=False)
         isr_pp = IntermediateStates(mp, variant='pp')
+        prop_pp = Properties(isr_pp)
         self.op = {'mp': mp_op,
                    're': re_op}
         self.gs = {'mp': mp,
                    're': re,
                    'mp_with_singles': mp_with_singles}
         self.isr = {'pp': isr_pp}
+        self.prop = {'pp': prop_pp}
 
         self.names = names
 
@@ -181,8 +183,7 @@ class Generator:
         results = {}
         for adc_variant, operators in to_generate.items():
             results[adc_variant] = {}
-            isr = self.isr[adc_variant]
-            prop = Properties(isr)
+            prop = self.prop[adc_variant]
             for n_particles, orders in operators.items():
                 results[adc_variant][n_particles] = {}
                 for adc_order in orders:
@@ -212,6 +213,46 @@ class Generator:
                         assert len(block) == 1
                         block = block[0]
                         dump["real_symmetric_state_dm"][block] = str(expr)
+        write_json(results, outfile)
+
+    def gen_adc_properties_trans_moment(self):
+        outfile = "properties_trans_moment.json"
+
+        to_generate = {"pp": {(1, 1): [0, 1, 2]}}
+
+        results = {}
+        for adc_variant, operators in to_generate.items():
+            results[adc_variant] = {}
+            prop = self.prop[adc_variant]
+            for (n_create, n_annihilate), orders in operators.items():
+                op_key = f"{n_create}_{n_annihilate}"
+                results[adc_variant][op_key] = {}
+                for adc_order in orders:
+                    results[adc_variant][op_key][adc_order] = {}
+                    dump = results[adc_variant][op_key][adc_order]
+                    # dump the complex non symmetric result
+                    res = Expr(prop.trans_moment(
+                        adc_order=adc_order, n_create=n_create,
+                        n_annihilate=n_annihilate
+                    ))
+                    res.substitute_contracted()
+                    res = simplify(res)
+                    dump["expectation_value"] = str(res)
+                    # dump the real result
+                    # (operator should not be symmetric for transition dm)
+                    res.make_real()
+                    res = simplify(res)
+                    dump["real_expectation_value"] = str(res)
+                    # dump the real transition denstiy matrix
+                    dump["real_transition_dm"] = {}
+                    res = factor_intermediates(
+                        res, ["t_amplitude", "mp_density"], adc_order
+                    )
+                    density = remove_tensor(res, "d")
+                    for block, expr in density.items():
+                        assert len(block) == 1
+                        block = block[0]
+                        dump["real_transition_dm"][block] = str(expr)
         write_json(results, outfile)
 
 

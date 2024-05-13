@@ -215,15 +215,15 @@ class Properties:
             # combine the two spaces to build the correct block with mixed
             # ADC variant spaces.
             block = (l_block[0], r_block[1])
+
             if order is None:
-                for o in range(max_order + 1):
-                    res += self.expec_block_contribution(
-                        order=o, block=block, n_particles=n_particles,
-                        subtract_gs=subtract_gs
-                    )
+                orders_to_gen = list(range(max_order + 1))
             else:
+                orders_to_gen = [order]
+
+            for o in orders_to_gen:
                 res += self.expec_block_contribution(
-                    order=order, block=block, n_particles=n_particles,
+                    order=o, block=block, n_particles=n_particles,
                     subtract_gs=subtract_gs
                 )
         return res
@@ -380,17 +380,15 @@ class Properties:
         res = 0
         for space, max_order in max_orders.items():
             if order is None:
-                for o in range(max_order + 1):
-                    res += self.trans_moment_space(order=o, space=space,
-                                                   n_create=n_create,
-                                                   n_annihilate=n_annihilate,
-                                                   lr_isr=lr_isr,
-                                                   subtract_gs=subtract_gs)
+                orders_to_gen = list(range(max_order + 1))
             else:
                 # the space is not expanded through the desired order
                 if max_order < order:
                     continue
-                res += self.trans_moment_space(order=order, space=space,
+                orders_to_gen = [order]
+
+            for o in orders_to_gen:
+                res += self.trans_moment_space(order=o, space=space,
                                                n_create=n_create,
                                                n_annihilate=n_annihilate,
                                                lr_isr=lr_isr,

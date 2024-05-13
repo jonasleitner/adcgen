@@ -1,0 +1,31 @@
+{
+  "pp": {
+    "1_1": {
+      "0": {
+        "expectation_value": "{X^{a}_{i}} {d^{a}_{i}}",
+        "real_expectation_value": "{X^{a}_{i}} {d^{a}_{i}}",
+        "real_transition_dm": {
+          "vo": "{X^{a}_{i}}"
+        }
+      },
+      "1": {
+        "expectation_value": "{X^{a}_{i}} {d^{a}_{i}} - {X^{a}_{i}} {d^{j}_{b}} {t1^{ab}_{ij}}",
+        "real_expectation_value": "{X^{a}_{i}} {d^{a}_{i}} - {X^{a}_{i}} {d^{j}_{b}} {t1^{ab}_{ij}}",
+        "real_transition_dm": {
+          "vo": "{X^{a}_{i}}",
+          "ov": "- {X^{b}_{j}} {t1^{ab}_{ij}}"
+        }
+      },
+      "2": {
+        "expectation_value": "{X^{a}_{i}} {d^{a}_{b}} {t2^{b}_{i}} + {X^{a}_{i}} {d^{a}_{i}} + \\frac{{X^{a}_{i}} {d^{a}_{k}} {t1^{bc}_{ij}} {t1cc^{bc}_{jk}}}{4} + \\frac{{X^{a}_{i}} {d^{c}_{i}} {t1^{ab}_{jk}} {t1cc^{bc}_{jk}}}{4} + \\frac{{X^{a}_{i}} {d^{c}_{k}} {t1^{ab}_{ij}} {t1cc^{bc}_{jk}}}{2} - {X^{a}_{i}} {d^{j}_{b}} {t1^{ab}_{ij}} - {X^{a}_{i}} {d^{j}_{b}} {t2^{ab}_{ij}} - {X^{a}_{i}} {d^{j}_{i}} {t2^{a}_{j}} - {X^{ab}_{ij}} {d^{a}_{c}} {t1^{bc}_{ij}} - {X^{ab}_{ij}} {d^{k}_{j}} {t1^{ab}_{ik}}",
+        "real_expectation_value": "{X^{a}_{i}} {d^{a}_{b}} {t2^{b}_{i}} + {X^{a}_{i}} {d^{a}_{i}} + \\frac{{X^{a}_{i}} {d^{a}_{k}} {t1^{bc}_{ij}} {t1^{bc}_{jk}}}{4} + \\frac{{X^{a}_{i}} {d^{c}_{i}} {t1^{ab}_{jk}} {t1^{bc}_{jk}}}{4} + \\frac{{X^{a}_{i}} {d^{c}_{k}} {t1^{ab}_{ij}} {t1^{bc}_{jk}}}{2} - {X^{a}_{i}} {d^{j}_{b}} {t1^{ab}_{ij}} - {X^{a}_{i}} {d^{j}_{b}} {t2^{ab}_{ij}} - {X^{a}_{i}} {d^{j}_{i}} {t2^{a}_{j}} - {X^{ab}_{ij}} {d^{a}_{c}} {t1^{bc}_{ij}} - {X^{ab}_{ij}} {d^{k}_{j}} {t1^{ab}_{ik}}",
+        "real_transition_dm": {
+          "vo": "{X^{a}_{i}} + \\frac{{X^{a}_{j}} {p2^{i}_{j}}}{2} - \\frac{{X^{b}_{i}} {p2^{a}_{b}}}{2} + \\frac{{X^{c}_{k}} {t1^{ab}_{ij}} {t1^{bc}_{jk}}}{2}",
+          "vv": "{X^{a}_{i}} {t2^{b}_{i}} + {X^{ac}_{ij}} {t1^{bc}_{ij}}",
+          "ov": "- {X^{b}_{j}} {t1^{ab}_{ij}} - {X^{b}_{j}} {t2^{ab}_{ij}}",
+          "oo": "- {X^{a}_{j}} {t2^{a}_{i}} - {X^{ab}_{jk}} {t1^{ab}_{ik}}"
+        }
+      }
+    }
+  }
+}
