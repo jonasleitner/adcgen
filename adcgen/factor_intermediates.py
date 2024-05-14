@@ -311,7 +311,7 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
     if factored_successfully:
         tensor = itmd_cls.tensor(return_sympy=True)
         if isinstance(tensor, AntiSymmetricTensor):
-            name = tensor.symbol.name
+            name = tensor.name
             if tensor.bra_ket_sym is S.One and \
                     name not in (sym_tensors := result.sym_tensors):
                 result.set_sym_tensors(sym_tensors + (name,))
@@ -459,7 +459,7 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
     if factored_sucessfully:
         tensor = itmd_cls.tensor(return_sympy=True)
         if isinstance(tensor, AntiSymmetricTensor):
-            name = tensor.symbol.name
+            name = tensor.name
             if tensor.bra_ket_sym is S.One and \
                     name not in (sym_tensors := factored.sym_tensors):
                 factored.set_sym_tensors(sym_tensors + (name,))
@@ -582,7 +582,7 @@ def _build_factored_term(remainder: e.Expr, pref, itmd_cls,
                          itmd_indices) -> e.Expr:
     tensor = itmd_cls.tensor(indices=itmd_indices, return_sympy=True)
     # resolve the Zero placeholder for residuals
-    if tensor.symbol.name == "Zero":
+    if tensor.name == "Zero":
         return e.Expr(0, **remainder.assumptions)
     return remainder * pref * tensor
 

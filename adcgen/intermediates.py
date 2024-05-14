@@ -164,9 +164,9 @@ class RegisteredIntermediate:
         else:
             if isinstance(tensor, AntiSymmetricTensor):
                 if tensor.bra_ket_sym is S.One:  # bra ket symmetry
-                    return e.Expr(tensor, sym_tensors=[tensor.symbol.name])
+                    return e.Expr(tensor, sym_tensors=[tensor.name])
                 elif tensor.bra_ket_sym is S.NegativeOne:  # bra ket anisym
-                    return e.Expr(tensor, antisym_tensors=[tensor.symbol.name])
+                    return e.Expr(tensor, antisym_tensors=[tensor.name])
             return e.Expr(tensor)
 
     @cached_property

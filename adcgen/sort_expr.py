@@ -80,8 +80,8 @@ def by_tensor_block(expr: e.Expr, t_string: str,
     ret = {}
     for term in expr.terms:
         blocks = tuple(sorted(
-            [t.space for t in term.tensors for _ in range(t.exponent)
-             if t.name == t_string]
+            [t.space for t in term.tensors if t.name == t_string
+             for _ in range(t.exponent)]
         ))
         if not blocks:
             blocks = ("none",)

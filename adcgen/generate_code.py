@@ -36,7 +36,7 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
             base, exp = o.base_and_exponent
             if isinstance(base, (SymbolicTensor, KroneckerDelta)):
                 o_idx.extend(i for _ in range(exp))
-                names.extend(o.pretty_name for _ in range(exp))
+                names.extend(o.longname for _ in range(exp))
                 idx = o.idx
                 indices.extend(idx for _ in range(exp))
                 contracted.update(s for s in idx if s not in target)

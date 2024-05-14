@@ -1188,7 +1188,7 @@ class Term(Container):
 
         def extract_data(o):
             if isinstance(o, Obj):
-                return o.idx, o.pretty_name
+                return o.idx, o.longname
             elif isinstance(o, contraction_data):
                 return o.target, 'contraction'
             else:
@@ -1339,7 +1339,7 @@ class Term(Container):
             else:  # contraction -> trace is possible
                 contracted = tuple(s for s, n in Counter(indices).items()
                                    if n > 1)
-            return [contraction_data((i,), (indices,), (o.pretty_name,),
+            return [contraction_data((i,), (indices,), (o.longname,),
                                      contracted, target_indices, scal)]
 
         if max_tensor_dim is not None and not isinstance(max_tensor_dim, int):
@@ -1470,7 +1470,7 @@ class Obj(Container):
             unwrapped object.
         """
 
-        if isinstance(self.base, Amplitude):
+        if isinstance(self.base, AntiSymmetricTensor) and self.is_amplitude:
             old = self.name
             new = old.replace('c', '')
             if old == new:
@@ -1491,10 +1491,10 @@ class Obj(Container):
 
     def _apply_tensor_braket_sym(self, return_sympy: bool = False):
         # antisymtensor, symtensor or amplitude
-        if isinstance(self.base, AntiSymmetricTensor):
-            base, exponent = self.base_and_exponent
+        base, exponent = self.base_and_exponent
+        if isinstance(base, AntiSymmetricTensor):
             bra_ket_sym = None
-            if (name := self.name) in self.sym_tensors and \
+            if (name := base.name) in self.sym_tensors and \
                     base.bra_ket_sym is not S.One:
                 bra_ket_sym = 1
             elif name in self.antisym_tensors and \
@@ -1576,7 +1576,7 @@ class Obj(Container):
                       return_sympy: bool = False):
         """Renames a tensor object."""
         base, exponent = self.base_and_exponent
-        if isinstance(base, SymbolicTensor) and self.name == current:
+        if isinstance(base, SymbolicTensor) and base.name == current:
             if isinstance(base, AntiSymmetricTensor):
                 args = (new, base.upper, base.lower, base.bra_ket_sym)
             elif isinstance(base, NonSymmetricTensor):
@@ -1678,6 +1678,8 @@ class Obj(Container):
     def is_amplitude(self):
         """Whether the object is a ground state or ADC amplitude"""
         name = self.name
+        if name is None:
+            return False
         # ADC amplitude or t-amplitude
         return name in ['X', 'Y'] or \
             (name[0] == 't' and name[1:].replace('c', '').isnumeric())
@@ -1694,21 +1696,21 @@ class Obj(Container):
             elif name[0] == 't' and name[1:].replace('c', '').isnumeric():
                 return int(name[1:].replace('c', ''))
             # all intermediates
-            itmd_cls = Intermediates().available.get(self.pretty_name, None)
+            itmd_cls = Intermediates().available.get(self.longname, None)
             if itmd_cls is not None:
                 return itmd_cls.order
         return 0
 
     @property
-    def pretty_name(self):
+    def longname(self):
         """
         Returns a more exhaustive name of the object. Used for intermediates
         and transformation to code.
         """
         name = None
-        if isinstance(self.base, SymbolicTensor):
-            name = self.name
-            base = self.base
+        base = self.base
+        if isinstance(base, SymbolicTensor):
+            name = base.name
             # t-amplitudes
             if name[0] == 't' and name[1:].replace('c', '').isnumeric():
                 if len(base.upper) != len(base.lower):
@@ -1736,7 +1738,7 @@ class Obj(Container):
                 pass
             else:  # arbitrary other tensor
                 name += f"_{self.space}"
-        elif isinstance(self.base, KroneckerDelta):  # deltas -> d_oo / d_vv
+        elif isinstance(base, KroneckerDelta):  # deltas -> d_oo / d_vv
             name = f"d_{self.space}"
         return name
 
@@ -1869,7 +1871,7 @@ class Obj(Container):
             target = self.term.target
 
         itmd = Intermediates()
-        itmd = itmd.available.get(self.pretty_name, None)
+        itmd = itmd.available.get(self.longname, None)
         if itmd is None:
             expanded = self.sympy
         else:
@@ -1906,7 +1908,7 @@ class Obj(Container):
             upper, lower = base.upper, base.lower
             data_u = "".join(s.space[0] + s.spin for s in upper)
             data_l = "".join(s.space[0] + s.spin for s in lower)
-            descr += f"-{self.name}-{data_u}-{data_l}"
+            descr += f"-{base.name}-{data_u}-{data_l}"
             # names of target indices, also separated in upper and lower part
             # indices in upper and lower have been sorted upon tensor creation!
             if include_target_idx:
@@ -1961,7 +1963,7 @@ class Obj(Container):
         obj = self.base
         # antisym-, sym-, nonsymtensor and amplitude
         if isinstance(obj, SymbolicTensor):
-            name = self.name
+            name = obj.name
             if name == "V":  # hardcode the ERI spin blocks
                 return ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
             # t-amplitudes: all spin conserving spin blocks are allowed, i.e.,
@@ -1987,7 +1989,7 @@ class Obj(Container):
             return ("a", "b")
         # the known allowed spin blocks of eri, t-amplitudes and deltas
         # may be used to generate the spin blocks of other intermediates
-        itmd = Intermediates().available.get(self.pretty_name, None)
+        itmd = Intermediates().available.get(self.longname, None)
         if itmd is None:
             warnings.warn(f"Could not determine valid spin blocks for {self}.",
                           RuntimeWarning,)
