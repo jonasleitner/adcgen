@@ -3,6 +3,7 @@ from sympy import sqrt, S
 from math import factorial
 
 from .indices import repeated_indices, Indices
+from .intermediate_states import IntermediateStates
 from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .func import gen_term_orders, wicks, evaluate_deltas
 from .simplify import simplify
@@ -11,9 +12,15 @@ from .rules import Rules
 
 
 class SecularMatrix:
-    def __init__(self, isr):
-        from .intermediate_states import IntermediateStates
+    """
+    Constructs expressions for the ADC secular matrix M.
 
+    Parameters
+    ----------
+    isr : IntermediateStates
+        The intermediate states the secular matrix is represented in.
+    """
+    def __init__(self, isr: IntermediateStates):
         if not isinstance(isr, IntermediateStates):
             raise Inputerror("Invalid intermediate states object.")
         self.isr = isr
@@ -22,6 +29,7 @@ class SecularMatrix:
         self.indices = Indices()
 
     def hamiltonian(self, order: int, subtract_gs: bool):
+        """Constructs the n'th-order shifted Hamiltonian operator."""
         h = {0: self.h.h0, 1: self.h.h1}
         h, rules = h.get(order, (0, Rules()))
         if subtract_gs:
@@ -32,10 +40,23 @@ class SecularMatrix:
     @cached_member
     def precursor_matrix_block(self, order: int, block: str, indices: str,
                                subtract_gs: bool = True):
-        """Computes a secular matrix block of in the basis of the
-           precursor states. If subtract_gs is set (which it is by default),
-           the ground state energy is subtracted from the Hamiltonian.
-           """
+        """
+        Constructs the n'th order contribution to a secular matrix block in
+        the basis of the precursor states.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        block : str
+            The block of the secular matrix, e.g. "ph,pphh" for the
+            1p-1h/2p-2h coupling block.
+        indices : str
+            The indices of the matrix block.
+        subtract_gs : bool, optional
+            Whether ground state contrubitions should be subtracted
+            (default: True).
+        """
 
         block = transform_to_tuple(block)
         indices = transform_to_tuple(indices)
@@ -80,10 +101,23 @@ class SecularMatrix:
     @cached_member
     def isr_matrix_block(self, order: int, block: str, indices: str,
                          subtract_gs: bool = True):
-        """Computes a secular matrix block in the basis of intermediate states.
-           If subtract_gs is set (which it is by default) the ground state
-           energy is subtracted from the Hamiltonian.
-           """
+        """
+        Constructs the n'th order contribution to a secular matrix block in
+        the basis of the intermediate states.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        block : str
+            The block of the secular matrix, e.g. "ph,pphh" for the
+            1p-1h/2p-2h coupling block.
+        indices : str
+            The indices of the matrix block.
+        subtract_gs : bool, optional
+            Whether ground state contrubitions should be subtracted
+            (default: True).
+        """
 
         block = transform_to_tuple(block)
         indices = transform_to_tuple(indices)
@@ -131,18 +165,28 @@ class SecularMatrix:
     @cached_member
     def mvp_block_order(self, order: int, space: str, block: str,
                         indices: str, subtract_gs: bool = True):
-        """Computes the Matrix vector product for the provided space by
-           contracting the specified matrix block with an Amplitudevector.
-           For example:
-           space='ph', block='ph,pphh', indices='ia'
-           computes the singles MVP contribution from the M_{S,D} coupling
-           block.
-           Substitute_dummies: works fine for the ph MVP. The pphh MVP however
-           evaluates to 0, due to wrong index substitution.
-           The custom substitute_indices method seems to work for all MVP
-           spaces. However, it may be necessary to cancel a few terms by hand
-           (interchange some indice names).
-           """
+        """
+        Constructs the n'th-order contribution of a secular matrix block to
+        the matrix vector product
+        r_{I} = M_{I,J} Y_(J).
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        space : str
+            The excitation space of the result vector of the matrix vector
+            product, e.g., "ph" if the contribution to the 1p-1h MVP
+            is constructed.
+        block : str
+            The block of the secular matrix, e.g. "ph,pphh" for the
+            1p-1h/2p-2h coupling block.
+        indices : str
+            The indices of the result vector r of the matrix vector product.
+        subtract_gs : bool, optional
+            Whether ground state contrubitions should be subtracted
+            (default: True).
+        """
         from .indices import n_ov_from_space, extract_names
 
         space = transform_to_tuple(space)
@@ -204,14 +248,27 @@ class SecularMatrix:
     @cached_member
     def mvp(self, adc_order: int, space: str, indices: str, order: int = None,
             subtract_gs: bool = True):
-        """Computes the matrix vector product for a given space by contracting
-           all relevant blocks of the ADC(n) secular matrix with the
-           appropriate ADC amplitude vector.
-           If the order keyword is given only contributions of the desired
-           order are computed, e.g., adc_order=2, space='ph', order=2
-           only computes the 2nd order contribution of the 'ph,ph' matrix
-           block, since the 'ph,pphh' coupling block is not expanded through
-           the desired order."""
+        """
+        Constructs the matrix vector product
+        r_{I} = sum_{J} M_{I,J} Y_{J}
+        for a given excitation space considering all available ADC(n)
+        secular matrix blocks.
+
+        Parameters
+        ----------
+        adc_order : int
+            The perturbation theoretical order the ADC(n) scheme.
+        space : str
+            The excitation space of the result vector of the matrix vector
+            product, e.g., "ph" for the 1p-1h MVP.
+        order : int, optional
+            Only consider contributions of the provided order, e.g.,
+            only the zeroth order contributions of all
+            ADC(n) secular matrix blocks that contribute to the desired
+            MVP (default: None).
+        subtract_gs : bool, optional
+            If set, ground state contributions are subtracted (default: True).
+        """
         # validate the input parameters
         space = transform_to_tuple(space)
         indices = transform_to_tuple(indices)
@@ -249,10 +306,19 @@ class SecularMatrix:
     @cached_member
     def expectation_value_block_order(self, order: int, block: str,
                                       subtract_gs: bool = True):
-        """Computes the n-th order contribution of a specific secular matrix
-           block to the energy expectation value.
-           If subtract_gs is set, the ground state energy is subtracted.
-           """
+        """
+        Constructs the n'th-order contribution of a secular matrix block
+        to the energy expectation value.
+
+        Parameters
+        ----------
+        order : int
+            The perturbation theoretical order.
+        block : str
+            The block of the secular matrix.
+        subtract_gs : bool, optional
+            If set, ground state contributions are subtracted (default: True).
+        """
         from .indices import n_ov_from_space, extract_names
 
         block = transform_to_tuple(block)
@@ -276,11 +342,21 @@ class SecularMatrix:
     @cached_member
     def expectation_value(self, adc_order: int, order: int = None,
                           subtract_gs: bool = True):
-        """Computes the ADC(n) energy expectation value.
-           If subtract_gs is set (which it is by default), the ground state
-           energy is subtracted.
-           If the order parameter is specified, only contributions of the
-           specified order are computed."""
+        """
+        Constructs the ADC(n) energy expectation value considering all
+        available secular matrix blocks.
+
+        Parameters
+        ----------
+        adc_order : int
+            The perturbation theoretical order of the ADC(n) scheme.
+        order : int, optional
+            Only consider contributions of the provided order, e.g.,
+            only the zeroth order contributions of all
+            ADC(n) secular matrix (default: None).
+        subtract_gs : bool, optional
+            If set, ground state contributions are subtracted (default: True).
+        """
         expec = 0
         for block, max_order in self.block_order(adc_order).items():
             # is the mvp expanded through the desired order?
@@ -300,10 +376,11 @@ class SecularMatrix:
         # and right amplitude vector have different names
         return expec
 
-    def max_ptorder_spaces(self, order):
-        """Returns a dict with the maximum pt order of each space at the
-           ADC(n) level.
-           """
+    def max_ptorder_spaces(self, order: int) -> dict:
+        """
+        Returns the maximum perturbation theoretical order of all excitation
+        spaces in the ADC(n) matrix.
+        """
 
         space = self.isr.min_space[0]
         ret = {space: order}
@@ -312,11 +389,11 @@ class SecularMatrix:
             ret[space] = order - i
         return ret
 
-    def block_order(self, order):
-        """Returns the order through which each block of the ADC(n) secular
-           is expanded.
-           Returns a dict with the block tuple (s1, s2) as key.
-           """
+    def block_order(self, order: int) -> dict:
+        """
+        Returns the perturbation theoretical orders through which all blocks
+        are expanded in the ADC(n) secular matrix.
+        """
         from itertools import product
 
         max_orders = self.max_ptorder_spaces(order)

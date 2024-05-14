@@ -1,7 +1,9 @@
 from .func import gen_term_orders, wicks
 from .indices import extract_names, Indices, n_ov_from_space
+from .intermediate_states import IntermediateStates
 from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .simplify import simplify
+from .secular_matrix import SecularMatrix
 from .expr_container import Expr
 from .rules import Rules
 from sympy import sqrt, S, sympify
@@ -9,19 +11,22 @@ from math import factorial
 
 
 class Properties:
-    """Class for computing ISR properties. The class takes two different ISR
-       as arguments - the second is optional. If only one is given, the
-       standard ISR properties may be computed by calling the appropriate
-       methods. This may also be achieved if the same ISR is provided twice.
-       If both ISR are given, the expectation values of operators between
-       the two ISR states like pp and ip will be calculated. This way one may
-       calculate the expectation values between e.g. a EA and a IP ISR state.
-       """
+    """
+    Constructs ISR property expressions.
 
-    def __init__(self, l_isr, r_isr=None):
-        from .intermediate_states import IntermediateStates
-        from .secular_matrix import SecularMatrix
+    Parameters
+    ----------
+    l_isr : IntermediateStates
+        The intermediate states used for the construction of properties.
+    r_isr : IntermediateStates, optional
+        Optionally, another IntermediateStates can be passed to the class
+        allowing for the construction of transition properties between
+        intermediate states of different ADC variants like PP- or IP-ADC
+        (default: l_isr).
+    """
 
+    def __init__(self, l_isr: IntermediateStates,
+                 r_isr: IntermediateStates = None):
         if not isinstance(l_isr, IntermediateStates) or r_isr is not None \
                 and not isinstance(r_isr, IntermediateStates):
             raise Inputerror("Provided ISR must be of type "
@@ -59,10 +64,10 @@ class Properties:
             The number of annihilation operators. Placed right of the
             creation operators.
         subtract_gs : bool, optional
-            If set, the ground state expectation value of the corresponding
-            operator is subtracted if the operator string contains an equal
-            amount of creation and annihilation operators (otherwise the
-            ground state contribution vanishes).
+            If set, the n'th-order ground state expectation value of the
+            corresponding operator is subtracted if the operator string
+            contains an equal amount of creation and annihilation operators
+            (otherwise the ground state contribution vanishes).
             (Defaults to True)
         """
         validate_input(order=order)
