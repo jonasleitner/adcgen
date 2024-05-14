@@ -2,8 +2,9 @@ from adcgen.expr_container import Expr
 from adcgen.eri_orbenergy import EriOrbenergy
 from adcgen.indices import get_symbols
 from adcgen.intermediates import Intermediates
-from adcgen.sympy_objects import AntiSymmetricTensor, SymmetricTensor, \
-    NonSymmetricTensor
+from adcgen.sympy_objects import (
+    AntiSymmetricTensor, SymmetricTensor, NonSymmetricTensor, Amplitude
+)
 
 from sympy import S, Rational
 
@@ -33,9 +34,9 @@ class TestSymbolicDenominators:
         symbolic = original.copy().use_symbolic_denominators()
         assert "D" in symbolic.antisym_tensors
         i, j, k, a, b, c = get_symbols("ijkabc")
-        ref = (Rational(1, 2) * AntiSymmetricTensor("t1", (b, c), (i, j)) *
+        ref = (Rational(1, 2) * Amplitude("t1", (b, c), (i, j)) *
                AntiSymmetricTensor("V", (j, a), (b, c), 1)
-               + Rational(1, 2) * AntiSymmetricTensor("t1", (a, b), (j, k)) *
+               + Rational(1, 2) * Amplitude("t1", (a, b), (j, k)) *
                AntiSymmetricTensor("V", (j, k), (i, b), 1))
         ref *= SymmetricTensor("D", (i,), (a,), -1)
         assert symbolic.sympy - ref.expand() is S.Zero

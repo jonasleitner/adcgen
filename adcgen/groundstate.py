@@ -2,7 +2,7 @@ from sympy import Rational, latex, sympify, Mul, S
 from sympy.physics.secondquant import NO, F, Fd, Dagger
 from math import factorial
 
-from .sympy_objects import AntiSymmetricTensor
+from .sympy_objects import Amplitude
 from .indices import Indices, n_ov_from_space
 from .misc import cached_member, Inputerror, validate_input
 from .simplify import simplify
@@ -108,7 +108,7 @@ class GroundState:
             # build tensor
             virt = idx["virt"][:excitation]
             occ = idx["occ"][:excitation]
-            t = AntiSymmetricTensor(tensor_name, virt, occ)
+            t = Amplitude(tensor_name, virt, occ)
             # build operators
             operators = (Mul(*[Fd(s) for s in virt]) *
                          Mul(*[F(s) for s in reversed(occ)]))
@@ -217,16 +217,13 @@ class GroundState:
             if (n_ov['n_occ'] > 2 * o2) or \
                     (n_ov['n_occ'] == 1 and o2 == 1 and not self.singles):
                 continue
+            contrib = (
+                self.energy(o1) * Amplitude(f"t{o2}", idx["virt"], idx["occ"])
+            ).expand()
             if n_ov['n_occ'] == 2:  # doubles... special sign
-                ret += (
-                    self.energy(o1) *
-                    AntiSymmetricTensor(f"t{o2}", idx["virt"], idx["occ"])
-                ).expand()
+                ret += contrib
             else:
-                ret -= (
-                    self.energy(o1) *
-                    AntiSymmetricTensor(f"t{o2}", idx["virt"], idx["occ"])
-                ).expand()
+                ret -= contrib
         return ret / denom
 
     @cached_member
@@ -292,16 +289,14 @@ class GroundState:
             if n_ov['n_occ'] > 2 * t_order or \
                     (n_ov['n_occ'] == 1 and t_order == 1 and not self.singles):
                 continue
+            contrib = (
+                self.energy(e_order) *
+                Amplitude(f"t{t_order}", idx['virt'], idx['occ'])
+            ).expand()
             if n_ov['n_occ'] == 2:  # doubles -> different sign!
-                res += (
-                    self.energy(e_order) *
-                    AntiSymmetricTensor(f"t{t_order}", idx['virt'], idx['occ'])
-                ).expand()
+                res += contrib
             else:
-                res -= (
-                    self.energy(e_order) *
-                    AntiSymmetricTensor(f"t{t_order}", idx['virt'], idx['occ'])
-                ).expand()
+                res -= contrib
         return res
 
     def overlap(self, order: int):

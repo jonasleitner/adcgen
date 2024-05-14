@@ -10,6 +10,7 @@ from .simplify import simplify
 from .func import gen_term_orders, wicks, evaluate_deltas
 from .groundstate import GroundState
 from .expr_container import Expr
+from .sympy_objects import Amplitude
 
 
 class IntermediateStates:
@@ -462,7 +463,6 @@ class IntermediateStates:
             Whether a left (X) or right (Y) amplitude vector is constructed
             (default: 'right').
         """
-        from .sympy_objects import AntiSymmetricTensor
 
         validate_input(indices=indices, lr=lr)
 
@@ -471,7 +471,7 @@ class IntermediateStates:
         virt = idx["virt"] if "virt" in idx else []
 
         name = "Y" if lr == "right" else "X"
-        return AntiSymmetricTensor(name, virt, occ)
+        return Amplitude(name, virt, occ)
 
     def expand_S_taylor(self, order: int, min_order=2) -> list:
         """

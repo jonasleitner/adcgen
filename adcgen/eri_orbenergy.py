@@ -1,6 +1,6 @@
 from .misc import Inputerror
 from . import expr_container as e
-from .sympy_objects import SymmetricTensor
+from .sympy_objects import SymmetricTensor, SymbolicTensor
 from sympy import Pow, S, Mul, Basic
 
 
@@ -79,12 +79,12 @@ class EriOrbenergy:
                 for term in bracket.terms:
                     n_orb_energy = 0
                     for o in term.objects:
-                        if 'tensor' in o.type and o.exponent == 1:
+                        base, exp = o.base_and_exponent
+                        if isinstance(base, SymbolicTensor) and exp == 1:
                             n_orb_energy += 1
                         # denominator has to contain prefactors +- 1
                         # prefactors need to be +-1 for cancelling to work
-                        elif o.type == 'prefactor' and \
-                                o.sympy is S.NegativeOne:
+                        elif o.sympy.is_number and o.sympy is S.NegativeOne:
                             continue
                         else:
                             raise Inputerror(f"Invalid bracket {bracket} in "
@@ -109,9 +109,10 @@ class EriOrbenergy:
             for term in self._num.terms:
                 n_orb_energy = 0
                 for o in term.objects:
-                    if 'tensor' in o.type and o.exponent == 1:
+                    base, exp = o.base_and_exponent
+                    if isinstance(base, SymbolicTensor) and exp == 1:
                         n_orb_energy += 1
-                    elif o.type == 'prefactor':  # any prefactors allowed
+                    elif o.sympy.is_number:  # any prefactors allowed
                         continue
                     else:
                         raise Inputerror(f"Invalid object {o} in {self._num}.")

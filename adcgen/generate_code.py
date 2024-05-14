@@ -2,6 +2,7 @@ from . import expr_container as e
 from .misc import Inputerror
 from .sort_expr import exploit_perm_sym
 from .indices import sort_idx_canonical
+from .sympy_objects import SymbolicTensor, KroneckerDelta
 from collections import namedtuple
 
 scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
@@ -32,13 +33,14 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
         for i, o in enumerate(term.objects):
             # nonsym_tensor / antisym_tensor / delta
             # -> extract relevant data
-            if 'tensor' in (o_type := o.type) or o_type == 'delta':
-                o_idx.append(i for _ in range(o.exponent))
-                names.append(o.pretty_name for _ in range(o.exponent))
+            base, exp = o.base_and_exponent
+            if isinstance(base, (SymbolicTensor, KroneckerDelta)):
+                o_idx.extend(i for _ in range(exp))
+                names.extend(o.pretty_name for _ in range(exp))
                 idx = o.idx
-                indices.append(idx for _ in range(o.exponent))
+                indices.extend(idx for _ in range(exp))
                 contracted.update(s for s in idx if s not in target)
-            elif o_type == 'prefactor':
+            elif o.sympy.is_number:  # pref
                 continue
             else:  # polynom / create / annihilate / NormalOrdered
                 raise NotImplementedError("Contractions not implemented for "

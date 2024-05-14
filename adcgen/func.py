@@ -3,7 +3,8 @@ from .misc import Inputerror
 from .rules import Rules
 from .indices import Index, get_symbols, split_idx_string
 from .sympy_objects import (
-    KroneckerDelta, NonSymmetricTensor, AntiSymmetricTensor, SymmetricTensor
+    KroneckerDelta, NonSymmetricTensor, AntiSymmetricTensor, SymmetricTensor,
+    Amplitude
 )
 
 from sympy.physics.secondquant import (
@@ -121,10 +122,14 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
             else:
                 raise RuntimeError("Unknown second quantized operator: ",
                                    tensor)
-        elif len(indices) == 2:  # antisymtensor
+        elif len(indices) == 2:  # antisym-/symtensor or amplitude
             upper = import_indices(indices[0])
             lower = import_indices(indices[1])
-            if name == "v":
+            # ADC-Amplitude or t-amplitudes
+            if name in ["X", "Y"] or \
+                    name[0] == "t" and name[1:].replace("c", "").isnumeric():
+                base = Amplitude(name, upper, lower)
+            elif name == "v":  # eri in chemist notation
                 base = SymmetricTensor(name, upper, lower)
             else:
                 base = AntiSymmetricTensor(name, upper, lower)

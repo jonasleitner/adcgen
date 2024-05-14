@@ -2,7 +2,7 @@ from . import expr_container as e
 from .misc import Inputerror, cached_property
 from .eri_orbenergy import EriOrbenergy
 from .indices import order_substitutions, get_symbols, minimize_tensor_indices
-from .sympy_objects import AntiSymmetricTensor
+from .sympy_objects import AntiSymmetricTensor, SymbolicTensor
 from .symmetry import LazyTermMap
 from sympy import S, Mul, Rational
 from collections import Counter
@@ -211,9 +211,9 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                     raise ValueError("Expected the term to be at most of "
                                      f"length 2. Got: {tensor_obj}.")
                 for obj in tensor_obj.objects:
-                    if 'tensor' in (o_type := obj.type):
+                    if isinstance(obj.base, SymbolicTensor):
                         itmd_indices = obj.idx
-                    elif o_type == 'prefactor':
+                    elif obj.sympy.is_number:
                         variant_data['factor'] *= obj.sympy
                     else:
                         raise TypeError("Only expected tensor and prefactor."

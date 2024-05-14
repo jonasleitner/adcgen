@@ -6,7 +6,7 @@ from .indices import Index
 from .misc import Inputerror, Singleton, cached_property, cached_member
 from . import expr_container as e
 from .eri_orbenergy import EriOrbenergy
-from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor
+from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, Amplitude
 from .symmetry import LazyTermMap
 from .spatial_orbitals import allowed_spin_blocks
 
@@ -349,10 +349,10 @@ class t2_1(RegisteredIntermediate):
         denom = orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j)
         return base_expr(eri((a, b, i, j)) / denom, (i, j, a, b), None)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices) -> Amplitude:
         # guess its not worth caching here. Maybe if used a lot.
         # build the tensor
-        return AntiSymmetricTensor('t1', indices[2:], indices[:2])
+        return Amplitude('t1', indices[2:], indices[:2])
 
     def factor_itmd(self, expr: e.Expr, factored_itmds: list[str] = None,
                     max_order: int = None):
@@ -483,8 +483,8 @@ class t1_2(RegisteredIntermediate):
                  eri([j, k, i, b]))
         return base_expr(term1/denom + term2/denom, (i, a), (j, k, b, c))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('t2', (indices[1],), (indices[0],))
+    def _build_tensor(self, indices) -> Amplitude:
+        return Amplitude('t2', (indices[1],), (indices[0],))
 
 
 class t2_2(RegisteredIntermediate):
@@ -518,8 +518,8 @@ class t2_2(RegisteredIntermediate):
                  + base.copy().permute((i, j), (a, b)).sympy)
         return base_expr(itmd / denom, (i, j, a, b), (k, l, c, d))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('t2', indices[2:], indices[:2])
+    def _build_tensor(self, indices) -> Amplitude:
+        return Amplitude('t2', indices[2:], indices[:2])
 
 
 class t3_2(RegisteredIntermediate):
@@ -561,8 +561,8 @@ class t3_2(RegisteredIntermediate):
                  + base.copy().permute((i, k), (b, c)).sympy)
         return base_expr(itmd/denom, (i, j, k, a, b, c), (l, d))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('t2', indices[3:], indices[:3])
+    def _build_tensor(self, indices) -> Amplitude:
+        return Amplitude('t2', indices[3:], indices[:3])
 
 
 class t4_2(RegisteredIntermediate):
@@ -596,8 +596,8 @@ class t4_2(RegisteredIntermediate):
             t4 += o_factor * v_factor * base.copy().permute(*perms).sympy
         return base_expr(t4, (i, j, k, l, a, b, c, d), None)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('t2', indices[4:], indices[:4])
+    def _build_tensor(self, indices) -> Amplitude:
+        return Amplitude('t2', indices[4:], indices[:4])
 
 
 class t1_3(RegisteredIntermediate):
@@ -649,8 +649,8 @@ class t1_3(RegisteredIntermediate):
             contracted = (j, k, b, c)
         return base_expr(itmd / denom, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('t3', (indices[1],), (indices[0],))
+    def _build_tensor(self, indices) -> Amplitude:
+        return Amplitude('t3', (indices[1],), (indices[0],))
 
 
 class t2_3(RegisteredIntermediate):
@@ -729,8 +729,8 @@ class t2_3(RegisteredIntermediate):
             contracted = (k, l, c, d)
         return base_expr(itmd / denom, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('t3', indices[2:], indices[:2])
+    def _build_tensor(self, indices) -> Amplitude:
+        return Amplitude('t3', indices[2:], indices[:2])
 
 
 class t2_1_re_residual(RegisteredIntermediate):

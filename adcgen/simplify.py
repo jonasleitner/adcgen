@@ -1,7 +1,9 @@
 from .indices import (get_symbols, order_substitutions, Index,
                       get_lowest_avail_indices, minimize_tensor_indices)
 from .misc import Inputerror
-from .sympy_objects import KroneckerDelta
+from .sympy_objects import (
+    KroneckerDelta, Amplitude, AntiSymmetricTensor, NonSymmetricTensor
+)
 from . import expr_container as e
 
 from sympy import Add, Pow, S, sqrt, Rational
@@ -452,7 +454,6 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
                blocks. If contracted with the tensor blocks again, a part of
                the original expression is recovered.
     """
-    from .sympy_objects import AntiSymmetricTensor, NonSymmetricTensor
 
     def remove(term: e.Term, tensor: e.Obj, target_indices: dict) -> e.Expr:
         # - get the tensor indices
@@ -566,24 +567,22 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
         #   further minimization might be possible taking the tensor
         #   symmetry into account, because we did not touch target indices:
         #   jikab -> d^jik_ab = - d^ijk_ab
-        if isinstance(tensor.sympy, AntiSymmetricTensor):
-            bra_ket_sym = tensor.bra_ket_sym
-            if tensor.is_amplitude:  # indices = lower, upper
-                n_l = len(tensor.lower)
-                tensor = e.Expr(
-                    AntiSymmetricTensor(t_name, indices[n_l:],
-                                        indices[:n_l], bra_ket_sym)
-                ).terms[0]
-            else:  # indices = upper, lower
-                n_u = len(tensor.upper)
-                tensor = e.Expr(
-                    AntiSymmetricTensor(t_name, indices[:n_u],
-                                        indices[n_u:], bra_ket_sym)
-                ).terms[0]
-        elif isinstance(tensor.sympy, NonSymmetricTensor):
+        raw_tensor = tensor.sympy
+        if isinstance(raw_tensor, AntiSymmetricTensor):
+            bra_ket_sym = raw_tensor.bra_ket_sym
+            if isinstance(raw_tensor, Amplitude):  # indices = lower, upper
+                n_l = len(raw_tensor.lower)
+                upper, lower = indices[n_l:], indices[:n_l]
+            else:  # symtensor / antisymtensor, indices = upper, lower
+                n_u = len(raw_tensor.upper)
+                upper, lower = indices[:n_u], indices[n_u:]
+            tensor = e.Expr(raw_tensor.__class__(
+                raw_tensor.name, upper, lower, bra_ket_sym
+            )).terms[0]
+        elif isinstance(raw_tensor, NonSymmetricTensor):
             bra_ket_sym = None
             tensor = e.Expr(
-                NonSymmetricTensor(tensor.symbol.name, indices)
+                NonSymmetricTensor(raw_tensor.name, indices)
             ).terms[0]
         else:
             raise TypeError(f"Unknown tensor type {type(tensor.sympy)}")

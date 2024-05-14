@@ -167,7 +167,7 @@ def find_compatible_eri_parts(term_list: list[e.Term]) -> dict[int, dict]:
         assumptions['target_idx'] = term.target
         eris = e.Expr(1, **assumptions)
         for o in term.objects:
-            if not o.type == 'prefactor' and not o.contains_only_orb_energies:
+            if not o.sympy.is_number and not o.contains_only_orb_energies:
                 eris *= o
         eri_parts.append(eris.terms[0])
 

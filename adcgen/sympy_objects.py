@@ -1,21 +1,57 @@
 from sympy.physics.secondquant import TensorSymbol, \
     _sort_anticommuting_fermions, ViolationOfPauliPrinciple
 from sympy.core.function import Function
+from sympy.core.expr import Expr
 from sympy.core.logic import fuzzy_not
 from sympy import sympify, Tuple, Symbol, S
 from .misc import Inputerror
 from .indices import Index, sort_idx_canonical
 
 
-class AntiSymmetricTensor(TensorSymbol):
-    """Based on the AntiSymmetricTensor from sympy.physics.secondquant.
-       Differences are:
-           - the sorting key for the sorting of the indices.
-             Here indices are sorted canonical.
-           - Additional support for bra/ket symmetry/antisymmetry.
-        """
+class SymbolicTensor(Expr):
+    """Base class for symbolic tensors."""
 
-    def __new__(cls, symbol: str, upper: tuple[Index], lower: tuple[Index],
+    is_commutative = True
+
+    @property
+    def symbol(self) -> Symbol:
+        """Returns the symbol of the tensor."""
+        return self.args[0]
+
+    @property
+    def name(self) -> str:
+        """Returns the name of the tensor."""
+        return self.symbol.name
+
+    @property
+    def idx(self) -> tuple[Index]:
+        """Returns all indices of the tensor."""
+        raise NotImplementedError(f"'idx' not implemented on {self.__class__}")
+
+
+class AntiSymmetricTensor(SymbolicTensor):
+    """
+    Represents antisymmetric tensors
+    d^{pq}_{rs} = - d^{qp}_{rs} = - d^{pq}_{sr} = d^{qp}_{sr}.
+    Based on the implementation in 'sympy.physics.secondquant'.
+
+    Parameters
+    ----------
+    name : str
+        The name of the tensor.
+    upper : tuple[Index]
+        The upper indices of the tensor.
+    lower : tuple[Index]
+        The lower indices of the tensor.
+    bra_ket_sym : int, optional
+        The bra-ket symmetry of the tensor:
+        - 0 no bra-ket-symmetry (d^{i}_{j} != d^{j}_{i})
+        - 1 bra-ket symmetry (d^{i}_{j} = d^{j}_{i})
+        - -1 bra-ket antisymmetry (d^{i}_{j} = - d^{j}_{i})
+        (default: 0)
+    """
+
+    def __new__(cls, name: str, upper: tuple[Index], lower: tuple[Index],
                 bra_ket_sym: int = 0) -> TensorSymbol:
         # sort the upper and lower indices
         try:
@@ -30,8 +66,8 @@ class AntiSymmetricTensor(TensorSymbol):
         # additionally account for the bra ket symmetry
         # add the Index check for subs to work correctly
         bra_ket_sym = sympify(bra_ket_sym)
-        if bra_ket_sym is not S.Zero and all(isinstance(s, Index) for s
-                                             in upper+lower):
+        if bra_ket_sym is not S.Zero and \
+                all(isinstance(s, Index) for s in upper+lower):
             if bra_ket_sym not in [S.One, S.NegativeOne]:
                 raise Inputerror("Invalid bra ket symmetry given "
                                  f"{bra_ket_sym}. Valid are 0, 1 or -1.")
@@ -40,15 +76,15 @@ class AntiSymmetricTensor(TensorSymbol):
                 if bra_ket_sym is S.NegativeOne:  # add another -1
                     sign_u += 1
         # import all quantities to sympy
-        symbol = sympify(symbol)
+        name = sympify(name)
         upper, lower = Tuple(*upper), Tuple(*lower)
 
         # attach -1 if necessary
         if (sign_u + sign_l) % 2:
-            return - TensorSymbol.__new__(cls, symbol, upper, lower,
+            return - TensorSymbol.__new__(cls, name, upper, lower,
                                           bra_ket_sym)
         else:
-            return TensorSymbol.__new__(cls, symbol, upper, lower, bra_ket_sym)
+            return TensorSymbol.__new__(cls, name, upper, lower, bra_ket_sym)
 
     @classmethod
     def _need_bra_ket_swap(cls, upper: tuple[Index],
@@ -86,10 +122,8 @@ class AntiSymmetricTensor(TensorSymbol):
             "".join([i._latex(printer) for i in self.args[2]])
         )
 
-    @property
-    def symbol(self) -> Symbol:
-        """Returns the symbol of the tensor."""
-        return self.args[0]
+    def __str__(self):
+        return f"{self.symbol}({self.upper},{self.lower})"
 
     @property
     def upper(self) -> Tuple:
@@ -101,35 +135,76 @@ class AntiSymmetricTensor(TensorSymbol):
         """Returns the lower indices of the tensor."""
         return self.args[2]
 
-    def __str__(self):
-        return "%s(%s,%s)" % self.args[:3]
-
     @property
     def bra_ket_sym(self):
+        """Returns the bra-ket symmetry of the tensor."""
         return self.args[3]
 
     def add_bra_ket_sym(self, bra_ket_sym: int) -> 'AntiSymmetricTensor':
-        """Adds a bra ket symmetry to the tensor if none has been set yet.
-           Valid bra ket symmetries are 0, 1 and -1."""
+        """
+        Adds bra-ket symmetry to the tensor if none has been set yet.
+
+        Parameters
+        ----------
+        bra_ket_sym : int
+            The bra-ket symmetry to set (0, 1 and -1 are valid.)
+        """
 
         if bra_ket_sym == self.bra_ket_sym:
             return self
         elif self.bra_ket_sym is S.Zero:
-            return AntiSymmetricTensor(self.symbol, self.upper, self.lower,
-                                       bra_ket_sym)
+            return self.__class__(self.symbol, self.upper, self.lower,
+                                  bra_ket_sym)
         else:
             raise Inputerror("bra ket symmetry already set. The original "
                              "indices are no longer available. Can not apply "
                              "any other bra ket sym.")
 
+    @property
+    def idx(self) -> tuple[Index]:
+        """
+        Returns all indices of the tensor. The upper indices are listed before
+        the lower indices.
+        """
+        return self.upper.args + self.lower.args
+
+
+class Amplitude(AntiSymmetricTensor):
+    """
+    Represents antisymmetric Amplitudes.
+    """
+
+    @property
+    def idx(self) -> tuple[Index]:
+        """
+        Returns all indices of the amplitude. The lower indices are
+        listed before the upper indices.
+        """
+        return self.lower.args + self.upper.args
+
 
 class SymmetricTensor(AntiSymmetricTensor):
-    """Represents a symmetric tensor. A symmetric tensor has the same symmetry
-       as an antisymmetric tensor, but no sign change occurs when two
-       neighbouring indices are swapped, i.e.,
-       d^{ab}_{ij} = d^{ba}_{ij} = d^{ab}_{ji} = d^{ba}_{ji}."""
+    """
+    Represents symmetric tensors
+    d^{pq}_{rs} = d^{qp}_{rs} = d^{pq}_{sr} = d^{qp}_{sr}.
 
-    def __new__(cls, symbol: str, upper: tuple[Index], lower: tuple[Index],
+    Parameters
+    ----------
+    name : str
+        The name of the tensor.
+    upper : tuple[Index]
+        The upper indices of the tensor.
+    lower : tuple[Index]
+        The lower indices of the tensor.
+    bra_ket_sym : int, optional
+        The bra-ket symmetry of the tensor:
+        - 0 no bra-ket-symmetry (d^{i}_{j} != d^{j}_{i})
+        - 1 bra-ket symmetry (d^{i}_{j} = d^{j}_{i})
+        - -1 bra-ket antisymmetry (d^{i}_{j} = - d^{j}_{i})
+        (default: 0)
+    """
+
+    def __new__(cls, name: str, upper: tuple[Index], lower: tuple[Index],
                 bra_ket_sym: int = 0) -> TensorSymbol:
         # sort upper and lower. No need to track the number of swaps
         upper = sorted(upper, key=sort_idx_canonical)
@@ -138,8 +213,8 @@ class SymmetricTensor(AntiSymmetricTensor):
         # add the Index check for subs to work correctly
         negative_sign = False
         bra_ket_sym = sympify(bra_ket_sym)
-        if bra_ket_sym is not S.Zero and all(isinstance(s, Index) for s
-                                             in upper+lower):
+        if bra_ket_sym is not S.Zero and \
+                all(isinstance(s, Index) for s in upper+lower):
             if bra_ket_sym not in [S.One, S.NegativeOne]:
                 raise Inputerror("Invalid bra ket symmetry given "
                                  f"{bra_ket_sym}. Valid are 0, 1 or -1.")
@@ -148,35 +223,30 @@ class SymmetricTensor(AntiSymmetricTensor):
                 if bra_ket_sym is S.NegativeOne:
                     negative_sign = True
         # import all quantities to sympy
-        symbol = sympify(symbol)
+        name = sympify(name)
         upper, lower = Tuple(*upper), Tuple(*lower)
         # attach -1 if necessary
         if negative_sign:
-            return - TensorSymbol.__new__(cls, symbol, upper, lower,
+            return - TensorSymbol.__new__(cls, name, upper, lower,
                                           bra_ket_sym)
         else:
-            return TensorSymbol.__new__(cls, symbol, upper, lower, bra_ket_sym)
-
-    def add_bra_ket_sym(self, bra_ket_sym: int) -> 'SymmetricTensor':
-        """Adds a bra ket symmetry to the tensor if none has been set yet.
-           Valid bra ket symmetries are 0, 1 and -1."""
-
-        if bra_ket_sym == self.bra_ket_sym:
-            return self
-        elif self.bra_ket_sym is S.Zero:
-            return SymmetricTensor(self.symbol, self.upper, self.lower,
-                                   bra_ket_sym)
-        else:
-            raise Inputerror("bra ket symmetry already set. The original "
-                             "indices are no longer available. Can not apply "
-                             "any other bra ket sym.")
+            return TensorSymbol.__new__(cls, name, upper, lower, bra_ket_sym)
 
 
-class NonSymmetricTensor(TensorSymbol):
-    """Used to represent tensors that do not have any symmetry."""
+class NonSymmetricTensor(SymbolicTensor):
+    """
+    Represents tensors that do not have any symmetry.
 
-    def __new__(cls, symbol: str, indices: tuple[Index]) -> TensorSymbol:
-        symbol = sympify(symbol)
+    Parameters
+    ----------
+    name : str
+        The name of the tensor.
+    indices : tuple[Index]
+        The indices of the tensor.
+    """
+
+    def __new__(cls, name: str, indices: tuple[Index]) -> TensorSymbol:
+        symbol = sympify(name)
         indices = Tuple(*indices)
         return TensorSymbol.__new__(cls, symbol, indices)
 
@@ -184,29 +254,34 @@ class NonSymmetricTensor(TensorSymbol):
         return "{%s_{%s}}" % (self.symbol, "".join([i._latex(printer)
                                                     for i in self.indices]))
 
-    @property
-    def symbol(self) -> Symbol:
-        return self.args[0]
-
-    @property
-    def indices(self) -> Tuple:
-        return self.args[1]
-
     def __str__(self):
         return "%s%s" % self.args
 
+    @property
+    def indices(self) -> Tuple:
+        """Returns the indices of the tensor."""
+        return self.args[1]
+
+    @property
+    def idx(self) -> tuple[Index]:
+        """Returns all indices of the tensor."""
+        return self.args[1].args
+
 
 class KroneckerDelta(Function):
-    """Represents a Kronecker delta. Based on the implementation in
-       sympy.physics.secondquant."""
+    """
+    Represents a Kronecker delta.
+    Based on the implementation in 'sympy.functions.special.tensor_functions'.
+    """
 
     @classmethod
     def eval(cls, i: Index, j: Index):
-        """Evaluates the KroneckerDelta.
-           Adapted from sympy to also cover Spin."""
+        """
+        Evaluates the KroneckerDelta. Adapted from sympy to also cover Spin.
+        """
 
         diff = i - j
-        if diff.is_zero or fuzzy_not(diff.is_zero):
+        if diff.is_zero or fuzzy_not(diff.is_zero):  # same index
             return S.One
 
         spi, spj = i.space[0], j.space[0]
@@ -232,11 +307,19 @@ class KroneckerDelta(Function):
         )
 
     @property
-    def preferred_and_killable(self) -> tuple[Index] | None:
-        """Returns the preferred and the killable index of the delta, i.e.,
-           the index that we want to keep and the one to remove in the
-           in the final expression."""
-        i, j = self.args[0], self.args[1]
+    def idx(self) -> tuple[Index]:
+        """Returns the indices of the Kronecker delta."""
+        return self.args
+
+    @property
+    def preferred_and_killable(self) -> tuple[Index, Index] | None:
+        """
+        Returns the preferred (first) and killable (second) index of the
+        kronecker delta. The preferred index contains at least as much
+        information as the killable index. Therefore, 'evaluate_deltas'
+        will always try to keep the preferred index in the expression.
+        """
+        i, j = self.args
         space1, spin1 = i.space[0], i.spin
         space2, spin2 = j.space[0], j.spin
 
@@ -257,77 +340,7 @@ class KroneckerDelta(Function):
                 return None
 
     @property
-    def indices_contain_equal_information(self):
-        return self.args[0].space == self.args[1].space and \
-            self.args[0].spin == self.args[1].spin
-
-
-class SingleSymmetryTensor(TensorSymbol):
-    def __new__(cls, symbol: str, indices: tuple[Index],
-                perms: list[tuple[int]], factor: int) -> TensorSymbol:
-        from itertools import chain
-
-        # ensure that we have no intersecting permutations, i.e., each
-        # index occurs only once
-        idx = list(chain.from_iterable(perms))
-        if len(idx) != len(set(idx)):
-            raise NotImplementedError("SpecialSymTensor not implemented for"
-                                      f"intersecting permutations {perms}.")
-        factor = sympify(factor)
-        if factor not in [S.One, S.NegativeOne]:
-            raise Inputerror(f"Invalid factor {factor}. Valid are 1 and -1.")
-
-        # each permutation can be applied independently of the others
-        permuted = list(indices)
-        apply = []
-        min_apply = None
-        min_not_apply = None
-        for perm in perms:
-            i, j = sorted(perm)
-            p, q = indices[i], indices[j]  # p occurs before q
-            if factor is S.NegativeOne and p == q:
-                return S.Zero
-            p_val, q_val = sort_idx_canonical(p), sort_idx_canonical(q)
-            if q_val < p_val:
-                apply.append(True)
-                if min_apply is None or q_val < min_apply:
-                    min_apply = q_val
-            else:
-                if min_not_apply is None or q_val < min_not_apply:
-                    min_not_apply = p_val
-            permuted[i], permuted[j] = q, p
-        attach_minus = False
-        if len(apply) == len(perms):
-            indices = permuted
-            attach_minus = factor is S.NegativeOne
-        elif len(apply) >= len(perms) / 2 and min_apply < min_not_apply:
-            indices = permuted
-            attach_minus = factor is S.NegativeOne
-
-        symbol = sympify(symbol)
-        indices = Tuple(*indices)
-        perms = Tuple(*perms)
-
-        if attach_minus:
-            return - TensorSymbol.__new__(cls, symbol, indices, perms, factor)
-        else:
-            return TensorSymbol.__new__(cls, symbol, indices, perms, factor)
-
-    def _latex(self, printer) -> str:
-        return "{%s_{%s}}" % (self.symbol, "".join([i._latex(printer)
-                                                    for i in self.indices]))
-
-    @property
-    def symbol(self) -> Symbol:
-        return self.args[0]
-
-    @property
-    def indices(self) -> Tuple:
-        return self.args[1]
-
-    @property
-    def sym(self) -> Tuple:
-        return Tuple(*self.args[2:])
-
-    def __str__(self):
-        return "%s%s" % self.args[:2]
+    def indices_contain_equal_information(self) -> bool:
+        """Whether both indices contain the same amount of information."""
+        i, j = self.args
+        return i.space == j.space and i.spin == j.spin

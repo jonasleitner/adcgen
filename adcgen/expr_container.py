@@ -2,10 +2,11 @@ from .indices import (get_lowest_avail_indices, get_symbols,
                       order_substitutions, Index, sort_idx_canonical)
 from .misc import Inputerror, cached_property, cached_member
 from .sympy_objects import (
-    NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, SymmetricTensor
+    NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, SymmetricTensor,
+    SymbolicTensor, Amplitude
 )
 from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify
-from sympy.physics.secondquant import NO, F, Fd
+from sympy.physics.secondquant import NO, F, Fd, FermionicOperator
 import warnings
 
 
@@ -163,7 +164,7 @@ class Expr(Container):
 
     def __len__(self):
         # 0 has length 1
-        if self.type == 'expr':
+        if isinstance(self.sympy, Add):
             return len(self.args)
         else:
             return 1
@@ -207,7 +208,7 @@ class Expr(Container):
         return self._expr
 
     @property
-    def type(self) -> str:
+    def type_as_str(self) -> str:
         if isinstance(self.sympy, Add):
             return 'expr'
         elif isinstance(self.sympy, Mul):
@@ -563,7 +564,8 @@ class Term(Container):
         return latex(self.sympy)
 
     def __len__(self):
-        return len(self.args) if self.type == 'term' else 1
+        content = self.sympy
+        return len(content.args) if isinstance(content, Mul) else 1
 
     def __getattr__(self, attr):
         return getattr(self.sympy, attr)
@@ -603,15 +605,15 @@ class Term(Container):
         if self._sympy is not None:
             return self._sympy
 
-        if self.expr.type in ['expr', 'polynom']:
-            sympy = self._expr.args[self._pos]
-        else:
+        if len(self._expr) == 1:
             sympy = self._expr.sympy
+        else:
+            sympy = self._expr.args[self._pos]
         self._sympy = sympy
         return self._sympy
 
     @property
-    def type(self) -> str:
+    def type_as_str(self) -> str:
         return 'term' if isinstance(self.sympy, Mul) else 'obj'
 
     @cached_property
@@ -622,17 +624,19 @@ class Term(Container):
     @property
     def tensors(self) -> tuple['Obj']:
         """Returns all tensor objects in the term."""
-        return tuple(o for o in self.objects if 'tensor' in o.type)
+        return tuple(o for o in self.objects
+                     if isinstance(o.base, SymbolicTensor))
 
     @property
     def deltas(self) -> tuple['Obj']:
         """Returns all delta objects of the term."""
-        return tuple(o for o in self.objects if o.type == 'delta')
+        return tuple(o for o in self.objects
+                     if isinstance(o.base, KroneckerDelta))
 
     @property
     def polynoms(self) -> tuple['Polynom']:
         """Returns all polynoms contained in the term."""
-        return tuple(o for o in self.objects if o.type == 'polynom')
+        return tuple(o for o in self.objects if isinstance(o, Polynom))
 
     @cached_property
     def order(self) -> int:
@@ -996,7 +1000,7 @@ class Term(Container):
     def prefactor(self):
         """Returns the prefactor of the term."""
         return nsimplify(
-            Mul(*(o.sympy for o in self.objects if o.type == 'prefactor')),
+            Mul(*(o.sympy for o in self.objects if o.sympy.is_number)),
             rational=True
         )
 
@@ -1113,10 +1117,10 @@ class Term(Container):
                'remainder': Expr(1, **assumptions)}
         for o in self.objects:
             base, exponent = o.base_and_exponent
-            if o.contains_only_orb_energies:
-                key = "denom" if exponent < 0 else "num"
-            elif o.type == 'prefactor':
+            if o.sympy.is_number:
                 key = "num"
+            elif o.contains_only_orb_energies:
+                key = "denom" if exponent < 0 else "num"
             else:
                 key = 'remainder'
             ret[key] *= Pow(base, abs(exponent))
@@ -1126,7 +1130,7 @@ class Term(Container):
     def contains_only_orb_energies(self):
         """Whether the term only contains orbital energies."""
         return all(o.contains_only_orb_energies for o in self.objects
-                   if not o.type == 'prefactor')
+                   if not o.sympy.is_number)
 
     def to_latex_str(self, only_pull_out_pref: bool = False,
                      spin_as_overbar: bool = False):
@@ -1160,7 +1164,7 @@ class Term(Container):
         # - latex strings for the remaining objects
         tex_str += " ".join(
             [o.to_latex_str(only_pull_out_pref, spin_as_overbar)
-             for o in self.objects if o.type != 'prefactor']
+             for o in self.objects if not o.sympy.is_number]
         )
         return tex_str
 
@@ -1282,9 +1286,12 @@ class Term(Container):
         idx_occurences = {}
         n = 0
         for o in self.objects:
-            # nonsym_tensor / antisym_tensor / delta
-            if 'tensor' in (o_type := o.type) or o_type == 'delta':
-                if (exp := o.exponent) < 0:
+            if o.sympy.is_number:  # skip prefactors
+                continue
+            # antisym-/sym-, nonsymtensors, amplitudes, deltas
+            base, exp = o.base_and_exponent
+            if isinstance(base, (SymbolicTensor, KroneckerDelta)):
+                if exp < 0:
                     raise NotImplementedError("Contractions for divisions not "
                                               f"implemented: {self}.")
                 # count on how many objects (with exponent 1) an index occures
@@ -1296,8 +1303,6 @@ class Term(Container):
                 for i in range(n, exp+n):
                     relevant_objects[i] = o
                     n += 1
-            elif o_type == 'prefactor':  # prefactor
-                continue
             else:  # polynom / create / annihilate / NormalOrdered
                 raise NotImplementedError("Contractions not implemented for "
                                           "polynoms, creation and annihilation"
@@ -1447,15 +1452,16 @@ class Obj(Container):
     def sympy(self):
         if self._sympy is not None:
             return self._sympy
+
+        if len(self.term) == 1:
+            return self.term.sympy
         else:
-            return self.term.sympy if len(self.term) == 1 \
-                else self.term.args[self._pos]
+            return self.term.args[self._pos]
 
     def make_real(self, return_sympy: bool = False):
         """
-        Represent the object in a real orbital basis.
-        - names of complex conjugate t-amplitudes, for instance t1cc -> t1
-        - adds bra-ket-symmetry to the fock matrix and the ERI.
+        Represent the object in a real orbital basis by renaming the
+        complex conjugate t-amplitudes, for instance t1cc -> t1.
 
         Parameters
         ----------
@@ -1464,7 +1470,7 @@ class Obj(Container):
             unwrapped object.
         """
 
-        if 'tensor' in self.type and self.is_amplitude:
+        if isinstance(self.base, Amplitude):
             old = self.name
             new = old.replace('c', '')
             if old == new:
@@ -1472,8 +1478,8 @@ class Obj(Container):
             else:
                 base, exponent = self.base_and_exponent
                 real_obj = Pow(
-                    AntiSymmetricTensor(new, base.upper, base.lower,
-                                        base.bra_ket_sym), exponent
+                    Amplitude(new, base.upper, base.lower, base.bra_ket_sym),
+                    exponent
                 )
         else:
             real_obj = self.sympy
@@ -1484,7 +1490,8 @@ class Obj(Container):
         return Expr(real_obj, **assumptions)
 
     def _apply_tensor_braket_sym(self, return_sympy: bool = False):
-        if self.type in ["antisymtensor", "symtensor"]:
+        # antisymtensor, symtensor or amplitude
+        if isinstance(self.base, AntiSymmetricTensor):
             base, exponent = self.base_and_exponent
             bra_ket_sym = None
             if (name := self.name) in self.sym_tensors and \
@@ -1568,20 +1575,17 @@ class Obj(Container):
     def rename_tensor(self, current: str, new: str,
                       return_sympy: bool = False):
         """Renames a tensor object."""
-        if 'tensor' in (o_type := self.type) and self.name == current:
-            base, exponent = self.base_and_exponent
-            if o_type == "antisymtensor":
-                base = AntiSymmetricTensor(
-                        new, base.upper, base.lower, base.bra_ket_sym
-                    )
-            elif o_type == "nonsymtensor":
-                base = NonSymmetricTensor(new, base.indices)
-            elif o_type == "symtensor":
-                base = SymmetricTensor(
-                    new, base.upper, base.lower, base.bra_ket_sym
-                )
+        base, exponent = self.base_and_exponent
+        if isinstance(base, SymbolicTensor) and self.name == current:
+            if isinstance(base, AntiSymmetricTensor):
+                args = (new, base.upper, base.lower, base.bra_ket_sym)
+            elif isinstance(base, NonSymmetricTensor):
+                args = (new, base.indices)
+            else:
+                raise TypeError(f"Unknown tensor type {type(base)}.")
+            base = base.__class__(*args)
             new_obj = Pow(base, exponent)
-        else:
+        else:  # delta / create / annihilate / pref
             new_obj = self.sympy
         if return_sympy:
             return new_obj
@@ -1641,30 +1645,34 @@ class Obj(Container):
         """Returns the exponent of the object."""
         return self.sympy.args[1] if isinstance(self.sympy, Pow) else 1
 
-    @cached_property
-    def type(self) -> str:
+    @property
+    def type_as_str(self) -> str:
         """Returns a string that describes the type of the object."""
-        types = {
-            AntiSymmetricTensor: 'antisymtensor',
-            KroneckerDelta: 'delta',
-            F: 'annihilate',
-            Fd: 'create',
-            NonSymmetricTensor: 'nonsymtensor',
-            SymmetricTensor: 'symtensor',
-        }
-        try:
-            return types[type(self.base)]
-        except KeyError:
-            if self.is_number:
-                return 'prefactor'
-            raise NotImplementedError(f"Unknown object: {self.sympy} of type "
-                                      f"{type(self.sympy)}.")
+        if self.sympy.is_number:
+            return "prefactor"
+        obj = self.base
+        if isinstance(obj, Amplitude):
+            return "amplitude"
+        elif isinstance(obj, SymmetricTensor):
+            return "symtensor"
+        elif isinstance(obj, AntiSymmetricTensor):
+            return "antisymtensor"
+        elif isinstance(obj, NonSymmetricTensor):
+            return "nonsymtensor"
+        elif isinstance(obj, KroneckerDelta):
+            return "delta"
+        elif isinstance(obj, F):
+            return "annihilate"
+        elif isinstance(obj, Fd):
+            return "create"
+        else:
+            raise TypeError(f"Unknown object {self} of type {type(obj)}.")
 
     @property
     def name(self) -> str | None:
         """Extract the name of tensor objects."""
-        if 'tensor' in self.type:
-            return self.base.symbol.name
+        if isinstance(self.base, SymbolicTensor):
+            return self.base.name
 
     @property
     def is_amplitude(self):
@@ -1679,7 +1687,7 @@ class Obj(Container):
         """Returns the perturbation theoretical order of the obj."""
         from .intermediates import Intermediates
 
-        if 'tensor' in self.type:
+        if isinstance(self.base, SymbolicTensor):
             if (name := self.name) == 'V':  # eri
                 return 1
             # t-amplitudes
@@ -1698,7 +1706,7 @@ class Obj(Container):
         and transformation to code.
         """
         name = None
-        if 'tensor' in (o_type := self.type):
+        if isinstance(self.base, SymbolicTensor):
             name = self.name
             base = self.base
             # t-amplitudes
@@ -1728,7 +1736,7 @@ class Obj(Container):
                 pass
             else:  # arbitrary other tensor
                 name += f"_{self.space}"
-        elif o_type == 'delta':  # deltas -> d_oo / d_vv
+        elif isinstance(self.base, KroneckerDelta):  # deltas -> d_oo / d_vv
             name = f"d_{self.space}"
         return name
 
@@ -1736,7 +1744,7 @@ class Obj(Container):
     def bra_ket_sym(self) -> int | None:
         """Returns the bra-ket-symmetry of the object."""
         # nonsym_tensors are assumed to not have any symmetry atm!.
-        if self.type in ["antisymtensor", "symtensor"]:
+        if isinstance(self.base, AntiSymmetricTensor):
             return self.base.bra_ket_sym
 
     def symmetry(self, only_contracted: bool = False,
@@ -1761,28 +1769,21 @@ class Obj(Container):
         return new_expr.terms[0].symmetry(only_target=True)
 
     @cached_property
-    def idx(self) -> tuple:
+    def idx(self) -> tuple[Index]:
         """Return the indices of the object."""
 
-        get_idx = {
-            'antisymtensor': lambda o: (
-                o.lower + o.upper if self.is_amplitude else o.upper + o.lower
-            ),
-            'delta': lambda o: o.args,
-            'annihilate': lambda o: o.args,
-            'create': lambda o: o.args,
-            'nonsymtensor': lambda o: o.indices,
-            'symtensor': lambda o: (
-                o.lower + o.upper if self.is_amplitude else o.upper + o.lower
-            ),
-        }
-        try:
-            return get_idx[self.type](self.base)
-        except KeyError:
-            if self.type == 'prefactor':
-                return tuple()
-            else:
-                raise KeyError(f'Unknown obj type {self.type} for obj {self}')
+        if self.sympy.is_number:  # prefactor
+            return tuple()
+
+        obj = self.base
+        # Antisym-, Sym-, Nonsymtensor, Amplitude, Kroneckerdelta
+        if isinstance(obj, (SymbolicTensor, KroneckerDelta)):
+            return obj.idx
+        elif isinstance(obj, FermionicOperator):  # F and Fd
+            return obj.args
+        else:
+            raise TypeError("Can not determine the indices for an obj of type"
+                            f"{type(obj)}: {self}.")
 
     @property
     def space(self) -> str:
@@ -1800,6 +1801,8 @@ class Obj(Container):
         """Returns the 'crude' position of the indices in the object.
            (e.g. only if they are located in bra/ket, not the exact position)
            """
+        if self.sympy.is_number:  # for prefactor an empty dict is returned
+            return {}
 
         if include_target_idx:
             target = self.term.target
@@ -1807,8 +1810,9 @@ class Obj(Container):
         ret = {}
         description = self.description(include_exponent=include_exponent,
                                        include_target_idx=include_target_idx)
-        o_type = self.type
-        if o_type in ["antisymtensor", "symtensor"]:
+        obj = self.base
+        # antisym-, symtensor and amplitude
+        if isinstance(obj, AntiSymmetricTensor):
             tensor = self.base
             for uplo, idx_tpl in \
                     {'u': tensor.upper, 'l': tensor.lower}.items():
@@ -1834,19 +1838,19 @@ class Obj(Container):
                     if s not in ret:
                         ret[s] = []
                     ret[s].append(pos)
-        elif o_type == "nonsymtensor":
+        elif isinstance(obj, NonSymmetricTensor):  # nonsymtensor
             # target idx position is already in the description
             idx = self.idx
             for i, s in enumerate(idx):
                 if s not in ret:
                     ret[s] = []
                 ret[s].append(f"{description}_{i}")
-        elif o_type in ["delta", "annihilate", "create"]:
+        # delta, create, annihilate
+        elif isinstance(obj, (KroneckerDelta, F, Fd)):
             for s in self.idx:
                 if s not in ret:
                     ret[s] = []
                 ret[s].append(description)
-        # for prefactor a empty dict is returned
         return ret
 
     def expand_intermediates(self, target: tuple = None,
@@ -1855,7 +1859,7 @@ class Obj(Container):
         from .intermediates import Intermediates
 
         # intermediates only defined for tensors
-        if 'tensor' not in self.type:
+        if not isinstance(self.base, SymbolicTensor):
             if return_sympy:
                 return self.sympy
             else:
@@ -1889,14 +1893,14 @@ class Obj(Container):
                     include_target_idx: bool = True) -> str:
         """A string that describes the object."""
 
-        descr = self.type
+        descr = self.type_as_str
         if descr == 'prefactor':
             return descr
 
         if include_target_idx:
             target = self.term.target
 
-        if descr in ['antisymtensor', 'symtensor']:
+        if descr in ['antisymtensor', 'amplitude', 'symtensor']:
             base, exponent = self.base_and_exponent
             # - space separated in upper and lower part
             upper, lower = base.upper, base.lower
@@ -1951,7 +1955,12 @@ class Obj(Container):
         from .intermediates import Intermediates
         from itertools import product
 
-        if "tensor" in (t := self.type):
+        if self.sympy.is_number:  # prefactor
+            return None
+
+        obj = self.base
+        # antisym-, sym-, nonsymtensor and amplitude
+        if isinstance(obj, SymbolicTensor):
             name = self.name
             if name == "V":  # hardcode the ERI spin blocks
                 return ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
@@ -1970,14 +1979,12 @@ class Obj(Container):
                 )
             elif name == "v":  # ERI in chemist notation
                 return ("aaaa", "aabb", "bbaa", "bbbb")
-        elif t == "delta":
+        elif isinstance(obj, KroneckerDelta):  # delta
             # spins have to be equal
             return ("aa", "bb")
-        elif t in ["create", "annihilate"]:
+        elif isinstance(obj, FermionicOperator):  # create / annihilate
             # both spins allowed!
             return ("a", "b")
-        elif t == "prefactor":
-            return None
         # the known allowed spin blocks of eri, t-amplitudes and deltas
         # may be used to generate the spin blocks of other intermediates
         itmd = Intermediates().available.get(self.pretty_name, None)
@@ -2080,15 +2087,15 @@ class Obj(Container):
                     tex_string = f"\\bigl({tex_string}\\bigr)^{{{exp}}}"
             return tex_string
 
-        if only_pull_out_pref or 'tensor' not in (o_type := self.type):
+        obj = self.base
+        if only_pull_out_pref or not isinstance(obj, SymbolicTensor):
             return self.__str__()
 
         # Only For Tensors!
-        tensor = self.base
-        if o_type in ['antisymtensor', 'symtensor']:  # t/ADC-amplitudes etc.
-            kwargs = {'upper': tensor.upper, 'lower': tensor.lower}
-        elif o_type == 'nonsymtensor':  # orb energy + some special itmds
-            kwargs = {'lower': tensor.indices}
+        if isinstance(obj, AntiSymmetricTensor):  # amplitudes, ERI, fock, ...
+            kwargs = {'upper': obj.upper, 'lower': obj.lower}
+        elif isinstance(obj, NonSymmetricTensor):  # orb energy + some itmds
+            kwargs = {'lower': obj.indices}
         return tensor_string(**kwargs)
 
 
@@ -2146,7 +2153,7 @@ class NormalOrdered(Obj):
             )
 
     @property
-    def type(self):
+    def type_as_str(self):
         return 'NormalOrdered'
 
     @cached_property
@@ -2194,15 +2201,14 @@ class NormalOrdered(Obj):
             else:
                 op_str = idx[0].space[0] + idx[0].spin
             # add a plus for creation operators
-            if (type := o.type) == 'create':
+            base = o.base
+            if isinstance(base, Fd):
                 op_str += '+'
-            elif type == 'annihilate':
-                pass
-            else:
+            elif not isinstance(base, F):  # has to be annihilate here
                 raise TypeError("Unexpected content for NormalOrdered "
                                 f"container: {o}, {type(o)}.")
             obj_contribs.append(op_str)
-        return f"{self.type}-{'-'.join(sorted(obj_contribs))}"
+        return f"{self.type_as_str}-{'-'.join(sorted(obj_contribs))}"
 
     @property
     def allowed_spin_blocks(self) -> tuple[str]:
@@ -2255,7 +2261,7 @@ class Polynom(Obj):
         return tuple(Term(self, i) for i in range(len(self)))
 
     @property
-    def type(self):
+    def type_as_str(self):
         return 'polynom'
 
     @cached_property

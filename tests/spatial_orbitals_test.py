@@ -5,8 +5,10 @@ from adcgen.simplify import simplify
 from adcgen.spatial_orbitals import (
     integrate_spin, transform_to_spatial_orbitals
 )
-from adcgen.sympy_objects import AntiSymmetricTensor, SymmetricTensor, \
-    NonSymmetricTensor, KroneckerDelta
+from adcgen.sympy_objects import (
+    AntiSymmetricTensor, SymmetricTensor, NonSymmetricTensor, KroneckerDelta,
+    Amplitude
+)
 
 from sympy import S, Rational
 from sympy.physics.secondquant import F, Fd
@@ -30,10 +32,10 @@ class TestExpandAntiSymEri:
         t1 = t1.expand_itmd(fully_expand=False).make_real()
         res = t1.expand_antisym_eri().substitute_contracted()
         i, j, k, a, b, c = get_symbols("ijkabc")
-        ref = (Rational(1, 2) * AntiSymmetricTensor("t1", (b, c), (i, j))
+        ref = (Rational(1, 2) * Amplitude("t1", (b, c), (i, j))
                * (SymmetricTensor("v", (j, b), (a, c), 1)
                   - SymmetricTensor("v", (j, c), (a, b), 1)))
-        ref += (Rational(1, 2) * AntiSymmetricTensor("t1", (a, b), (j, k))
+        ref += (Rational(1, 2) * Amplitude("t1", (a, b), (j, k))
                 * (SymmetricTensor("v", (j, i), (k, b), 1)
                    - SymmetricTensor("v", (j, b), (k, i), 1)))
         ref /= NonSymmetricTensor("e", (i,)) - NonSymmetricTensor("e", (a,))
@@ -65,7 +67,7 @@ class TestIntegrateSpin:
         ib, jb, ab, bb = get_symbols('ijab', "bbbb")
         tensors = (Rational(1, 4) *
                    AntiSymmetricTensor("V", (i, j), (a, b)) *
-                   AntiSymmetricTensor("t1", (a, b), (i, j)))
+                   Amplitude("t1", (a, b), (i, j)))
         test = Expr(tensors + num)
         ref = tensors.subs({i: ia, j: ja, a: aa, b: ba})
         ref += 4 * tensors.subs({i: ia, j: jb, a: aa, b: bb})
@@ -76,7 +78,7 @@ class TestIntegrateSpin:
     def test_t1_2(self):
         # use one of the 2 t1_2 terms as test case (without denominator)
         i, j, a, b, c = get_symbols('ijabc')
-        term = Rational(1, 2) * AntiSymmetricTensor("t1", (b, c), (i, j)) * \
+        term = Rational(1, 2) * Amplitude("t1", (b, c), (i, j)) * \
             AntiSymmetricTensor("V", (j, a), (b, c))
         term = Expr(term, real=True)
         # case 1: aa
@@ -84,9 +86,9 @@ class TestIntegrateSpin:
         ia, ja, aa, ba, ca = get_symbols('ijabc', 'aaaaa')
         jb, cb = get_symbols('jc', 'bb')
         ref = Expr(
-            Rational(1, 2) * AntiSymmetricTensor("t1", (ba, ca), (ia, ja)) *
+            Rational(1, 2) * Amplitude("t1", (ba, ca), (ia, ja)) *
             AntiSymmetricTensor("V", (ja, aa), (ba, ca))
-            + AntiSymmetricTensor("t1", (ba, cb), (ia, jb)) *
+            + Amplitude("t1", (ba, cb), (ia, jb)) *
             AntiSymmetricTensor("V", (jb, aa), (ba, cb))
         ).make_real()
         assert simplify(res - ref).sympy is S.Zero
@@ -98,9 +100,9 @@ class TestIntegrateSpin:
         res = integrate_spin(term, 'ia', 'bb')
         ib, jb, ab, bb, cb = get_symbols('ijabc', 'bbbbb')
         ref = Expr(
-            Rational(1, 2) * AntiSymmetricTensor("t1", (bb, cb), (ib, jb)) *
+            Rational(1, 2) * Amplitude("t1", (bb, cb), (ib, jb)) *
             AntiSymmetricTensor("V", (jb, ab), (bb, cb))
-            + AntiSymmetricTensor("t1", (ba, cb), (ib, ja)) *
+            + Amplitude("t1", (ba, cb), (ib, ja)) *
             AntiSymmetricTensor("V", (ja, ab), (ba, cb))
         ).make_real()
         assert simplify(res - ref).sympy is S.Zero
