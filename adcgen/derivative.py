@@ -39,9 +39,9 @@ def derivative(expr: e.Expr, t_string: str):
         # - extract the names of target indices of the term
         target_names_by_space = {}
         for s in term.target:
-            if (sp := s.space) not in target_names_by_space:
-                target_names_by_space[sp] = set()
-            target_names_by_space[sp].add(s.name)
+            if (key := s.space_and_spin) not in target_names_by_space:
+                target_names_by_space[key] = set()
+            target_names_by_space[key].add(s.name)
 
         # 2) go through the tensor_obj list and compute the derivative
         #    for all found occurences one after another (product rule)
@@ -94,8 +94,8 @@ def derivative(expr: e.Expr, t_string: str):
             # - sort the derivative according to the space of the minimal
             #   tensor indices
             #   -> sort the derivative block whise.
-            space = obj.space
-            if space not in derivative:
-                derivative[space] = e.Expr(0, **assumptions)
-            derivative[space] += symmetrized_deriv_contrib
+            key = (obj.space, obj.spin)
+            if key not in derivative:
+                derivative[key] = e.Expr(0, **assumptions)
+            derivative[key] += symmetrized_deriv_contrib
     return derivative

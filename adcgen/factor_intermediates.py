@@ -131,9 +131,9 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
         # extract the target idx names of the term
         target_idx_by_space = {}
         for s in term.eri.target:
-            if (sp := s.space) not in target_idx_by_space:
-                target_idx_by_space[sp] = set()
-            target_idx_by_space[sp].add(s.name)
+            if (key := s.space_and_spin) not in target_idx_by_space:
+                target_idx_by_space[key] = set()
+            target_idx_by_space[key].add(s.name)
 
         # go through all possible matches
         for itmd_i in possible_matches:

@@ -53,7 +53,7 @@ class PermutationProduct(tuple):
         links = []
         for perm in permutations:
             p, q = perm
-            space = set(p.space[0] + q.space[0])
+            space = set((p.space[0] + p.spin, q.space[0] + q.spin))
             perm_spaces.append(space)
 
             if len(space) > 1:  # identify linking permutations
@@ -203,7 +203,7 @@ class LazyTermMap:
             ))
             # space of contracted indices
             idx_space = "".join(sorted(
-                s.space[0] for s in term.eri.contracted
+                s.space[0] + s.spin for s in term.eri.contracted
             ))
             # the number and length of brackets in the denominator
             key = (eri_descriptions, term.denom_description(), idx_space)

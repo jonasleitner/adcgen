@@ -458,17 +458,17 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
 
     def remove(term: e.Term, tensor: e.Obj, target_indices: dict) -> e.Expr:
         # - get the tensor indices
-        indices = list(tensor.idx)
+        indices: list[Index] = list(tensor.idx)
         # print(f"\nRemoving {tensor} with indices {indices}.")
         # print(f"remaining term: {term}")
 
         # - split the indices that are in the remaining term according
-        #   to their space
+        #   to their space and spin to gather information about used indices
         used_indices = {}
         for s in set(s for s, _ in term._idx_counter):
-            if (ov := s.space) not in used_indices:
-                used_indices[ov] = set()
-            used_indices[ov].add(s.name)
+            if (idx_key := s.space_and_spin) not in used_indices:
+                used_indices[idx_key] = set()
+            used_indices[idx_key].add(s.name)
 
         # - check if the tensor is holding target indices.
         #   have to introduce a KroneckerDelta for each target index to avoid
@@ -477,35 +477,42 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
         #   f_bc * Y^ac_ij -> delta_ik * delta_jl * delta_ad * f_bc * Y^dc_kl
 
         # get all target indices on the tensor, split according to their space
+        # and spin
         tensor_target_indices = {}
         for s in indices:
-            ov = s.space
-            if s.name in target_indices.get(ov, []):
-                if ov not in tensor_target_indices:
-                    tensor_target_indices[ov] = []
-                if s not in tensor_target_indices[ov]:
-                    tensor_target_indices[ov].append(s)
+            idx_key = s.space_and_spin
+            if s.name in target_indices.get(idx_key, []):
+                if idx_key not in tensor_target_indices:
+                    tensor_target_indices[idx_key] = []
+                if s not in tensor_target_indices[idx_key]:
+                    tensor_target_indices[idx_key].append(s)
 
         # - add the tensor indices to the term_indices to collect all
-        #   unavailable indices
+        #   not available indices
         for s in indices:
-            if (ov := s.space) not in used_indices:
-                used_indices[ov] = set()
-            used_indices[ov].add(s.name)
+            if (idx_key := s.space_and_spin) not in used_indices:
+                used_indices[idx_key] = set()
+            used_indices[idx_key].add(s.name)
 
         if tensor_target_indices:
             # print("Found target indices on tensor to remove:",
             #       tensor_target_indices)
-            for space, idx_list in tensor_target_indices.items():
-                if space not in used_indices:
-                    used_indices[space] = set()
+            for idx_key, idx_list in tensor_target_indices.items():
+                if idx_key not in used_indices:
+                    used_indices[idx_key] = set()
+                space, spin = idx_key
                 additional_indices = get_lowest_avail_indices(
-                    len(idx_list), used_indices[space], space
+                    len(idx_list), used_indices[idx_key], space
                 )
                 # add the new indices to the unavailable indices
-                used_indices[space].update(additional_indices)
+                used_indices[idx_key].update(additional_indices)
                 # transform them from string to Dummies
-                additional_indices = get_symbols(additional_indices)
+                if spin:
+                    spins = spin * len(idx_list)
+                else:
+                    spins = None
+                additional_indices = get_symbols(additional_indices, spins)
+
                 sub = {s: new_s for s, new_s in
                        zip(idx_list, additional_indices)}
                 # create a delta for each index and attach to the term
@@ -523,9 +530,9 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
         repeating_indices = {}
         for s, n in Counter(indices).items():
             if n > 1:
-                if (ov := s.space) not in repeating_indices:
-                    repeating_indices[ov] = []
-                repeating_indices[ov].extend(s for _ in range(n-1))
+                if (idx_key := s.space_and_spin) not in repeating_indices:
+                    repeating_indices[idx_key] = []
+                repeating_indices[idx_key].extend(s for _ in range(n-1))
         if repeating_indices:
             # print(f"Found repeating indices {repeating_indices}")
             #   - get the list indices of all tensor indices
@@ -540,11 +547,16 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
             #   indices can at most twice, once in upper and once in lower.
             #   On NonSymmetricTensors no such limit exists -> implement for
             #   an arbitrary amount of repetitions
-            for space, idx_list in repeating_indices.items():
+            for idx_key, idx_list in repeating_indices.items():
+                space, spin = idx_key
                 additional_indices = get_lowest_avail_indices(
-                    len(idx_list), used_indices.get(space, []), space
+                    len(idx_list), used_indices.get(idx_key, []), space
                 )
-                additional_indices = get_symbols(additional_indices)
+                if spin:
+                    spins = spin * len(idx_list)
+                else:
+                    spins = None
+                additional_indices = get_symbols(additional_indices, spins)
                 for s, new_s in zip(idx_list, additional_indices):
                     term *= KroneckerDelta(s, new_s)
                     # substitute the second occurence of s in tensor indices
@@ -660,13 +672,13 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
             else:
                 remaining_term *= obj
         if not tensors:  # could not find the tensor
-            return {('none',): term}
+            return {("none",): term}
         # extract all the target indices and split according to their space
         target_indices = {}
         for s in term.target:
-            if (ov := s.space) not in target_indices:
-                target_indices[ov] = set()
-            target_indices[ov].add(s.name)
+            if (idx_key := s.space_and_spin) not in target_indices:
+                target_indices[idx_key] = set()
+            target_indices[idx_key].add(s.name)
         # remove the first occurence of the tensor
         # and add all the remaining occurences back to the term
         for remaining_t in tensors[1:]:
@@ -686,7 +698,11 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
                                 target_indices)
         # determine the space/block of the removed tensor
         # used as key in the returned dict
-        t_block = [tensor.space]
+        spin = tensor.spin
+        if all(c == "n" for c in spin):
+            t_block = [tensor.space]
+        else:
+            t_block = [f"{tensor.space}_{spin}"]
         # print(t_block, remaining_term)
         if len(tensors) == 1:  # only a single occurence no need to recurse
             return {tuple(t_block): remaining_term}

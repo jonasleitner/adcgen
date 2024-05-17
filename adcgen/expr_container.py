@@ -751,12 +751,12 @@ class Term(Container):
         #    and therefore not sorted -> will produce a random result.
         contracted = {}
         for s in self.contracted:
-            if (key := (s.space, s.spin)) not in contracted:
+            if (key := s.space_and_spin) not in contracted:
                 contracted[key] = []
             contracted[key].append(s)
         used = {}
         for s in set(self.target):
-            if (key := (s.space, s.spin)) not in used:
+            if (key := s.space_and_spin) not in used:
                 used[key] = set()
             used[key].add(s.name)
 
@@ -886,12 +886,13 @@ class Term(Container):
         if len(indices) < 2:  # not enough indices for any permutations
             return {}
 
-        # split in occ and virt indices (only generate P_oo, P_vv and P_gg)
+        # split in occ and virt indices to only generate P_oo, P_vv and P_gg.
+        # Similarly, the spin has to be the same!
         sorted_idx = {}
         for s in indices:
-            if (sp := s.space[0]) not in sorted_idx:
-                sorted_idx[sp] = []
-            sorted_idx[sp].append(s)
+            if (key := s.space_and_spin) not in sorted_idx:
+                sorted_idx[key] = []
+            sorted_idx[key].append(s)
 
         space_perms: list[list] = []  # find all permutations within a space
         for idx_list in sorted_idx.values():
@@ -1023,7 +1024,7 @@ class Term(Container):
             positions = o.crude_pos()
             c = f"_{'_'.join(sorted(coupl[i]))}" if i in coupl else None
             for s, pos in positions.items():
-                key = s.space[0] + s.spin
+                key = s.space_and_spin
                 if key not in pattern:
                     pattern[key] = {}
                 if s not in pattern[key]:
@@ -1942,7 +1943,8 @@ class Obj(Container):
             if include_exponent:
                 descr += f"-{self.exponent}"
         elif descr in ['delta', 'annihilate', 'create']:
-            descr += f"-{self.space}"
+            data = "".join(s.space[0] + s.spin for s in self.idx)
+            descr += f"-{data}"
             if include_target_idx and \
                     (target_str := "".join(s.name for s in self.idx
                                            if s in target)):

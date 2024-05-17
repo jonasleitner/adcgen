@@ -453,6 +453,8 @@ class EriOrbenergy:
         return cancel(self.num, denom, self.pref)
 
     def symbolic_denominator(self):
+        if self.denom.sympy.is_number:  # denom is a number -> nothing to do
+            return self.denom
         symbolic_denom = e.Expr(1, **self.denom.assumptions)
         has_symbolic_denom = False
         for bracket in self.denom_brackets:

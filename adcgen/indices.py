@@ -40,6 +40,11 @@ class Index(Dummy):
         else:
             return "general"
 
+    @property
+    def space_and_spin(self) -> tuple[str, str]:
+        """Returns space and spin of the Index."""
+        return self.space, self.spin
+
     def _latex(self, printer) -> str:
         ret = self.name
         if (spin := self.spin):
@@ -480,20 +485,26 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
     for s in tensor_indices:
         if s in minimized:
             continue
-        space = s.space
+        idx_key = s.space_and_spin
         # target indices of the corresponding space
-        space_target = target_idx.get(space, [])
+        space_target = target_idx.get(idx_key, [])
         # index is a target idx -> keep as is
         if s.name in space_target:
             minimized.add(s)
             continue
-        # generate minimal indices for the corresponding space
-        if space not in minimal_indices:
-            minimal_indices[space] = get_symbols(
-                get_lowest_avail_indices(n_unique_indices, space_target, space)
-            )
+        # generate minimal indices for the corresponding space and spin
+        if idx_key not in minimal_indices:
+            space, spin = idx_key
+            min_names = get_lowest_avail_indices(n_unique_indices,
+                                                 space_target, space)
+            if spin:
+                spins = spin * n_unique_indices
+            else:
+                spins = None
+            minimal_indices[idx_key] = get_symbols(min_names, spins)
+
         # get the lowest available index for the corresponding space
-        min_s = minimal_indices[space].pop(0)
+        min_s = minimal_indices[idx_key].pop(0)
         minimized.add(min_s)
         if s is min_s:  # s is already the lowest available index
             continue

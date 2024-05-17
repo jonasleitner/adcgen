@@ -4,26 +4,34 @@ from .indices import get_symbols, sort_idx_canonical
 
 
 def by_delta_types(expr: e.Expr) -> dict[tuple[str], e.Expr]:
-    """Sort the terms in an expression according to the space of the deltas
-       contained in the term."""
+    """Sort the terms in an expression according to their space and spin."""
     expr = expr.expand()
     if not isinstance(expr, e.Expr):
         expr = e.Expr(expr)
     ret = {}
     for term in expr.terms:
-        d_spaces = tuple(sorted([o.space for o in term.deltas
-                         for _ in range(o.exponent)]))
-        if not d_spaces:
-            d_spaces = ('none',)
-        if d_spaces not in ret:
-            ret[d_spaces] = e.Expr(0, **term.assumptions)
-        ret[d_spaces] += term
+        d_blocks = []
+        for delta in term.deltas:
+            spin = delta.spin
+            if all(c == "n" for c in spin):  # no indices with spin
+                block = delta.space
+            else:
+                block = f"{delta.space}_{spin}"
+            d_blocks.extend(block for _ in range(delta.exponent))
+        d_blocks = tuple(sorted(d_blocks))
+        if not d_blocks:
+            d_blocks = ('none',)
+        if d_blocks not in ret:
+            ret[d_blocks] = e.Expr(0, **term.assumptions)
+        ret[d_blocks] += term
     return ret
 
 
 def by_delta_indices(expr: e.Expr) -> dict[tuple[str], e.Expr]:
-    """Sort the terms in an expression according to the indices on the
-       KroneckerDeltas in the term."""
+    """
+    Sort the terms in an expression according to the names of indices on the
+    KroneckerDeltas in each term.
+    """
     from .indices import extract_names
     expr = expr.expand()
     if not isinstance(expr, e.Expr):
@@ -42,62 +50,49 @@ def by_delta_indices(expr: e.Expr) -> dict[tuple[str], e.Expr]:
     return ret
 
 
-def by_tensor_block(expr: e.Expr, t_string: str,
-                    bra_ket_sym: int = None) -> dict[tuple[str], e.Expr]:
-    """Sorts the terms in an expression according to the blocks of a tensor,
-       e.g. collect all terms that define the 'oo' block of the density matrix.
-       If the desired tensor occures more than once in a term, the sorted list
-       of blocks will be used."""
+def by_tensor_block(expr: e.Expr, t_name: str) -> dict[tuple[str], e.Expr]:
+    """
+    Sort the terms in an expression according to the blocks of a tensor.
+    """
 
-    if not isinstance(t_string, str):
+    if not isinstance(t_name, str):
         raise Inputerror("Tensor name must be provided as string.")
     expr = expr.expand()
     if not isinstance(expr, e.Expr):
         expr = e.Expr(expr)
-    # ckeck that there is no contradiction with the bra_ket symmetry and
-    # set the symmetry in the expr if it is not already set
-    if bra_ket_sym is not None:
-        if bra_ket_sym not in [0, 1, -1]:
-            raise Inputerror(f"Invalid bra_ket symmetry {bra_ket_sym}. Valid "
-                             "are 0, 1 and -1.")
-        sym_tensors = expr.sym_tensors
-        antisym_tensors = expr.antisym_tensors
-        if (bra_ket_sym == 0 and t_string in sym_tensors + antisym_tensors) \
-                or (bra_ket_sym == 1 and t_string in antisym_tensors) or \
-                (bra_ket_sym == -1) and t_string in sym_tensors:
-            raise ValueError("The set tensor symmetry in the expression and "
-                             "the provided bra_ket symmetry are not "
-                             "compatible.")
-        elif bra_ket_sym == 1 and t_string not in sym_tensors:
-            # set the tensor as symemtric
-            sym_tensors = sym_tensors + (t_string,)
-            expr.set_sym_tensors(sym_tensors)
-        elif bra_ket_sym == -1 and t_string not in antisym_tensors:
-            # set the tensor to be antisymmetric
-            antisym_tensors = antisym_tensors + (t_string,)
-            expr.set_antisym_tensors(antisym_tensors)
 
     ret = {}
     for term in expr.terms:
-        blocks = tuple(sorted(
-            [t.space for t in term.tensors if t.name == t_string
-             for _ in range(t.exponent)]
-        ))
-        if not blocks:
-            blocks = ("none",)
-        if blocks not in ret:
-            ret[blocks] = e.Expr(0, **term.assumptions)
-        ret[blocks] += term
+        t_blocks = []
+        for tensor in term.tensors:
+            if tensor.name != t_name:
+                continue
+            spin = tensor.spin
+            if all(c == "n" for c in spin):
+                block = tensor.space
+            else:
+                block = f"{tensor.space}_{spin}"
+            t_blocks.extend(block for _ in range(tensor.exponent))
+        t_blocks = tuple(sorted(t_blocks))
+        if not t_blocks:
+            t_blocks = ("none",)
+        if t_blocks not in ret:
+            ret[t_blocks] = e.Expr(0, **term.assumptions)
+        ret[t_blocks] += term
     return ret
 
 
-def by_tensor_target_space(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Expr]:  # noqa E501
-    """Sorts the terms in an expression according to the number and type of
-       target indices on a specified tensor, e.g. f_cc Y_ij^ac -> if sorting
-       according to Y: oov; if sorting acording to f: none.
-       """
+def by_tensor_target_block(expr: e.Expr,
+                           t_name: str) -> dict[tuple[str], e.Expr]:
+    """
+    Sort the terms in an expression according to the type of target indices on
+    the specified tensor, e.g. f_cc Y_ij^ac, where i, j and a are target
+    indices:
+    -> if sorting according to the indices on Y: (oov,);
+    if sorting acording to the indices on f: (none,).
+    """
 
-    if not isinstance(t_string, str):
+    if not isinstance(t_name, str):
         raise Inputerror("Tensor name must be provided as string.")
     expr = expr.expand()
     if not isinstance(expr, e.Expr):
@@ -107,28 +102,38 @@ def by_tensor_target_space(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Ex
     for term in expr.terms:
         key = []
         target = term.target
-        for o in term.tensors:
-            if o.name == t_string:
-                # indices are in canonical order -> the space should also
-                obj_target_sp = "".join(
-                    [s.space[0] for s in o.idx if s in target]
+        for tensor in term.tensors:
+            if tensor.name == t_name:
+                # indices are in canonical order
+                tensor_target = [s for s in tensor.idx if s in target]
+                if not tensor_target:  # no target indices on the tensor
+                    key.append("none")
+                    continue
+                tensor_target_block = "".join(
+                    s.space[0] for s in tensor_target
                 )
-                if not obj_target_sp:
-                    obj_target_sp = 'none'
-                key.append(obj_target_sp)
+                if any(s.spin for s in tensor_target):  # spin is defined
+                    spin = "".join(s.spin if s.spin else "n"
+                                   for s in tensor_target)
+                    tensor_target_block += f"_{spin}"
+                key.append(tensor_target_block)
         key = tuple(sorted(key))  # in case of multiple occurences
         if not key:  # did not find a single occurence of the tensor
-            key = (f'no_{t_string}',)
+            key = (f'no_{t_name}',)
         if key not in ret:
             ret[key] = 0
         ret[key] += term
     return ret
 
-def by_tensor_target_idx(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Expr]:  # noqa E501
-    """Sorts the terms in an expression according to the target indices on
-       the specified tensor."""
 
-    if not isinstance(t_string, str):
+def by_tensor_target_indices(expr: e.Expr,
+                             t_name: str) -> dict[tuple[str], e.Expr]:
+    """
+    Sort the terms in an expression according to the names of target indices on
+    the specified tensor.
+    """
+
+    if not isinstance(t_name, str):
         raise Inputerror("Tensor name must be provided as string.")
     expr = expr.expand()
     if not isinstance(expr, e.Expr):
@@ -139,7 +144,7 @@ def by_tensor_target_idx(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Expr
         key = []
         target = term.target
         for obj in term.tensors:
-            if obj.name == t_string:
+            if obj.name == t_name:
                 # indices are in canonical order
                 obj_target_idx = "".join(
                     [s.name for s in obj.idx if s in target]
@@ -149,7 +154,7 @@ def by_tensor_target_idx(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Expr
                 key.append(obj_target_idx)
         key = tuple(sorted(key))  # in case the tensor occurs more than once
         if not key:  # tensor did not occur in the term
-            key = (f"no_{t_string}",)
+            key = (f"no_{t_name}",)
         if key not in ret:
             ret[key] = 0
         ret[key] += term
@@ -157,6 +162,7 @@ def by_tensor_target_idx(expr: e.Expr, t_string: str) -> dict[tuple[str], e.Expr
 
 
 def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
+                     target_spin: str = None,
                      bra_ket_sym: int = 0) -> dict[tuple, e.Expr]:
     """Reduces the number of terms in an expression by exploiting its
        symmetry, i.e., splits the expression in sub expressions that
@@ -206,16 +212,31 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
     # -> check that they match with the found target indices
     if target_indices is not None:
         # split in upper/lower indices if possible
-        if ',' in target_indices:
-            upper, lower = target_indices.split(',')
+        if "," in target_indices:
+            upper, lower = target_indices.split(",")
         else:
             if bra_ket_sym:
                 raise Inputerror("Target indices need to be separated by a "
-                                 "',' to indicate where to separate them in "
+                                 "',' to indicate where to split them in "
                                  "upper and lower indices if the target tensor"
                                  "has bra-ket-symmetry.")
             upper, lower = target_indices, ""
-        upper, lower = get_symbols(upper), get_symbols(lower)
+        # treat the spin
+        if target_spin is not None:
+            if "," in target_spin:
+                upper_spin, lower_spin = target_spin.split(",")
+            else:
+                upper_spin = target_spin[:len(upper)]
+                lower_spin = target_spin[len(upper):]
+            if len(upper) != len(upper_spin) or len(lower) != len(lower_spin):
+                raise Inputerror(f"The target indices {target_indices} are "
+                                 " not compatible with the provided spin "
+                                 f"{target_spin}.")
+        else:
+            upper_spin, lower_spin = None, None
+
+        upper = get_symbols(upper, upper_spin)
+        lower = get_symbols(lower, lower_spin)
         sorted_provided_target = tuple(sorted(upper + lower,
                                               key=sort_idx_canonical))
         if sorted_provided_target != ref_target:
@@ -223,10 +244,11 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
                              "are not equal to the target indices found in "
                              f"the expr: {ref_target}.")
     else:  # just use the found target indices
+        # if no target indices have been provided all indices are in upper
+        # -> bra ket sym is irrelevant
         upper, lower = ref_target, tuple()
+        bra_ket_sym = 0
     # build a tensor holding the target indices and determine its symmetry
-    # if no target indices have been provided all indices are in upper
-    # -> bra ket sym is irrelevant
     tensor = AntiSymmetricTensor('x', upper, lower, bra_ket_sym)
     symmetry = e.Expr(tensor).terms[0].symmetry()
 
@@ -242,7 +264,7 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
             for o in term.eri.objects
         ))
         idx_space = "".join(sorted(
-            s.space[0] for s in term.eri.contracted
+            s.space[0] + s.spin for s in term.eri.contracted
         ))
         key = (eri_descr, term.denom_description(), idx_space)
         filtered_terms[key].append(term_i)
