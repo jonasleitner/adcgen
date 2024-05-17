@@ -7,15 +7,22 @@ idx_base = {'occ': 'ijklmno', 'virt': 'abcdefgh', 'general': 'pqrstuvw'}
 
 
 class Index(Dummy):
-    """Class to represent Indices. Inherits it's behaviour from the sympy
-       'Dummy' class, i.e.,
-        Index("x") != Index("x").
-        Additional functionality:
-         - assigning a spin to the variable via alpha/beta=True
+    """
+    Represents an Index. Wrapper implementation around the 'sympy.Dummy'
+    class, which means Index("x") != Index("x").
+    Important assumptions:
+    - below_fermi: The index represents an occupied orbital.
+    - above_fermi: The index represents a virtual orbital.
+    - alpha: The index represents an alpha (spatial) orbital.
+    - beta: The index represents a beta (spatial) orbital.
     """
 
     @property
     def spin(self) -> str:
+        """
+        The spin of the index. An empty string is returned if no spin is
+        defined.
+        """
         if self.assumptions0.get("alpha"):
             return "a"
         elif self.assumptions0.get("beta"):
@@ -25,6 +32,7 @@ class Index(Dummy):
 
     @property
     def space(self) -> str:
+        """The space to which the index belongs (occupied/virtual/general)."""
         if self.assumptions0.get("below_fermi"):
             return "occ"
         elif self.assumptions0.get("above_fermi"):
@@ -41,10 +49,12 @@ class Index(Dummy):
 
 
 class Indices(metaclass=Singleton):
-    """Book keeping class that manages the indices in an expression.
-       This ensures that for every index only a single instance exists,
-       which allows to correctly identify equal indices.
-       """
+    """
+    Manages the indices used thoughout the package and ensures that
+    only a single class instance exists for each index.
+    This is necessary because the 'equality' operator is essentially replaced
+    by the 'is' operator for the indices: Index("x") != Index("x").
+    """
     def __init__(self):
         # dict that holds all symbols that have been created previously.
         self._symbols = {'occ': {}, 'virt': {}, 'general': {},
@@ -67,12 +77,13 @@ class Indices(metaclass=Singleton):
                       'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2')
         self._general = ('p', 'q', 'r', 's', 't', 'u', 'v', 'w')
 
-    def _gen_generic_idx(self, space, spin):
-        """Generated the next 'generation' of generic indices, i.e. extends
-           generic indice list incrementing the integer attached to the index
-           base. The first generic indices will increment the integer found
-           at the last element of self.o/self.v by one.
-           """
+    def _gen_generic_idx(self, space: str, spin: str):
+        """
+        Generated the next 'generation' of generic indices, i.e. extends
+        _generic_indices list by incrementing the integer attached to the index
+        base. The first generic indices will increment the highest integer
+        found in the _occ/_virt tuples by one.
+        """
         # first call -> counter has not been initialized yet.
         key = space if spin is None else f"{space}_{spin}"
         if not hasattr(self, f'counter_{key}'):
@@ -94,7 +105,25 @@ class Indices(metaclass=Singleton):
         setattr(self, f'counter_{key}', counter + 1)
 
     def get_indices(self, indices: str, spins: str = None) -> dict:
-        """Obtain the symbols for the provided index string."""
+        """
+        Obtain the Indices for the provided string.
+
+        Parameters
+        ----------
+        indices : str
+            The names of the indices as a single string that is split
+            automatically as "ij21kl3" -> i, j21, k, l3.
+        spins : str, optional
+            The spins of the indices as a single string, e.g., "aaba"
+            for obtaining four indices with spin: alpha, alpha, beta, alpha.
+
+        Returns
+        -------
+        dict
+            key: the space and spin of the indices as string.
+            value: list containing the indices in the order the indices are
+                   provided in the indices input.
+        """
         if not isinstance(indices, str):
             raise Inputerror(f"Indices {indices} need to be of type string.")
         indices = split_idx_string(indices)
@@ -130,10 +159,23 @@ class Indices(metaclass=Singleton):
                 pass
         return ret
 
-    def get_generic_indices(self, **kwargs):
-        """Method to request a number of genrated indices that has not been
-           used yet. Indices obtained via this function may be reobtained using
-           get_indices. Request indices with: n_occ=3, n_virt=2"""
+    def get_generic_indices(self, **kwargs) -> dict:
+        """
+        Request indices with unique names that have not been used in the
+        current run of the program. Easy way to ensure that contracted indices
+        do not appear anywhere else in a term.
+        Indices can be requested with the keywords
+        n_occ, n_virt, n_general (or n_o, n_v, n_g)
+        to obtain indices without spin. Spin can be defined by appending
+        '_a' or '_b' to the keyword.
+
+        Returns
+        -------
+        dict
+            key: the space and spin of the indices as string.
+            value: list containing the indices in the order they are
+                   provided in the indices input.
+        """
 
         ret = {}
         for key, n in kwargs.items():
@@ -170,7 +212,7 @@ class Indices(metaclass=Singleton):
         return ret
 
     def _new_symbol(self, idx: str, ov: str, spin: str | None) -> Index:
-        """Creates the new symbol from the index string."""
+        """Creates a new symbol with the defined name, space and spin."""
         assumptions = {}
         if ov == "occ":
             assumptions["below_fermi"] = True
@@ -188,7 +230,9 @@ class Indices(metaclass=Singleton):
         return Index(idx, **assumptions)
 
     def substitute_with_generic(self, expr):
-        """Substitute all contracted indices with new, generic indices."""
+        """
+        Substitute all contracted indices with new, generic (unused) indices.
+        """
         from . import expr_container as e
 
         def substitute_contracted(term: e.Term) -> e.Expr:
@@ -235,14 +279,15 @@ class Indices(metaclass=Singleton):
 
 
 def index_space(idx: str) -> str:
-    """Returns the space an index belongs to (occ/virt/geneal)."""
+    """Returns the space an index belongs to (occ/virt/general)."""
     for sp, idx_string in idx_base.items():
         if idx[0] in idx_string:
             return sp
     raise Inputerror(f"Could not assign the index {idx} to a space.")
 
 
-def sort_idx_canonical(idx):
+def sort_idx_canonical(idx: Index):
+    """Use as sort key to to bring indices in canonical order."""
     if isinstance(idx, Index):
         # also add the hash here for wicks, where multiple i are around
         return (idx.space[0],
@@ -254,8 +299,10 @@ def sort_idx_canonical(idx):
         return ('', 0, str(idx), hash(idx))
 
 
-def split_idx_string(str_tosplit):
-    """Splits an index string of the form ij12a3b in a list [i,j12,a3,b]."""
+def split_idx_string(str_tosplit: str) -> list:
+    """
+    Splits an index string of the form 'ij12a3b' in a list ['i','j12','a3','b']
+    """
     splitted = []
     temp = []
     for i, idx in enumerate(str_tosplit):
@@ -271,7 +318,11 @@ def split_idx_string(str_tosplit):
     return splitted
 
 
-def n_ov_from_space(space_str):
+def n_ov_from_space(space_str: str):
+    """
+    Number of required occupied and virtual indices required for the given
+    exictation space, e.g., "pph" -> 2 virtual and 1 occupied index.
+    """
     return {'n_occ': space_str.count('h'), 'n_virt': space_str.count('p')}
 
 
@@ -283,9 +334,19 @@ def repeated_indices(idx_a: str, idx_b: str) -> bool:
 
 
 def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
-    """Returns a list containing the n lowest indices that belong to the
-       desired space and are not present in the provided list of used indices.
-       """
+    """
+    Return the names of the n lowest available indices belonging to the desired
+    space.
+
+    Parameters
+    ----------
+    n : int
+        The number of available indices.
+    used : list[str]
+        The names of the indices that are already in use.
+    space : str
+        The space (occ/virt/general) to which the indices belong.
+    """
     # generate idx pool to pick the lowest indices from
     base = idx_base[space]
     idx = list(base)
@@ -299,8 +360,9 @@ def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
     return [s for s in idx if s not in used][:n]
 
 
-def extract_names(syms):
-    """Extracts the names of the provided symbols and returns them in a list.
+def extract_names(syms: list[Index] | dict):
+    """
+    Extracts the names of the provided indices and returns them in a list.
     """
     from itertools import chain
     if isinstance(syms, dict):
@@ -308,13 +370,22 @@ def extract_names(syms):
     return [s.name for s in syms]
 
 
-def get_symbols(idx: str | list[str] | list[Index],
+def get_symbols(idx: str | Index | list[str] | list[Index],
                 spins: str = None) -> list[Index]:
-    """Ensure that all provided indices are sympy symbols. If a string of
-       indices is provided the corresponding sympy symbols are
-       created automatically."""
+    """
+    Uses the Indices class to initialize 'Index' instances with the
+    provided names and spin.
 
-    if not idx:
+    Parameters
+    ----------
+    idx : str | Index | list[str] | list[Index]
+        The names of the indices to generate. If they are already instances
+        of the 'Index' class we do nothing.
+    spins : str, optional
+        The spin of the indices.
+    """
+
+    if not idx:  # empty string/list
         return []
     elif isinstance(idx, Index):  # a single symbol is not iterable
         return [idx]
@@ -341,9 +412,13 @@ def get_symbols(idx: str | list[str] | list[Index],
 
 
 def order_substitutions(subsdict: dict[Index, Index]) -> list:
-    """Returns substitutions ordered in a way one can use the subs method
-       without the need to use the 'sumiltanous=True' option. Essentially
-       identical to a part of the substitute_dummies function of sympy."""
+    """
+    Order substitutions such that only a minial amount of intermediate
+    indices is required when the substitutions are executed one after another
+    and the usage of the 'simultaneous=True' option of sympys 'subs' method.
+    Adapted from the 'substitute_dummies' function defined in
+    'sympy.physics.seconquant'.
+    """
     from .sympy_objects import Index
 
     subs = []
@@ -371,18 +446,33 @@ def order_substitutions(subsdict: dict[Index, Index]) -> list:
     return subs
 
 
-def minimize_tensor_indices(tensor_indices: tuple,
-                            target_idx: dict[str, list[str]]):
-    """Minimizes the tensor indices using the lowest available non target
-       indices. Returns the minimized indices as well as the corresponding
-       substitution dict."""
+def minimize_tensor_indices(tensor_indices: tuple[Index],
+                            target_idx: dict[tuple, list[str]]):
+    """
+    Minimizes the indices on a tensor using the lowest available indices that
+    are no target indices.
+
+    Parameters
+    ----------
+    tensor_indices : tuple[Index]
+        List containing the indices of the tensor.
+    target_idx : dict[tuple, list[str]]
+        The names of target indices sorted by their space and spin with
+        key = (space, spin).
+
+    Returns
+    -------
+    tuple
+        The minimized indices and the list of index permutations that was
+        applied to reach this minimized state.
+    """
     from .symmetry import Permutation, PermutationProduct
 
     for target in target_idx.values():
         if not all(isinstance(s, str) for s in target):
             raise TypeError("Target indices need to be provided as string.")
 
-    tensor_indices: list = list(tensor_indices)
+    tensor_indices: list[Index] = list(tensor_indices)
     n_unique_indices: int = len(set(tensor_indices))
     minimal_indices: dict[str, list] = {}
     permutations = []  # list for collecting the applied permutations

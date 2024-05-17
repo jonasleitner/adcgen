@@ -434,10 +434,11 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
     tensor blocks are considered, because the non-canonical blocks can be
     generated from the canonical ones, e.g., removing a symmetric matrix d_{pq}
     from an expression can only result in expressions for the 'oo', 'ov' and
-    'vv' blocks, since f_{ai} = f_{ia}.
+    'vv' blocks, since d_{ai} = d_{ia}.
     The symmetry of the removed tensor is taken into account, such that the
     original expression can be restored if all block expressions are
     contracted with the corresponding tensor blocks again.
+    Note that for ADC-Amplitudes a special prefactor is used.
 
     Parameters
     ----------
@@ -655,7 +656,7 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
         remaining_term = e.Expr(1, **term.assumptions)
         for obj in term.objects:
             if obj.name == t_name:
-                tensors.extend(obj for _ in range(obj.exponent))
+                tensors.append(obj)  # we take care of the exponent later!
             else:
                 remaining_term *= obj
         if not tensors:  # could not find the tensor
