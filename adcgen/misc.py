@@ -7,10 +7,11 @@ class Inputerror(ValueError):
 
 
 def cached_member(function):
-    """Decorator for a class method thats called with
-       at least one argument. The result is cached in the
-       member variable '_function_cache' of the class instance.
-       """
+    """
+    Decorator for a class method that is called with at least one argument
+    or keyword argument. THe result is cached in the variable '_function_cache'
+    of the class instance.
+    """
 
     fname = function.__name__
 
@@ -53,7 +54,7 @@ def cached_member(function):
 
 
 def cached_property(function):
-    """Decorator for a cached property."""
+    """Decorator for a cached property member function."""
 
     def get(self):
         try:
@@ -122,6 +123,7 @@ def transform_to_tuple(input):
 
 
 class Singleton(type):
+    """Simple metaclass that implements the Singleton pattern on a class."""
     _instances = {}
 
     def __call__(cls, *args, **kwargs):

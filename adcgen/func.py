@@ -15,21 +15,25 @@ from sympy import S, Add, Mul, Pow, sqrt
 from itertools import product
 
 
-def gen_term_orders(order, term_length, min_order):
-    """Generates all combinations that contribute to the n'th order
-       contribution of a term x*x*x*..., where x is expanded in a perturbation
-       expansion.
+def gen_term_orders(order: int, term_length: int, min_order: int):
+    """
+    Generate all combinations of orders that contribute to the n'th-order
+    contribution of a term of the given length
+    (a * b * c * ...)^{(n)},
+    where a, b and c are each subject of a perturbation expansion.
 
-       :param order: The desired order
-       :type order: int
-       :param term_length: The number of objects in the term to expand in
-            perturbation theory.
-       :type term_length: int
-       :param min_order: The minimum order that should be considered
-       :type min_order: int
-       :return: All possible combinations of a given order
-       :rtype: list
-       """
+    Parameters
+    ----------
+    order : int
+        The perturbation theoretical order n.
+    term_length : int
+        The number of objects in the term.
+    min_order : int
+        The minimum perturbation theoretical order of the objects in the
+        term to consider. For instance, 2 if the first and zeroth order
+        contributions are not relevant, because they vanish or are considered
+        separately.
+    """
 
     if not all(isinstance(n, int) and n >= 0
                for n in [order, term_length, min_order]):
@@ -42,9 +46,15 @@ def gen_term_orders(order, term_length, min_order):
 
 
 def import_from_sympy_latex(expr_string: str) -> Expr:
-    """Function for importing an expression from a sympy latex string:
-       latex(expression) -> string.
-       The returned expression does not contain any assumptions."""
+    """
+    Imports an expression from a string created by the 'sympy.latex' function.
+
+    Returns
+    -------
+    Expr
+        The imported expression in a 'Expr' container. Note that no assumptions
+        (sym_tensors or antisym_tensors) have been applied yet.
+    """
 
     def import_indices(indices: str):
         # split at the end of each index with a spin label
@@ -241,11 +251,25 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
     return Expr(sympy_expr)
 
 
-def evaluate_deltas(expr, target_idx=None):
-    """Slightly modified version of the evaluate_deltas function from sympy
-       that takes the target indices of the expr as additional input.
-       Neccessary if the einstein sum convention is not sufficient
-       to determine the target indices in all terms of the expression."""
+def evaluate_deltas(expr, target_idx: str = None):
+    """
+    Evaluates the KroneckerDeltas in an expression.
+    The function only removes contracted indices from the expression and
+    ensures that no information is lost if an index is removed.
+    Adapted from the implementation in 'sympy.physics.secondquant'.
+    Note that KroneckerDeltas in a Polynom (a*b + c*d)^n will not be evaluated.
+    However, in most cases the expression can simply be expanded before
+    calling this function.
+
+    Parameters
+    ----------
+    expr
+        Expression containing the KroneckerDeltas to evaluate. This function
+        expects a plain object from sympy (Add/Mul/...) and no container class.
+    target_idx : str, optional
+        Optionally, target indices can be provided if they can not be
+        determined from the expression using the Einstein sum convention.
+    """
 
     if isinstance(expr, Add):
         return expr.func(*[evaluate_deltas(arg, target_idx)
@@ -305,13 +329,24 @@ def evaluate_deltas(expr, target_idx=None):
 
 
 def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
-    """Evaluates Wicks theorem on the provided expression only returning
-       fully contracted contributions.
-       The resulting Kronecker deltas are evaluated automatically if
-       simplify_kronecker_deltas is set.
-       If some rules are provided, they are applied to the
-       resulting expression before returning.
-       Adapted from 'sympy.physics.secondquant'."""
+    """
+    Evaluates Wicks theorem in the provided expression only returning fully
+    contracted contributions.
+    Adapted from the implementation in 'sympy.physics.secondquant'.
+
+    Parameters
+    ----------
+    expr
+        Expression containing the second quantized operator strings to
+        evaluate. This function expects plain sympy objects (Add/Mul/...)
+        and no container class.
+    rules : Rules, optional
+        Rules that are applied to the result before returning, e.g., in the
+        context of RE not all tensor blocks might be allowed in the result.
+    simplify_kronecker_deltas : bool, optional
+        If set, the KroneckerDeltas generated through the contractions
+        will be evaluated before returning.
+    """
 
     # normal ordered operator string has to evaluate to zero
     # and a single second quantized operator can not be contracted
@@ -358,9 +393,11 @@ def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
 
 
 def _contract_operator_string(op_string: list) -> Add:
-    """Contracts the provided operator string only returning fully contracted
-       contributions.
-       Adapted from 'sympy.physics.secondquant'."""
+    """
+    Contracts the operator string only returning fully contracted
+    contritbutions.
+    Adapted from 'sympy.physics.secondquant'.
+    """
     result = []
     for i in range(1, len(op_string)):
         c = _contraction(op_string[0], op_string[i])
@@ -379,8 +416,10 @@ def _contract_operator_string(op_string: list) -> Add:
 
 
 def _contraction(p, q):
-    """Evaluates the contraction of two sqcond quantized fermionic operators.
-       Adapted from 'sympy.physics.secondquant'.
+    """
+    Evaluates the contraction between two sqcond quantized fermionic
+    operators.
+    Adapted from 'sympy.physics.secondquant'.
     """
     if not isinstance(p, FermionicOperator) or \
             not isinstance(q, FermionicOperator):
