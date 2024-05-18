@@ -8,8 +8,9 @@ from itertools import chain, combinations
 
 
 class Permutation(tuple):
-    """A Permutation operator that permutes the two provided indices.
-       The provided indices are sorted according to their name."""
+    """
+    Represents a permutation operator P_{pq} that permutes the indices p and q.
+    """
 
     def __new__(cls, p: Index, q: Index):
         if sort_idx_canonical(p) < sort_idx_canonical(q):
@@ -26,10 +27,14 @@ class Permutation(tuple):
 
 
 class PermutationProduct(tuple):
-    """Product of permutation operators. The current implementation assumes
-       that permutations act within an index space. This allows to sort"""
+    """
+    Represents a product of permutation operators P_{pq}P{rs}.
+    The permutations are sorted taking into account that it is only possible
+    to rearrange permutation operators if the indices belong to different
+    spaces, e.g., P_{ab}P_{ij} = P_{ij}P_{ab}.
+    """
 
-    def __new__(cls, args):
+    def __new__(cls, args: tuple[Permutation]):
         # identify spaces that are linked to each other
         # the order of permutations within a linked group has to be maintained!
         # e.g. P_ia * P_ij * P_ab * P_pq
@@ -43,8 +48,10 @@ class PermutationProduct(tuple):
 
     @staticmethod
     def split_in_separable_parts(permutations):
-        """Split the permutations in subsets that can be treated independently
-           from each other."""
+        """
+        Splits the permutations in subsets that can be treated independently
+        of each other.
+        """
 
         # split the permutations according to their index space
         # and identify spaces that are linked to each other through at least
@@ -96,13 +103,11 @@ class PermutationProduct(tuple):
 
 
 class LazyTermMap:
-    """Class for lazy evaluation of the term map of an expression, i.e.,
-       which terms can be mapped onto each other when target indices are
-       permuted.
-       Currently the terms are assumed to consist of a remainder/eri part
-       and a orbital energy denominator. Orbital energy numerators might not
-       be treated correctly!
-       """
+    """
+    Establishes a term map for an expression that contains information about
+    terms that can be mapped onto each other when permuting target indices of
+    the expression.
+    """
 
     def __init__(self, expr: e.Expr):
         self._expr = expr
@@ -110,13 +115,15 @@ class LazyTermMap:
         self._term_map = {}  # {(perms, factor): {i: other_i}}
 
     def evaluate(self):
-        """Use the target indices of the contained expression, create
-           possible permutations and probe the expression for symmetry.
-           Due to the ambiguous definition of product permutations
-           (ijk -> jki can be obtained from P_ij P_ik or P_ik P_jk)
-           it might still be possible to evaluate more entries at a
-           later point.
-           """
+        """
+        Fully evaluates the term map of the expression by probing all
+        possible permutations of target indices.
+        Due to an ambiguous definition of the symmetry by means of products of
+        permutation operators
+        (ijk -> kij can be obtained by applying P_{ij}P_{ik} or P_{ik}P_{jk})
+        it might still be possible to encounter unevaluated entries at a
+        later point.
+        """
         from .sympy_objects import AntiSymmetricTensor
 
         # if we put all indices in lower no assumptions are important
@@ -127,6 +134,17 @@ class LazyTermMap:
         return self._term_map
 
     def __getitem__(self, symmetry: tuple):
+        """
+        Checks whether a given symmetry as already been evaluated and probes
+        the expression for the symmetry if this is not the case.
+
+        Parameters
+        ----------
+        symmetry : tuple
+            A tuple containing the permutations and the corresponding factor:
+            +1 to probe for symmetry (+ P_{pq}P_{rs}...) and
+            -1 to probe for antisymmetry (- P_{pq}P_{rs}...).
+        """
         # did we already compute the map for the desired symmetry?
         if symmetry in self._term_map:
             return self._term_map[symmetry]
@@ -170,7 +188,7 @@ class LazyTermMap:
 
     @cached_property
     def target_indices(self):
-        """Function that returns the target indices of the expression."""
+        """Returns the target indices of the expression."""
 
         if self._expr.provided_target_idx is not None:
             return self._expr.provided_target_idx
@@ -186,8 +204,17 @@ class LazyTermMap:
 
     @cached_member
     def _prescan_terms(self) -> tuple:
-        """Method that prescans the terms and collects compatible terms in
-           a dict."""
+        """
+        Prescan the terms of the expression collecting compatible terms that
+        might be mapped onto each other.
+
+        Returns
+        -------
+        tuple[bool, list]
+            First entry: Indicates whether the corresopnding terms have an
+                         orbital energy denominator.
+            Second entry: The terms by their index.
+        """
 
         filtered_terms = defaultdict(list)
         for term_i, term in enumerate(self._terms):
@@ -220,11 +247,27 @@ class LazyTermMap:
 
     def probe_symmetry(self, permutations: PermutationProduct,
                        sym_factor: int) -> dict:
-        """Probes which terms can be mapped onto each other if the given
-           Symmetry, which is defined by the given permutations and the
-           corresponding factor, is applied. Thereby, the symmetry factor
-           indicates whether the function is looking for symmetry (+1) or
-           antisymmetry (-1)."""
+        """
+        Probes which terms in the expression can be mapped onto each other
+        by applying the given symmetry.
+
+        Parameters
+        ----------
+        permutations : PermutationProduct
+            A prdocut of permutations of target indices of the expression.
+        sym_factor : int
+            Possible values:
+            +1 -> probe for symmetry (Term + P_{pq}P_{rs}... Term)
+            -1 -> probe for antisymmetry (Term - P_{pq}P_{rs}... Term)
+
+        Returns
+        -------
+        dict
+            Contains the index of terms which, when the provided permutations
+            are applied, become equal to other non-permuted terms.
+            key: The index of the permuted term.
+            value: The index of the term it can be mapped onto.
+        """
         from itertools import chain
         from .reduce_expr import factor_eri_parts, factor_denom
         from .simplify import simplify

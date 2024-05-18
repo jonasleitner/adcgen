@@ -164,17 +164,34 @@ def by_tensor_target_indices(expr: e.Expr,
 def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
                      target_spin: str = None,
                      bra_ket_sym: int = 0) -> dict[tuple, e.Expr]:
-    """Reduces the number of terms in an expression by exploiting its
-       symmetry, i.e., splits the expression in sub expressions that
-       are assigned to specific permutations. Applying those permutations
-       to the sub expressions regenerates the full expression.
-       To speed up this process the target indices can be provided as str,
-       where a comma separates the bra and ket indices. In combination with the
-       bra ket symmetry this reduces the amount of permutations
-       the expression is probed for, e.g., the target indices ijab may either
-       belong to a doubles vector with ij and ab antisym or to the
-       ph/ph block of the secular matrix with ij-ab sym.
-       """
+    """
+    Reduces the number of terms in an expression by exploiting the symmetry:
+    by applying permutations of target indices it might be poossible to map
+    terms onto each other reducing the overall number of terms.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression to probe for symmetry.
+    target_indices : str, optional
+        The names of target indices of the expression. Bra and ket indices
+        should be separated by a ',' to lower the amount of permutations the
+        expression has to be probed for, e.g., to differentiate 'ia,jb'
+        from 'ij,ab'. If not provided, the function will try to determine the
+        target indices automatically and probe for the complete symmetry found
+        for these indices.
+    bra_ket_sym : int, optional
+        Defines the bra-ket symmetry of the result tensor of the expression.
+        Only considered if the names of target indices are separated by a ','.
+
+    Returns
+    -------
+    dict
+        The remaining terms sorted by the found permutations.
+        key: The permutations.
+        value: The part of the expression to which the permutations have to be
+               applied in order to recover the original expression.
+    """
     from .sympy_objects import AntiSymmetricTensor
     from .eri_orbenergy import EriOrbenergy
     from .simplify import simplify

@@ -2,16 +2,22 @@ from . import expr_container as e
 
 
 class Rules:
-    """Rule to apply to expressions. Currently it is only possible to
-       define forbidden tensor blocks, i.e., only allow a certain subset
-       of blocks in the expression and remove all terms that contain a
-       forbidden block. Forbidden tensor blocks can be defined as:
-       {'tensor_name': [block1, block2,...]}"""
+    """
+    Rules to apply to expressions.
 
-    def __init__(self, forbidden_tensor_blocks=None):
+    Parameters
+    ----------
+    forbidden_tensor_blocks : dict, optional
+        Tensor blocks to remove from an expression, i.e., only allow
+        a certain subset of blocks in the expression. A dictionary of the form
+        {tensor_name: [block1, block2, ...]}
+        is expected.
+    """
+
+    def __init__(self, forbidden_tensor_blocks: dict[str, list[str]] = None):
         self._forbidden_blocks = forbidden_tensor_blocks
 
-    def apply(self, expr):
+    def apply(self, expr: e.Expr) -> e.Expr:
         """Applies the rules to the provided expression."""
 
         if not isinstance(expr, e.Expr):
@@ -40,15 +46,13 @@ class Rules:
         empty, other_empty = self.is_empty, other.is_empty
         if empty and other_empty:  # both are empty
             return True
-        elif empty:  # only self is empty
-            return False
-        elif other_empty:  # only other is empty
+        elif empty or other_empty:  # only self or other is empty
             return False
 
-        # both not empty -> compare forbidden blocks
-        for k, v in self._forbidden_blocks.items():
-            if k not in other._forbidden_blocks:
-                return False
-            if sorted(v) != sorted(other._forbidden_blocks[k]):
-                return False
+        # both not empty -> compare forbidden blocks (keys and values)
+        if self._forbidden_blocks.keys() != other._forbidden_blocks.keys():
+            return False
+        if any(sorted(v) != sorted(other._forbidden_blocks[k])
+               for k, v in self._forbidden_blocks.items()):
+            return False
         return True
