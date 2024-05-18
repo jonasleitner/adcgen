@@ -5,12 +5,17 @@ from sympy import Pow, S, Mul, Basic
 
 
 class EriOrbenergy:
-    """Class that holds term, split in numerator, denominator and a remainder:
-       (e_i + e_j) / (e_i + e_j - e_a + e_b) * eri1 * eri2
-       The remainder is assumed to contain any tensors/deltas, but the orbital
-       energy tensor e."""
+    """
+    Splits a single term into an orbital energy fraction, a prefactor and a
+    remainder.
 
-    def __init__(self, term):
+    Parameters
+    ----------
+    term : Term
+        The term to split.
+    """
+
+    def __init__(self, term: e.Term | e.Expr):
         # ensure the input consists of a single term either as term or expr
         if not isinstance(term, e.Term) or not len(term) == 1:
             Inputerror("Expected a single term as input.")
@@ -60,9 +65,10 @@ class EriOrbenergy:
         return f"{self.pref} * [{self.num}] / [{self.denom}] * {self.eri}"
 
     def _validate_denom(self):
-        """Ensure that the denominator consists of 1 or more brackets of the
-           form (a + b + ...), i.e., each term in a bracket consists of
-           1 'e' tensor that holds 1 index and maybe a prefactor."""
+        """
+        Ensures that the denominator only consists of brackets of the form
+        (e_a + e_b - ...)(...).
+        """
         # only objects that contain only e tensors with a single idx can
         # occur in the denominator
 
@@ -94,9 +100,10 @@ class EriOrbenergy:
                                          f"{self._denom}.")
 
     def _validate_num(self):
-        """Ensure that the numerator is of the form (a + b + ...), i.e., each
-           term in the numerator contains 1 'e' tensor that holds a single
-           index and maybe a prefactor."""
+        """
+        Ensures that the numerator is of the form (e_a + e_b - ...) only
+        allowing prefactors +-1.
+        """
         # numerator can only contain terms that consist of e tensors with a
         # single index and prefactors
         # checking that each term only contains a single tensor with exponent 1
@@ -122,22 +129,27 @@ class EriOrbenergy:
 
     @property
     def denom(self) -> e.Expr:
+        """Returns the denominator of the orbital energy fraction."""
         return self._denom
 
     @property
     def eri(self) -> e.Term:
+        """Returns the remainder of the term."""
         return self._eri
 
     @property
     def num(self) -> e.Expr:
+        """Returns the numerator of the orbital energy fraction."""
         return self._num
 
     @property
     def pref(self):  # sympy rational
+        """Returns the prefactor of the term."""
         return self._pref
 
     @property
     def denom_brackets(self) -> tuple[e.Polynom] | tuple[e.Expr]:
+        """Returns a tuple containing the brackets of the denominator."""
         if len(self.denom) != 1 or self.denom.sympy.is_number:
             return (self.denom,)
         else:  # denom consists of brackets
@@ -148,12 +160,15 @@ class EriOrbenergy:
 
     @property
     def expr(self):
+        """Rebuild the original term."""
         return self.num * self.eri / self.denom * self.pref
 
     def denom_description(self) -> str | None:
-        """Determine a string that describes the denominator. Contains the
-           number of brackets, as well as the length and exponent of each
-           bracket."""
+        """
+        Returns a string that describes the denominator containing the
+        number of brackets, as well as the length and exponent of each
+        bracket.
+        """
         if self.denom.is_number:
             return None
 
@@ -166,11 +181,14 @@ class EriOrbenergy:
         bracket_data = "_".join(sorted(bracket_data, reverse=True))
         return f"{len(brackets)}_{bracket_data}"
 
-    def cancel_denom_brackets(self, braket_idx_list) -> e.Expr:
-        """Cancels brakets by index in the denominator, i.e., the exponent
-           is lowered by 1, or the braket is completely removed if a exponent
-           of 0 is reached. The new denominator is returned and the original
-           object not changed."""
+    def cancel_denom_brackets(self, braket_idx_list: list[int]) -> e.Expr:
+        """
+        Cancels brackets by their index in the denominator lowering the
+        exponent by 1 or removing the bracket completely if an exponent
+        of 0 is reached. If an index is listed n times the exponent
+        will be lowered by n.
+        The original denominator is not modified.
+        """
         from collections import Counter
 
         denom = list(self.denom_brackets)
@@ -189,11 +207,14 @@ class EriOrbenergy:
                           for bk in denom if bk is not None))
         return e.Expr(new_denom, **self.denom.assumptions)
 
-    def cancel_eri_objects(self, obj_idx_list) -> e.Expr:
-        """Cancels objects in the eri part by index, i.e., the exponent is
-           lowered by 1 for each time the object index is provided. If a final
-           exponent of 0 is reached, the object is removed entirely.
-           The new eri are returned an the original object not changed."""
+    def cancel_eri_objects(self, obj_idx_list: list[int]) -> e.Expr:
+        """
+        Cancels objects in the remainder (eri) part according to their index
+        lowering their exponent by 1 for each time the objects index is
+        provided. If a final exponent of 0 is reached, the object is removed
+        from the remainder entirely.
+        The original remainder is not changed.
+        """
         from collections import Counter
 
         objects = list(self.eri.objects)
@@ -209,11 +230,19 @@ class EriOrbenergy:
         return e.Expr(new_eri, **self.eri.assumptions)
 
     def denom_eri_sym(self, eri_sym: dict = None, **kwargs):
-        """Apply all Symmetries of the ERI's to the denominator. If the
-           denominator is also symmetric or anti-symmetric, the overall
-           symmetry of ERI and Denom is determined (+-1). Otherwise
-           the factor it set to None.
-           """
+        """
+        Apply the symmetry of the remainder (eri) part to the denominator
+        identifying the common symmetry of both parts of the term.
+
+        Parameters
+        ----------
+        eri_sym : dict, optional
+            The symmetry of the remainder (eri) part of the term.
+            If not provided it will be determined on the fly.
+        **kwargs : dict, optional
+            Additional arguments that are forwarded to the 'Term.symmetry'
+            method to determine the symmetry of the remainder on the fly.
+        """
         # if the denominator is a number -> just return symmetry of eri part
         if self.denom.sympy.is_number:
             return self.eri.symmetry(**kwargs) if eri_sym is None else eri_sym
@@ -242,6 +271,17 @@ class EriOrbenergy:
         return ret
 
     def permute_num(self, eri_sym: dict = None):
+        """
+        Symmetrize the orbital energy numerator by applying the common symmetry
+        of the remainder (eri) part and the orbital energy denominator
+        - only considering contracted indices! - to the numerator keeping the
+        result normalized.
+        For instance, a numerator (e_i - e_a) may be expanded to
+        1/2 (e_i + e_j - e_a - e_b) by applying the permutation P_{ij}P_{ab}.
+        The new prefactor is automatically extracted from the
+        new numerator and added to the existing prefactor.
+        The class instance is modified in place.
+        """
         from sympy import Rational
         # if the numerator is a number no permutation will do anything useful
         if self.num.sympy.is_number:
@@ -277,10 +317,19 @@ class EriOrbenergy:
         return self
 
     def canonicalize_sign(self, only_denom: bool = False):
-        """Adjusts the sign of numerator and denominator:
-           all virtual orbital energies will be subtracted, while all occupied
-           energies are added. This might change numerator, denominator
-           and prefactor."""
+        """
+        Adjusts the sign of orbital energies in the numerator and denominator:
+        virtual orbital energies are subtracted, while occupied orbital
+        energies are added. The possible factor of -1 is extracted to the
+        prefactor.
+        Modifies the class instance in place.
+
+        Parameters
+        ----------
+        only_denom : bool, optional
+            If set, only the signs in the denominator will be adjusted
+            (default: False).
+        """
 
         def adjust_sign(expr: e.Expr | e.Polynom) -> bool:
             # function that extracts the sign of the occupied and virtual
@@ -348,7 +397,10 @@ class EriOrbenergy:
         return self
 
     def cancel_orb_energy_frac(self) -> e.Expr:
-        """Try to cancel numerator and denominator."""
+        """
+        Cancel the orbital energy fraction. Thereby, long denominator brackets
+        or brackets with rare indices are priorized.
+        """
         from collections import Counter
 
         def multiply(expr_list: list[e.Expr]) -> int | e.Expr:
@@ -453,6 +505,11 @@ class EriOrbenergy:
         return cancel(self.num, denom, self.pref)
 
     def symbolic_denominator(self):
+        """
+        Replaces the explicit orbital energy denominator with a tensor
+        of the correct symmetry (a SymmetricTensor with bra-ket antisymmetry):
+        (e_i + e_j - e_a - e_b) -> D^{ij}_{ab}.
+        """
         if self.denom.sympy.is_number:  # denom is a number -> nothing to do
             return self.denom
         symbolic_denom = e.Expr(1, **self.denom.assumptions)
