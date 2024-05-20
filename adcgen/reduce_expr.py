@@ -3,15 +3,18 @@ from .eri_orbenergy import EriOrbenergy
 from .misc import Inputerror
 from collections import defaultdict
 from sympy import S
+from itertools import chain
 import time
 
 
-def reduce_expr(expr):
-    """Function that reduces the number of terms in an expression as much as
-       possible by expanding all available intermediates and simplifying the
-       resulting expression as much as possible by canceling orbital energy
-       fractions."""
-    from itertools import chain
+def reduce_expr(expr: e.Expr) -> e.Expr:
+    """
+    Fully expands all available intermediates in an expression such that the
+    expression only exists of orbital energies and electron repulsion
+    integrals. The expanded expression is then simplified to collect as much
+    terms as possible.
+    The implementation assumes a real orbital basis.
+    """
 
     if not isinstance(expr, e.Expr):
         raise Inputerror(f"Expr to reduce needs to be an instance of {e.Expr}")
@@ -134,7 +137,15 @@ def reduce_expr(expr):
 
 
 def factor_eri_parts(expr: e.Expr) -> list[e.Expr]:
-    """Factors the eri's of an expression."""
+    """
+    Finds compatible remainder (eri) parts of an expression and collects
+    the terms in subexpressions.
+
+    Returns
+    list[Expr]
+        List of subexpressions, where each subexpression contains terms with
+        equal eri parts.
+    """
 
     if len(expr) == 1:  # trivial case
         return [expr]
@@ -150,10 +161,12 @@ def factor_eri_parts(expr: e.Expr) -> list[e.Expr]:
 
 
 def find_compatible_eri_parts(term_list: list[e.Term]) -> dict[int, dict]:
-    """Determines the necessary substitutions to make the ERI parts of terms
-       identical to each other - so they can be factored easily.
-       Does not modify any of the terms, but returns a dict that connects
-       the indices of the terms with a substitution list."""
+    """
+    Determines the necessary index substitutions to make the remainder (eri)
+    parts of terms equal to each other - so they can be factored easily.
+    Does not modify the terms, but returns a dict that connects the index of
+    the terms with a substitution list.
+    """
     from .simplify import find_compatible_terms
 
     if len(term_list) == 1:  # trivial: only a single eri
@@ -175,7 +188,24 @@ def find_compatible_eri_parts(term_list: list[e.Term]) -> dict[int, dict]:
 
 
 def factor_denom(expr: e.Expr, eri_sym: dict = None) -> list[e.Expr]:
-    """Factor the orbital energy denominators of an expr."""
+    """
+    Finds compatible orbital energy denominators in an expression with the
+    restriction that the necessary index permutations do not modify the
+    remainder (eri) part of the terms.
+
+    Parameters
+    ----------
+    expr : Expr
+        Expression to find compatible denominators in.
+    eri_sym : dict, optional
+        The symmetry of the eri part of the terms. Warning: if provided, all
+        terms in the expression are assumed to have the same eri symmetry!
+
+    Returns
+    list[Expr]
+        List of subexpressions, where each subexpression contains terms with
+        equal orbital energy denominators.
+    """
 
     if len(expr) == 1:  # trivial case: single term
         return [expr]
@@ -193,6 +223,22 @@ def factor_denom(expr: e.Expr, eri_sym: dict = None) -> list[e.Expr]:
 
 def find_compatible_denom(terms: list[e.Term],
                           eri_sym: dict = None) -> dict[int, dict]:
+    """
+    Determines the necessary index substitutions to make the orbital energy
+    denominators of the terms equal to each other - so they can be factored
+    easily. Only permutations that do not change the remainder (eri) part of
+    the terms are considered.
+    Does not modify the terms but returns a dict that connects the index of
+    the terms with a substitution list.
+
+    Parameters
+    ----------
+    terms : list[Term]
+        List of terms to find compatible orbital energy denominators.
+    eri_sym : dict, optional
+        The symmetry of the eri part of the terms. Warning: if provided, all
+        terms are assumed to have the same eri symmetry!
+    """
     if len(terms) == 1:  # trivial case: single term
         return {0: {}}
 
