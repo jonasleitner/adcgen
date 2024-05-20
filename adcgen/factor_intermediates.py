@@ -9,8 +9,23 @@ from collections import Counter
 from itertools import product, compress
 
 
-def factor_intermediates(expr, types_or_names: str | list[str] = None,
+def factor_intermediates(expr: e.Expr, types_or_names: str | list[str] = None,
                          max_order: int = None) -> e.Expr:
+    """
+    Factors the intermediates defined in 'intermediates.py' in an expression.
+    Note that the implementation assumes that a real orbital basis is used.
+
+    Parameters
+    ----------
+    expr : Expr
+        Expression in which to factor intermediates.
+    types_or_names : str | list[str], optional
+        The types or names of the intermediates to factor. If not given, the
+        function tries to factor all available intermediates.
+    max_order : int, optional
+        The maximum perturbation theoretical order of intermediates to
+        consider.
+    """
     from .intermediates import Intermediates
     from time import perf_counter
 
@@ -75,10 +90,28 @@ def factor_intermediates(expr, types_or_names: str | list[str] = None,
 
 
 def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
-                              itmd_data: tuple, itmd_term_map: LazyTermMap,
-                              itmd_cls) -> e.Expr:
-    """Function for factoring a long intermediate, i.e., a intermediate that
-       consists of more than one term."""
+                              itmd_data: tuple['FactorizationTermData'],
+                              itmd_term_map: LazyTermMap, itmd_cls) -> e.Expr:
+    """
+    Factores a long intermediate - an intermediate that consists of more
+    than one term - in an expression.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression to factor the intermediate in.
+    itmd : list[EriOrbenergy]
+        The expression of the intermediate to factor splitted into terms
+        and separating orbital energy fractions.
+    itmd_data : tuple[FactorizationTermData]
+        Data for each term in the intermediate to map the itmd term onto
+        subparts of terms in the expression.
+    itmd_term_map : LazyTermMap
+        Provides information about the mapping of terms in the intermediate
+        if the target indices of the intermediate are permuted.
+    idmd_cls
+        The class instance of the intermediate to factor.
+    """
 
     if expr.sympy.is_number:
         return expr
@@ -176,6 +209,12 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
             # differ in contracted indices.
             # -> for each itmd_indices only consider one variant for each
             #    remainder
+
+            # get the contracted indices of the itmd term
+            itmd_contracted_symbols = tuple(
+                s for s in set(itmd[itmd_i].expr.idx)
+                if s not in itmd_default_symbols
+            )
             found_remainders = {}  # {itmd_indices: [remainder]}
             for variant_data in variants:  # go through all valid variants
                 # - extract the remainder of the term (objects, excluding
@@ -188,6 +227,22 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                 # - obtain the indices of the intermediate
                 itmd_indices = tuple(variant_data['sub'].get(s, s) for s in
                                      itmd_default_symbols)
+
+                # - check that none of the contracted itmd indices appears
+                #   in the remainder!
+                # error or continue? probably better have a look if the error
+                # thrown and decide then
+                contracted_itmd_indices = tuple(
+                    variant_data['sub'].get(s, s)
+                    for s in itmd_contracted_symbols
+                )
+                remainder_indices = set(remainder.idx)
+                if any(s in remainder_indices
+                       for s in contracted_itmd_indices):
+                    raise RuntimeError("Invalid contracted itmd indices "
+                                       f"{contracted_itmd_indices} found "
+                                       "that also appear in the remainder:\n"
+                                       f"{remainder}")
 
                 # - minimize the indices of the intermediate to ensure that
                 #   the same indices are used in each term of the long itmd
@@ -218,15 +273,6 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                     else:
                         raise TypeError("Only expected tensor and prefactor."
                                         f"Found {obj} in {tensor_obj}")
-
-                # ensure that there are no indices in the numerator or the
-                # denominator of the remainder, that do not occur in the eri
-                # part or the itmd indices. This avoids factoring an
-                # itmd using invalid contracted itmd indices that are only
-                # partially removed from the term, e.g., m - a contracted itmd
-                # index occurs in both, denominator and eri part, but is only
-                # removed in the eri part, because the itmd has no denominator.
-                _validate_indices(remainder, itmd_indices)
 
                 # check if we already found another variant that gives the
                 # same itmd_indices and remainder (an identical result that
@@ -322,15 +368,33 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
 
 
 def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
-                               itmd_data, itmd_cls) -> e.Expr:
-    """Tries to factor a short intermediate, i.e., an intermediate that
-       consists of a single term."""
+                               itmd_data: 'FactorizationTermData',
+                               itmd_cls) -> e.Expr:
+    """
+    Factors a short intermediate - an intermediate that consits only of one
+    term - in an expression.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression to factor the intermediate in.
+    itmd : EriOrbenergy
+        The expression of the intermediate (a single term).
+    itmd_data : FactorizationTermData
+        Data of the intermediate term to map it onto subparts of terms in the
+        expression.
+    itmd_cls
+        The class instance of the intermediate to factor.
+    """
 
     if expr.sympy.is_number:
         return expr
 
     # get the default symbols of the intermediate
     itmd_default_symbols = tuple(get_symbols(itmd_cls.default_idx))
+    # and the itmd contracted indices
+    itmd_contracted_symbols = tuple(s for s in set(itmd.expr.idx)
+                                    if s not in itmd_default_symbols)
 
     terms = expr.terms
 
@@ -421,14 +485,13 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
         itmd_indices = tuple(variant_data['sub'].get(s, s) for s in
                              get_symbols(itmd_cls.default_idx))
 
-        # ensure that there are no indices in the numerator or the
-        # denominator of the remainder, that do not also occur in the eri
-        # part or the itmd indices. This avoids factoring an
-        # itmd using invalid contracted itmd indices that are only
-        # partially removed from the term, e.g., m, a contracted itmd
-        # index occurs in both, denominator and eri part, but is only
-        # removed in the eri part, because the itmd has no denominator.
-        _validate_indices(remainder, itmd_indices)
+        contracted_itmd_indices = tuple(variant_data['sub'].get(s, s)
+                                        for s in itmd_contracted_symbols)
+        remainder_indices = set(remainder.idx)
+        if any(s in remainder_indices for s in contracted_itmd_indices):
+            raise RuntimeError("Invalid contracted itmd indices "
+                               f"{contracted_itmd_indices} found that also "
+                               f"appear in the remainder:\n{remainder}")
 
         # - determine the prefactor of the factored term
         pref = term.pref * variant_data['factor'] / itmd.pref
@@ -473,9 +536,32 @@ def _factor_complete(result: e.Expr, terms: list[e.Term], itmd_cls,
                      factored_terms: set,
                      intermediate_variants: 'LongItmdVariants'
                      ) -> tuple[e.Expr, bool]:
-    """Factors all intermediate variants which are complete and share
-       common prefactor, i.e., no terms have to be added to the expression
-       to compensate for the factorization of the intermediate.
+    """
+    Factors all found complete intermediate variants of a long intermediate
+    in an expression, i.e., variants where for all terms a match with the same
+    prefactor could be found meaning that nothing has to be added to the
+    expression to factor the intermediate.
+
+    Parameters
+    ----------
+    result : Expr
+        The resulting expression where newly factored terms are added.
+    term : list[Term]
+        The original expression where the intermediate should be factored
+        split into terms.
+    itmd_cls
+        The class instance of the intermediate to factor.
+    factored_terms : set
+        Terms which were already involved in the factorization of an
+        intermediate variant.
+    intermediate_variants : LongItmdVariants
+        The intermediate variants found in the expression.
+
+    Returns
+    -------
+    tuple[Expr, bool]
+        The result expression - with only the factored terms added - and a bool
+        indicating whether a complete intermediate could be factored.
     """
     factored_successfully = False
     for itmd_indices, remainders in intermediate_variants.items():
@@ -517,10 +603,35 @@ def _factor_mixed_prefactors(result: e.Expr, terms: list[e.Term], itmd_cls,
                              factored_terms: set,
                              intermediate_variants: 'LongItmdVariants'
                              ) -> tuple[e.Expr, bool]:
-    """Factors intermediate variants allowing terms to have mixed prefactors.
-       To compensate for the mixed prefactors additional terms are added
-       to the result. Only factors intermediates if at least 60% of the
-       terms have a common prefactor."""
+    """
+    Factors intermediate variants where all terms were found, though with
+    different prefactors, i.e., the intermediate might be factored by
+    adding one or more of the original terms to the result expression to
+    compensate:
+    z = a + 2b + c + d
+    a + b + c + d = z - b
+
+    Parameters
+    ----------
+    result : Expr
+        The result expression where newly factored terms are added.
+    terms : list[Term]
+        The original expression where the intermediate should be factored
+        split into terms.
+    itmd_cls
+        The class instance of the intermediate to factor.
+    factored_terms : set
+        Terms which were already involved in the factorization of an
+        intermediate variant.
+    intermediate_variants : LongItmsVariants
+        The found intermediate variants.
+
+    Returns
+    -------
+    tuple[Expr, bool]
+        The result expression - with only the factored terms added - and a bool
+        indicating whether an interemdiate with mixed prefactors was factored.
+    """
     factored_successfully = False
     for itmd_indices, remainders in intermediate_variants.items():
         for rem in remainders:
@@ -580,6 +691,7 @@ def _factor_mixed_prefactors(result: e.Expr, terms: list[e.Term], itmd_cls,
 
 def _build_factored_term(remainder: e.Expr, pref, itmd_cls,
                          itmd_indices) -> e.Expr:
+    """Builds the factored term."""
     tensor = itmd_cls.tensor(indices=itmd_indices, return_sympy=True)
     # resolve the Zero placeholder for residuals
     if tensor.name == "Zero":
@@ -589,11 +701,13 @@ def _build_factored_term(remainder: e.Expr, pref, itmd_cls,
 
 def _get_remainder(term: EriOrbenergy, obj_i: list[int],
                    denom_i: list[int]) -> e.Expr:
-    """Returns the remainding part of the provided term that survives the
-       factorization of the itmd, excluding the prefactor!
-       Note that the returned remainder can still hold a prefactor of -1,
-       because sympy is not maintaining the canonical sign in the denominator.
-       """
+    """
+    Builds the remaining part of the provided term that survives the
+    factorization of the itmd, excluding the prefactor!
+    Note that the returned remainder can still hold a prefactor of -1,
+    because sympy is not maintaining the canonical sign in the orbtial energy
+    fraction.
+    """
     eri: e.Expr = term.cancel_eri_objects(obj_i)
     denom: e.Expr = term.cancel_denom_brackets(denom_i)
     rem = term.num * eri / denom
@@ -604,41 +718,14 @@ def _get_remainder(term: EriOrbenergy, obj_i: list[int],
     return rem
 
 
-def _validate_indices(remainder: e.Expr, itmd_indices: tuple):
-    """Ensure that the variant generates a valid remainder by checking that
-       that all indices that occur in the numerator or denominator of the
-       remainder also occur in the ERI part of the remainder.
-       Say we want to factor t2sq = t_ik^ac t_jk^bc in some term.
-       Because the has no denominator, the denominator of the original term
-       where we try to factor the intermediate is ignored. However, one needs
-       to be careful which indices are chosen as contracted intermediate
-       indices k and c. They are not allowed to occur anywhere else in the
-       term, i.e., also not in the denominator or numerator.
-       """
-    remainder = EriOrbenergy(remainder)
-    required_frac_idx = set(remainder.num.idx) | set(remainder.denom.idx)
-    missing_idx = (
-        required_frac_idx - (set(remainder.eri.idx) | set(itmd_indices))
-    )
-    # maybe swith to return True/False and continue in the calling function
-    # if False is Returned?
-    # -> raise error for now and have a look at the cases
-    if missing_idx:
-        raise NotImplementedError(
-            "All indices that occur in the term have to be present in the "
-            "ERI part or the itmd_indices, i.e., no indices are allowed to "
-            "only occur in the denominator or numerator of the remainder. "
-            "This avoids only partially removing contracted itmd_indices from "
-            f"a term.\n{remainder}"
-        )
-
-
 def _map_on_other_terms(itmd_i: int, remainder: e.Expr,
                         itmd_term_map, itmd_indices: tuple,
-                        itmd_default_idx: tuple[str]):
-    """Checks on which other itmd_terms the current itmd_term can be mapped if
-       the symmetry of the remainder is taken into account. A set of all
-       terms, the current term contributes to is returned."""
+                        itmd_default_idx: tuple[str]) -> set[int]:
+    """
+    Checks on which other itmd_terms the current itmd_term can be mapped if
+    the symmetry of the remainder is taken into account. The set of
+    intermediate terms (by index) is returned.
+    """
     from .symmetry import Permutation, PermutationProduct
 
     # find the itmd indices that are no target indices of the overall term
@@ -669,9 +756,18 @@ def _map_on_other_terms(itmd_i: int, remainder: e.Expr,
 
 
 def _compare_eri_parts(term: EriOrbenergy, itmd_term: EriOrbenergy,
-                       term_data=None, itmd_term_data=None) -> list:
-    """Compare the eri parts of two terms and return the substitutions
-           that are necessary to transform the itmd_eri."""
+                       term_data: 'FactorizationTermData' = None,
+                       itmd_term_data: 'FactorizationTermData' = None) -> list | None:  # noqa E501
+    """
+    Compares the ERI parts of two terms. Determines
+    - the objects (by index) in the term on which the objects in the itmd term
+      can be mapped, i.e., the tensors that have to be removed from the term
+      if the intermediate is factored.
+    - the necessary index substitutions to bring the ERI part of the itmd
+      term into the form found in the expression term.
+    - the additional factor (+-1) that needs to be introduced after applying
+      the index substitutions.
+    """
 
     # the eri part of the term to factor has to be at least as long as the
     # eri part of the itmd (prefactors are separated!)
@@ -779,10 +875,16 @@ def _compare_eri_parts(term: EriOrbenergy, itmd_term: EriOrbenergy,
 
 def _compare_terms(term: EriOrbenergy, itmd_term: EriOrbenergy,
                    term_data=None, itmd_term_data=None) -> None | list:
-    """Compare two terms and return a substitution dict that makes the
-        itmd_term equal to the term. Also the indices of the objects in the
-        eri part and the denominator that match the intermediate's objects
-        are returned."""
+    """
+    Compares two terms and determines
+    - the index of objects in the eri and denominator part of the term that
+      need to be removed in the term to factor the interemdiate.
+    - the necessary index substitutions to bring the itmd term into the form
+      found in the expression.
+    - the additional factor (+-1) that needs to be introduced after applying
+      the index substitutions.
+    Note: orbital energy numerators are currently not treated!
+    """
 
     eri_variants = _compare_eri_parts(term, itmd_term, term_data,
                                       itmd_term_data)
@@ -860,10 +962,15 @@ def _compare_terms(term: EriOrbenergy, itmd_term: EriOrbenergy,
 
 def _compare_remainder(remainder: e.Expr, ref_remainder: e.Expr,
                        itmd_indices: tuple) -> int | None:
-    """Try to map remainder onto ref_remainder. Return None if it is not
-       possible. If the two remainders can be mapped, the required factor (+-1)
-       is returned to indicate whether the sign of remainder needs to be
-       changed to achieve equality."""
+    """
+    Compares two remainders and tries to map remainder onto ref_remainder.
+
+    Returns
+    int | None
+        None if the remainder can not be mapped onto each other.
+        The factor (+-1) that is necessary to achieve equality for both
+        remainder.
+    """
     from .reduce_expr import factor_eri_parts, factor_denom
 
     # if we have a number as remainder, it should be +-1
@@ -916,7 +1023,14 @@ def _compare_remainder(remainder: e.Expr, ref_remainder: e.Expr,
 
 
 class LongItmdVariants(dict):
-    """Class to manage the variants of long intermediates."""
+    """
+    Class to manage the variants of long intermediates.
+
+    Parameters
+    ----------
+    n_itmd_terms : int
+        The number of terms in the long intermediate.
+    """
 
     def __init__(self, n_itmd_terms: int, *args, **kwargs):
         self.n_itmd_terms = n_itmd_terms
@@ -928,8 +1042,25 @@ class LongItmdVariants(dict):
     def add(self, term_i: int, itmd_indices: tuple, remainder: e.Expr,
             matching_itmd_terms: tuple[int],
             prefactor, unit_factorization_pref) -> None:
-        """Add a matching term-itmd_term pair to the pool for building
-           intermediate variants.
+        """
+        Add a matching term-itmd_term pair to the pool for building
+        intermediate variants.
+
+        Parameters
+        ----------
+        term_i : int
+            The index of the term.
+        itmd_indices : tuple[Index]
+            The indices of the factored interemdiate.
+        remainder : Expr
+            Remaining objects of the term after factoring the intermediate.
+        matching_itmd_terms : tuple[int]
+            Index of itmd terms the term can be mapped.
+        prefactor
+            The prefactor of the resulting term after factoring the itmd.
+        unit_factorization_pref
+            The factor that the current term would need if the intermediate
+            would be factored with a prefactor of 1.
         """
 
         # trivial separation by itmd_indices (the indices of the itmd we
@@ -979,10 +1110,12 @@ class LongItmdVariants(dict):
             ]
 
     def get_complete_variant(self, itmd_indices, remainder) -> None | tuple:
-        """Returns the first complete variant it finds for the given
-           itmd_indices and the remainder. Only variants that are complete
-           and share a common prefactor are considered here.
-           If no variant can be found None is returned.
+        """
+        Returns prefactor and terms (by index) of a complete intermediate
+        variant for the given itmd_indices and remainder.
+        Only variants that are complete and share a common prefactor are
+        considered here.
+        If no variant can be found None is returned.
         """
 
         def sort_matches(pool: list) -> list:
@@ -1097,8 +1230,9 @@ class LongItmdVariants(dict):
 
     def _build_complete_variant(self, term_list: list, pool: list,
                                 pos_mask: list, match_masks: list) -> bool:
-        """Tries to recursively complete the given variant from the pool
-           of matches."""
+        """
+        Recursively builds the complete variant from the pool of matches.
+        """
         # check if the variant can be completed with the available
         # positions
         unique_positions = {p for pos, _ in compress(pool, pos_mask)
@@ -1169,8 +1303,11 @@ class LongItmdVariants(dict):
         return False
 
     def get_mixed_pref_variant(self, itmd_indices, remainder) -> None | tuple:
-        """Finds an intermediate variant allowing mixed prefactors for the
-           given itmd_indices and remainder."""
+        """
+        Returns a complete variant allowing mixed prefactors for the given
+        itmd_indices and remainder. Only variants where at leas 60% of the
+        terms share a common prefactor are considered.
+        """
 
         # itmd_indices or remainder not available
         if itmd_indices not in self or \
@@ -1220,8 +1357,9 @@ class LongItmdVariants(dict):
         return None
 
     def _mixed_pref_base_variants(self, pool: dict):
-        """Iterator over the base variants for intermediates with
-           mixed prefactors."""
+        """
+        Iterator over the base variants for intermediates with mixed prefactors
+        """
         # find the positions with the lowest number of matches
         pos, matches = min(pool.items(), key=lambda kv: len(kv[1]))
         # sort the matches so that
@@ -1246,10 +1384,12 @@ class LongItmdVariants(dict):
 
     def _sort_mixed_pref_matches(self, pool: list[tuple],
                                  matches_to_sort: list = None) -> list:
-        """Sorts all matches in the pool so that rare term_i and common
-           prefactors are preferred. If an additional match list is provided
-           instead this match list will be sorted instead of all matches in
-           the pool."""
+        """
+        Sorts all matches in the pool so that rare term_i and common
+        prefactors are preferred. If an additional match list is provided
+        instead this match list will be sorted instead of all matches in
+        the pool.
+        """
         term_i_counter = {}
         pref_counter = {}
         for positions, matches in pool:
@@ -1288,9 +1428,11 @@ class LongItmdVariants(dict):
                                 unit_factors: dict, pool: list,
                                 pref_counter: dict, pos_mask: list,
                                 match_masks: list) -> bool:
-        """Tries to complete the variant from the pool allowing mixed
-           mixed prefactors. Only variants where at least 60% of the
-           terms share a common prefactor are accepted."""
+        """
+        Recursively builds the complete mixed prefactor variant
+        Only variants where at least 60% of the terms share a common prefactor
+        are accepted.
+        """
         # check if the variant can be completed with the available
         # positions
         unique_positions = {p for pos, _ in compress(pool, pos_mask)
@@ -1379,8 +1521,9 @@ class LongItmdVariants(dict):
         return False
 
     def remove_used_terms(self, used_terms: list[int]) -> None:
-        """Removes the provided terms from the pool, so they can not
-           be used to build further variants.
+        """
+        Removes the provided terms from the pool, so they can not
+        be used to build further variants.
         """
         for remainders in self.values():
             for positions in remainders.values():
@@ -1397,8 +1540,7 @@ class LongItmdVariants(dict):
                     del positions[pos]
 
     def clean_empty(self) -> None:
-        """Removes all empty entries in the nested dictionary.
-        """
+        """Removes all empty entries in the nested dictionary."""
         empty_indices = []
         for itmd_indices, remainders in self.items():
             empty_rem = [rem for rem, positions in remainders.items()
@@ -1412,18 +1554,26 @@ class LongItmdVariants(dict):
 
 
 class FactorizationTermData:
-    """Class that extracts some data needed for the intermediate factorization.
-       """
+    """
+    Class that extracts some data needed for the intermediate factorization.
+
+    Parameters
+    ----------
+    term : EriOrbenergy
+        The term to extract data from.
+    """
 
     def __init__(self, term: EriOrbenergy):
         self._term = term
 
     @cached_property
     def eri_pattern(self) -> tuple:
-        """Returns the pattern of the eri part of the term. In contrast to the
-           pattern used in simplify, the pattern is determined for each object
-           as tuple that consists of the object description and the
-           coupling of the object."""
+        """
+        Returns the pattern of the eri part of the term. In contrast to the
+        pattern used in simplify, the pattern is determined for each object
+        as tuple that consists of the object description and the
+        coupling of the object.
+        """
         coupling = self._term.eri.coupling(include_exponent=False,
                                            include_target_idx=False)
         return tuple(
@@ -1444,9 +1594,11 @@ class FactorizationTermData:
 
     @cached_property
     def eri_obj_descriptions(self) -> Counter:
-        """Count how often each description occurs in the eri part.
-           Exponent of the objects is included implicitly by incrementing
-           the description counter."""
+        """
+        Counts how often each description occurs in the eri part.
+        Exponent of the objects is included implicitly by incrementing
+        the description counter.
+        """
         return Counter(
             obj.description(include_exponent=False, include_target_idx=False)
             for obj in self._term.eri.objects for _ in range(obj.exponent)
@@ -1454,9 +1606,10 @@ class FactorizationTermData:
 
     @cached_property
     def denom_bracket_lengths(self) -> None | Counter:
-        """Determine the length of all brackets in the orbital energy
-           denominator and count how often each length occurs in the
-           denominator."""
+        """
+        Determine the length of all brackets in the orbital energy
+        denominator and count how often each length occurs in the denominator.
+        """
         if self._term.denom.is_number:
             return None
         else:

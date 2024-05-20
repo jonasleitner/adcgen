@@ -1,6 +1,4 @@
-from .indices import (
-    get_symbols, index_space, order_substitutions, sort_idx_canonical
-)
+from .indices import get_symbols, order_substitutions, sort_idx_canonical
 from .indices import Indices as idx_cls
 from .indices import Index
 from .misc import Inputerror, Singleton, cached_property, cached_member
@@ -20,6 +18,12 @@ base_expr = namedtuple('base_expr', ['expr', 'target', 'contracted'])
 
 
 class Intermediates(metaclass=Singleton):
+    """
+    Manages all defined intermediates.
+    New intermediates can be defined by inheriting from
+    'RegisteredIntermediate'.
+    """
+
     def __init__(self):
         self._registered: dict = RegisteredIntermediate()._registry
         self._available: dict = {
@@ -29,10 +33,14 @@ class Intermediates(metaclass=Singleton):
 
     @property
     def available(self) -> dict:
+        """
+        Returns all available intermediates using their name as dict key.
+        """
         return self._available
 
     @property
     def types(self) -> list[str]:
+        """Returns all available types of intermediates."""
         return list(self._registered.keys())
 
     def __getattr__(self, attr) -> dict:
@@ -49,6 +57,16 @@ class Intermediates(metaclass=Singleton):
 
 
 class RegisteredIntermediate:
+    """
+    Base class for defined intermediates.
+    New intermediates can be added by inheriting from this class and require:
+    - an itmd type '_itmd_type'
+    - an perturbation theoretical order '_order'
+    - names of default indices '_default_idx'
+    - a method that fully expands the itmd into orbital energies and ERI
+      '_build_expanded_itmd'
+    - a method that returns the itmd tensor '_build_tensor'
+    """
     _registry: dict[str, dict[str]] = {}
 
     def __init_subclass__(cls):
@@ -59,74 +77,80 @@ class RegisteredIntermediate:
 
     @property
     def name(self) -> str:
+        """Name of the intermediate (the class name)."""
         return type(self).__name__
 
     @property
     def order(self) -> int:
+        """Perturbation theoretical order of the intermediate."""
         if (order := getattr(self, '_order', None)) is None:
             raise AttributeError(f"No order defined for {self.name}.")
         return order
 
     @property
     def default_idx(self) -> tuple[str]:
+        """Names of the default indices of the intermediate."""
         if (idx := getattr(self, '_default_idx', None)) is None:
             raise AttributeError(f"No default indices defined for {self.name}")
         return idx
 
     @property
     def itmd_type(self) -> str:
+        """The type of the intermediate."""
         if (itmd_type := getattr(self, '_itmd_type', None)) is None:
             raise AttributeError(f"No itmd_type defined for {self.name}.")
         return itmd_type
 
-    def validate_indices(self, **kwargs) -> tuple[Index]:
-        indices = kwargs.pop('indices', None)
-        default = self.default_idx
-        # indices are provided as index string
-        if indices is not None:
-            if any(val is not None for val in kwargs.values()):
-                raise Inputerror("If indices are provided via the indices "
-                                 "keyword, no further indices can be provided")
-        else:  # either no indices provided or via upper + lower
-            lower = kwargs.get('lower')
-            upper = kwargs.get('upper')
-            if lower is None and upper is None:
-                # no indices provided -> use default
-                indices = default
-            elif lower is None or upper is None:
-                raise Inputerror(f"Invalid indices {kwargs} provided for "
-                                 f"intermediate {self.name}.")
-            else:  # all spaces provided -> use the provided indices
-                if self.itmd_type == 't_amplitude':  # order = lower, upper
-                    indices = lower + upper
-                else:  # order = upper, lower
-                    indices = upper + lower
-        indices = tuple(get_symbols(indices))
-        # check that we have the correct amount of indices and the correct
-        # amount of occupied and virtual indices
-        if len(indices) != len(default) or \
-                any(index_space(idx.name) != index_space(ref) for idx, ref in
-                    zip(indices, default)):
-            raise Inputerror(f"Invalid indices {indices} provided for "
-                             f"intermediate {self.name}.")
+    def validate_indices(self, indices: str = None) -> tuple[Index]:
+        """
+        Ensures that the indices are valid for the intermediate and
+        transforms them to 'Index' instances.
+        """
+        if indices is None:  # no need to validate the default indices
+            return get_symbols(self.default_idx)
+
+        indices = get_symbols(indices)
+        default = get_symbols(self.default_idx)
+        if len(indices) != len(default):
+            raise Inputerror("Wrong number of indices for the itmd "
+                             f"{self.name}.")
+        elif any(s.space != d.space for s, d in zip(indices, default)):
+            raise Inputerror(f"The indices {indices} are not valid for the "
+                             f"itmd {self.name}")
         return indices
 
-    def expand_itmd(self, indices: str = None, lower: str = None,
-                    upper: str = None, return_sympy: bool = False,
+    def expand_itmd(self, indices: str = None, return_sympy: bool = False,
                     fully_expand: bool = True):
+        """
+        Expands the intermediate into orbital energies and ERI.
+
+        Parameters
+        ----------
+        indices : str, optional
+            The names of the indices of the intermediate. By default the
+            default indices (defined on the itmd class) will be used.
+        return_sympy : bool, optional
+            Whether to return the unwrapped sympy object (default: False).
+        fully_expand : bool, optional
+            True (default): The returned intermediate is recursively fully
+              expanded into orbital energies and ERI (if possible).
+            False: Returns a more readable version which is not recusively
+              expanded, e.g., n't-order MP t-amplitudes are expressed by
+              means of (n-1)'th-order MP t-amplitudes.
+        """
         # check that the provided indices are fine for the itmd
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        indices = self.validate_indices(indices)
 
         # build a cached base version of the intermediate where we can just
-        # substitute indices
+        # substitute indices in
         expanded_itmd = self._build_expanded_itmd(fully_expand)
 
         # build the substitution dict
         subs = {}
         # map target indices onto each other
         if (base_target := expanded_itmd.target) is not None:
-            subs.update({o: n for o, n in zip(base_target, idx)})
-        # map contracted indices onto each other
+            subs.update({o: n for o, n in zip(base_target, indices)})
+        # map contracted indices onto each other (replace them by generic idx)
         if (base_contracted := expanded_itmd.contracted) is not None:
             spaces = [s.space for s in base_contracted]
             contracted = idx_cls().get_generic_indices(
@@ -149,16 +173,26 @@ class RegisteredIntermediate:
                              f"{expanded_itmd.expr}.")
 
         if not return_sympy:
-            itmd = e.Expr(itmd, target_idx=idx)
+            itmd = e.Expr(itmd, target_idx=indices)
         return itmd
 
-    def tensor(self, indices: str = None, upper: str = None, lower: str = None,
-               return_sympy: bool = False):
+    def tensor(self, indices: str = None, return_sympy: bool = False):
+        """
+        Returns the itmd tensor.
+
+        Parameters
+        ----------
+        indices : str, optional
+            The names of the indices of the intermediate. By default the
+            default indices (defined on the itmd class) will be used.
+        return_sympy : bool, optional
+            Whether to return the unwrapped sympy object (default: False).
+        """
         # check that the provided indices are sufficient for the itmd
-        idx = self.validate_indices(indices=indices, lower=lower, upper=upper)
+        indices = self.validate_indices(indices)
 
         # build the tensor object
-        tensor = self._build_tensor(indices=idx)
+        tensor = self._build_tensor(indices=indices)
         if return_sympy:
             return tensor
         else:
@@ -171,8 +205,10 @@ class RegisteredIntermediate:
 
     @cached_property
     def tensor_symmetry(self) -> dict:
-        """Determines the symmetry of the itmd tensor object using the
-           default indices, e.g., ijk + abc triples symmetry for t3_2."""
+        """
+        Determines the symmetry of the itmd tensor object using the
+        default indices, e.g., ijk/abc triples symmetry for t3_2.
+        """
         return self.tensor().terms[0].symmetry()
 
     @cached_property
@@ -186,21 +222,35 @@ class RegisteredIntermediate:
     @cached_member
     def itmd_term_map(self,
                       factored_itmds: tuple[str] = tuple()) -> LazyTermMap:
-        """Returns a map that lazily determines which permutation of target
-           indices map terms in the intermediate definition onto other terms.
-           Since the form (and order of terms) depends on the previsously
-           factored intermediates, a term map for each variant has to be
-           created.
-           """
+        """
+        Returns a map that lazily determines permutations of target indices
+        that map terms in the intermediate definition onto each other.
+
+        Parameters
+        ----------
+        factored_itmds : tuple[str], optional
+            Names of other intermediates to factor in the fully expanded
+            definition of the current intermediate which (if factorization is
+            successful) changes the form of the intermediate.
+            By default the fully expanded version will be used.
+        """
         # - load the appropriate version of the intermediate
         itmd = self._prepare_itmd(factored_itmds)
         return LazyTermMap(itmd)
 
     @cached_member
-    def _prepare_itmd(self, factored_itmds: list[str] = tuple()) -> e.Expr:
-        """"Generate the default variant of the intermediate, simplify it
-            as much as possible and factor all given intermediates in the
-            provided order."""
+    def _prepare_itmd(self, factored_itmds: tuple[str] = tuple()) -> e.Expr:
+        """"
+        Generates a variant of the intermediate with default indices and
+        simplifies it as much as possible.
+
+        Parameters
+        ----------
+        factored_itmds : tuple[str], optional
+            Names of other intermediates to factor in the fully expanded
+            definition of the current intermediate. By default the fully
+            expanded version will be used.
+        """
         from .reduce_expr import factor_eri_parts, factor_denom
 
         # In a usual run we only need 1 variant of an intermediate:
@@ -245,8 +295,24 @@ class RegisteredIntermediate:
 
     def factor_itmd(self, expr: e.Expr, factored_itmds: tuple[str] = tuple(),
                     max_order: int = None) -> e.Expr:
-        """Factors the intermediate in a given expression assuming a
-           real orbital basis."""
+        """
+        Factors the intermediate in an expression assuming a real orbital
+        basis.
+
+        Parameters
+        ----------
+        expr : Expr
+            Expression in which to factor intermediates.
+        factored_itmds : tuple[str], optional
+            Names of other intermediates that have already been factored in
+            the expression. It is necessary to factor those intermediates in
+            the current intermediate definition as well, because the
+            definition might change. By default the fully expanded version
+            of the intermediate will be used.
+        max_order : int, optional
+            The maximum perturbation theoretical order of intermediates
+            to consider.
+        """
 
         from .factor_intermediates import (_factor_long_intermediate,
                                            _factor_short_intermediate,
@@ -566,8 +632,10 @@ class t3_2(RegisteredIntermediate):
 
 
 class t4_2(RegisteredIntermediate):
-    """Second order MP quadruple amplitudes in a factorized form that avoids
-       the construction of the quadruples denominator."""
+    """
+    Second order MP quadruple amplitudes in a factorized form that avoids
+    the construction of the quadruples denominator.
+    """
     _itmd_type: str = 't_amplitude'
     _order: int = 2
     _default_idx: tuple[str] = ('i', 'j', 'k', 'l', 'a', 'b', 'c', 'd')
@@ -601,7 +669,7 @@ class t4_2(RegisteredIntermediate):
 
 
 class t1_3(RegisteredIntermediate):
-    """Third order MP single amplitudes."""
+    """Third order MP single amplitude."""
     _itmd_type: str = 't_amplitude'
     _order: int = 3
     _default_idx: tuple[str] = ('i', 'a')
@@ -654,7 +722,7 @@ class t1_3(RegisteredIntermediate):
 
 
 class t2_3(RegisteredIntermediate):
-    """Third order MP double amplitudes."""
+    """Third order MP double amplitude."""
     _itmd_type: str = 't_amplitude'
     _order: int = 3
     _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
@@ -734,7 +802,8 @@ class t2_3(RegisteredIntermediate):
 
 
 class t2_1_re_residual(RegisteredIntermediate):
-    """Residual of the first order REPT doubles amplitudes.
+    """
+    Residual of the first order RE doubles amplitudes.
     """
     _itmd_type: str = 're_residual'
     _order: int = 2  # according to MP the maximum order of the residual is 2
@@ -779,7 +848,8 @@ class t2_1_re_residual(RegisteredIntermediate):
 
 
 class t1_2_re_residual(RegisteredIntermediate):
-    """Residual of the Second order REPT singles amplitudes.
+    """
+    Residual of the second order RE singles amplitudes.
     """
     _itmd_type: str = 're_residual'
     _order: int = 3  # according to MP the maximum order of the residual is 3
@@ -821,7 +891,8 @@ class t1_2_re_residual(RegisteredIntermediate):
 
 
 class t2_2_re_residual(RegisteredIntermediate):
-    """Residual of the Second order REPT doubles amplitudes.
+    """
+    Residual of the second order RE doubles amplitudes.
     """
     _itmd_type: str = 're_residual'
     _order: int = 3  # according to MP the maximum order of the residual is 3
@@ -862,7 +933,9 @@ class t2_2_re_residual(RegisteredIntermediate):
 
 
 class p0_2_oo(RegisteredIntermediate):
-    """Occupied Occupied block of the 2nd order contribution of the MP density
+    """
+    Second order contribution to the occupied occupied block of the MP
+    one-particle density matrix.
     """
     _itmd_type: str = 'mp_density'
     _order: int = 2
@@ -887,7 +960,10 @@ class p0_2_oo(RegisteredIntermediate):
 
 
 class p0_2_vv(RegisteredIntermediate):
-    """Virtual Virtual block of the 2nd order contribution of the MP density"""
+    """
+    Second order contribution to the virtual virtual block of the MP
+    one-particle density matrix.
+    """
     _itmd_type: str = 'mp_density'
     _order: int = 2
     _default_idx: tuple[str] = ('a', 'b')
@@ -911,7 +987,9 @@ class p0_2_vv(RegisteredIntermediate):
 
 
 class p0_3_oo(RegisteredIntermediate):
-    """Occupied Occupied block of the 2nd order contribution of the MP density
+    """
+    Third order contribution to the occupied occupied block of the MP
+    one-particle density matrix.
     """
     _itmd_type: str = 'mp_density'
     _order: int = 3
@@ -949,7 +1027,9 @@ class p0_3_oo(RegisteredIntermediate):
 
 
 class p0_3_ov(RegisteredIntermediate):
-    """Occupied Occupied block of the 2nd order contribution of the MP density
+    """
+    Third order contribution to the occupied virtual block of the MP
+    one-particle density matrix.
     """
     _itmd_type: str = 'mp_density'
     _order: int = 3
@@ -1002,7 +1082,10 @@ class p0_3_ov(RegisteredIntermediate):
 
 
 class p0_3_vv(RegisteredIntermediate):
-    """Virtual Virtual block of the 2nd order contribution of the MP density"""
+    """
+    Third order contribution to the virtual virtual block of the MP
+    one-particle density matrix.
+    """
     _itmd_type: str = 'mp_density'
     _order: int = 3
     _default_idx: tuple[str] = ('a', 'b')
@@ -1288,9 +1371,10 @@ class t2sq(RegisteredIntermediate):
 
 
 def eri(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
-    """Builds an electron repulsion integral using the provided indices.
-       Indices may be provided as list of sympy symbols or as string."""
-
+    """
+    Builds an antisymmetric electron repulsion integral.
+    Indices may be provided as list of sympy symbols or as string.
+    """
     idx = get_symbols(idx)
     if len(idx) != 4:
         raise Inputerror(f'4 indices required to build a ERI. Got: {idx}.')
@@ -1298,9 +1382,10 @@ def eri(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
 
 
 def fock(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
-    """Builds an electron repulsion integral using the provided indices.
-       Indices may be provided as list of sympy symbols or as string."""
-
+    """
+    Builds a fock matrix element.
+    Indices may be provided as list of sympy symbols or as string.
+    """
     idx = get_symbols(idx)
     if len(idx) != 2:
         raise Inputerror('2 indices required to build a Fock matrix element.'
@@ -1309,9 +1394,10 @@ def fock(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
 
 
 def orb_energy(idx: str | Index) -> NonSymmetricTensor:
-    """Builds an orbital energy using the provided index.
-       Indices may be provided as list of sympy symbols or as string."""
-
+    """
+    Builds an orbital energy.
+    Indices may be provided as list of sympy symbols or as string.
+    """
     idx = get_symbols(idx)
     if len(idx) != 1:
         raise Inputerror("1 index required to build a orbital energy. Got: "
