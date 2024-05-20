@@ -10,9 +10,33 @@ def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
                                   target_spin: str,
                                   restricted: bool = False,
                                   expand_eri: bool = True) -> Expr:
-    """Transforms an expression from spin to spatial orbitals by integrating
-       over the spin, i.e., attaching a spin to all indices and replacing the
-       antisymemtric ERI's with coulomb integras in chemist notation."""
+    """
+    Transforms an expression to a spatial orbital basis by integrating over
+    the spin of the spin orbitals, i.e., a spin is attached to all indices.
+    Furthermore, the antisymmetric ERI's are replaced by the in this context
+    more commonly used coulomb integrals in chemist notation.
+
+    Parameters
+    ----------
+    expr : Expr
+        Expression to express in terms of spatial orbitals.
+    target_idx : str
+        The names of target indices of the expression. Needs to be provided,
+        because the target indices in the expression are stored in canonical
+        order, which might not be correct.
+    target_spin : str
+        The spin of the target indices, e.g., 'aa' for 2 alpha orbitals.
+    restricted : bool, optional
+        Whether a restricted reference (equal alpha and beta orbitals)
+        should be assumed. In case of a restricted reference, only alpha
+        orbitals will be present in the returned expression.
+        (default: False)
+    expand_eri : bool, optional
+        If set, the antisymmetric ERI (in physicist notation) are expanded
+        to coulomb integrals using chemist notation
+        <pq||rs> = <pq|rs> - <pq|sr> = (pr|qs) - (ps|qr),
+        where a SymmetricTensor 'v' is used to represent the coulomb integrals.
+    """
 
     # perform the integration first, since the intermediates are defined
     # in terms of the antisymmetric ERI
@@ -30,7 +54,7 @@ def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
     #   to a spin
     #  -> the names are still unique, i.e., at this point each term might only
     #     hold an index of a certain name with either alpha or beta spin but
-    #     both of them simultaneously
+    #     not both of them simultaneously
     restricted_expr = Expr(0, **expr.assumptions)
     for term in expr.terms:
         idx = set(term.idx)
@@ -53,9 +77,19 @@ def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
 
 
 def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
-    """Transform an expression from spin to spatial orbitals by integrating
-       over the spin, i.e., a spin is attached to all indices in the
-       expression."""
+    """
+    Integrates over the spin of the spin orbitals to transform an expression
+    to a spatial orbital basis, i.e, a spin is attached to all indices.
+
+    Parameters
+    ----------
+    expr : Expr
+        Expression where the spin is integrated.
+    target_idx : str
+        Names of target indices of the expression.
+    target_spin : str
+        Spin of target indices of the expression.
+    """
 
     if not isinstance(expr, Expr):
         raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
@@ -207,10 +241,19 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
 
 
 def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
-    """Determines all allowed spin blocks that can be populated by the
-       provided expression. Thereby, it is assumed that all allowed spin
-       blocks of tensors in the expression are either known or can be
-       determined, i.e., this only works for closed expressions."""
+    """
+    Determines the allowed spin blocks of an expression. Thereby, it is assumed
+    that the allowed spin blocks of tensors in the expression are either known
+    or can be determined on the fly, i.e., this only works for closed
+    expressions.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression to check.
+    target_idx : str
+        The target indices of the expression.
+    """
 
     if not isinstance(expr, Expr):
         raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
@@ -336,8 +379,11 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
 
 def _has_valid_combination(tensor_idx_maps: list, current_pos: int,
                            variant: dict):
-    """Tries to recursively assign all indices to a spin without introducing
-       contradictions."""
+    """
+    Tries to recursively assign all indices to a spin without introducing
+    contradictions. Returns immediately when all indices could be assigned
+    successfully.
+    """
 
     for idx_map in tensor_idx_maps[current_pos]:
         # look for any contradictions
