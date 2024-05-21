@@ -78,7 +78,8 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
     backend_specifics = backend_specifics[backend]
 
     # try to reduce the number of terms by exploiting permutational symmetry
-    expr_with_perm_sym = exploit_perm_sym(expr, target_indices, bra_ket_sym)
+    expr_with_perm_sym = exploit_perm_sym(
+        expr=expr, target_indices=target_indices, bra_ket_sym=bra_ket_sym)
     if ',' in target_indices:  # remove the separator in target indices
         target_indices = "".join(target_indices.split(','))
 
