@@ -48,14 +48,19 @@ class TestIntegrateSpin:
         t2 = t2.expand_itmd(fully_expand=False)
         res = integrate_spin(t2, 'ijab', "aaaa")
         assert res.sympy.atoms(Index) == set(get_symbols("ijab", "aaaa"))
+        assert set(res.provided_target_idx) == set(get_symbols("ijab", "aaaa"))
         res = integrate_spin(t2, 'ijab', "aaab")
         assert res.sympy is S.Zero
+        assert set(res.provided_target_idx) == set(get_symbols("ijab", "aaab"))
         res = integrate_spin(t2, 'ijab', "aabb")
         assert res.sympy is S.Zero
+        assert set(res.provided_target_idx) == set(get_symbols("ijab", "aabb"))
         res = integrate_spin(t2, 'ijab', "abab")
         assert res.sympy.atoms(Index) == set(get_symbols("ijab", "abab"))
+        assert set(res.provided_target_idx) == set(get_symbols("ijab", "abab"))
         res = integrate_spin(t2, 'ijab', "baab")
         assert res.sympy.atoms(Index) == set(get_symbols("ijab", "baab"))
+        assert set(res.provided_target_idx) == set(get_symbols("ijab", "baab"))
 
     def test_number(self):
         # ensure that numbers are pure number terms are not dropped
@@ -69,11 +74,13 @@ class TestIntegrateSpin:
                    AntiSymmetricTensor("V", (i, j), (a, b)) *
                    Amplitude("t1", (a, b), (i, j)))
         test = Expr(tensors + num)
+        res = integrate_spin(test, "", "")
         ref = tensors.subs({i: ia, j: ja, a: aa, b: ba})
         ref += 4 * tensors.subs({i: ia, j: jb, a: aa, b: bb})
         ref += tensors.subs({i: ib, j: jb, a: ab, b: bb})
         ref += num
-        assert integrate_spin(test, "", "").sympy - ref is S.Zero
+        assert res.sympy - ref is S.Zero
+        assert res.provided_target_idx is None
 
     def test_t1_2(self):
         # use one of the 2 t1_2 terms as test case (without denominator)
@@ -189,6 +196,7 @@ class TestTransformToSpatialOrbitals:
             - NonSymmetricTensor("e", (i,)) - NonSymmetricTensor("e", (j,))
         )
         assert res.sympy - ref is S.Zero
+        assert set(res.provided_target_idx) == {i, j, a, b}
         # restricted
         res = transform_to_spatial_orbitals(t2, "ijab", "abab",
                                             restricted=True)
@@ -198,6 +206,7 @@ class TestTransformToSpatialOrbitals:
             - NonSymmetricTensor("e", (i,)) - NonSymmetricTensor("e", (j,))
         )
         assert res.sympy - ref is S.Zero
+        assert set(res.provided_target_idx) == {i, j, a, b}
 
     def test_t1_2(self):
         t1 = Intermediates().available["t1_2"]
@@ -225,6 +234,7 @@ class TestTransformToSpatialOrbitals:
                SymmetricTensor("v", (j, a), (kb, bb), 1))
         ref *= SymmetricTensor("D", (i,), (a,), -1)
         assert simplify(unrestricted - ref.expand()).sympy is S.Zero
+        assert set(unrestricted.provided_target_idx) == {i, a}
         # restricted
         restricted = transform_to_spatial_orbitals(t1, "ia", "aa",
                                                    restricted=True)
@@ -241,3 +251,4 @@ class TestTransformToSpatialOrbitals:
                    - SymmetricTensor("v", (j, b), (k, i), 1)
                )) * SymmetricTensor("D", (i,), (a,), -1)
         assert simplify(restricted - ref.expand()).sympy is S.Zero
+        assert set(restricted.provided_target_idx) == {i, a}

@@ -15,6 +15,7 @@ def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
     the spin of the spin orbitals, i.e., a spin is attached to all indices.
     Furthermore, the antisymmetric ERI's are replaced by the in this context
     more commonly used coulomb integrals in chemist notation.
+    Target indices of the expression are updated if necessary.
 
     Parameters
     ----------
@@ -56,11 +57,15 @@ def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
     #     hold an index of a certain name with either alpha or beta spin but
     #     not both of them simultaneously
     restricted_expr = Expr(0, **expr.assumptions)
+    if expr.provided_target_idx is not None:
+        # update the target indices
+        restricted_target = get_symbols(target_idx, "a" * len(target_spin))
+        restricted_expr.set_target_idx(restricted_target)
     for term in expr.terms:
         idx = set(term.idx)
         beta_idx = [i for i in idx if i.spin == "b"]
         if not beta_idx:
-            restricted_expr += term
+            restricted_expr += term.sympy
             continue
         new_idx = get_symbols([i.name for i in beta_idx], "a"*len(beta_idx))
         sub = {}
@@ -72,7 +77,7 @@ def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
                                    " because the index with alpha spin is "
                                    f"already used in the term: {term}.")
             sub[old] = new
-        restricted_expr += term.subs(order_substitutions(sub))
+        restricted_expr += term.sympy.subs(order_substitutions(sub))
     return restricted_expr
 
 
@@ -80,6 +85,7 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
     """
     Integrates over the spin of the spin orbitals to transform an expression
     to a spatial orbital basis, i.e, a spin is attached to all indices.
+    Target indices in the expression will be updated if necessary.
 
     Parameters
     ----------
@@ -106,7 +112,13 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
                              "and beta spin simultaneously.")
         target_idx_spin_map[idx] = spin
 
+    # generate the new target indices of the expression to set them if needed
+    result_target = get_symbols([s.name for s in target_idx], target_spin)
+
     result = Expr(0, **expr.assumptions)
+    if expr.provided_target_idx is not None:  # set target indices if necessary
+        result.set_target_idx(result_target)
+
     for term in expr.terms:
         # - ensure that the term has matching target indices
         if term.target != sorted_target:
@@ -114,6 +126,7 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
                              f"match the desired target indices {target_idx}")
         # - check if the term is just a number: nothing to do, but the term
         #   would be dropped below
+        #   A number can not have any target indices -> no need to adjust them
         if term.sympy.is_number:
             result += term
         # - ensure that no index in the term is holding a spin
@@ -196,6 +209,9 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
         #   if they are contracted -> generate a variant for both spins
 
         contribution = Expr(0, **expr.assumptions)
+        if expr.provided_target_idx is not None:  # if necessary update target
+            contribution.set_target_idx(result_target)
+
         for idx_map in combinations:
             assigned_indices = idx_map["a"] | idx_map["b"]
             missing_indices = [idx for idx in term_indices
@@ -231,7 +247,7 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
                     spins = "".join(spin for _ in range(len(old)))
                     new = get_symbols(names, spins)
                     sub.update({o: n for o, n in zip(old, new)})
-                contribution += term.subs(order_substitutions(sub))
+                contribution += term.sympy.subs(order_substitutions(sub))
         # TODO: if we simplify the result it will throw an error for any
         # polynoms or denominators. Should we skip the simplification altough
         # we currently don't treat polynoms correctly in this function
