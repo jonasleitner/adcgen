@@ -1,5 +1,6 @@
-from sympy.physics.secondquant import TensorSymbol, \
+from sympy.physics.secondquant import (
     _sort_anticommuting_fermions, ViolationOfPauliPrinciple
+)
 from sympy.core.function import Function
 from sympy.core.expr import Expr
 from sympy.core.logic import fuzzy_not
@@ -52,7 +53,7 @@ class AntiSymmetricTensor(SymbolicTensor):
     """
 
     def __new__(cls, name: str, upper: tuple[Index], lower: tuple[Index],
-                bra_ket_sym: int = 0) -> TensorSymbol:
+                bra_ket_sym: int = 0):
         # sort the upper and lower indices
         try:
             upper, sign_u = _sort_anticommuting_fermions(
@@ -81,10 +82,10 @@ class AntiSymmetricTensor(SymbolicTensor):
 
         # attach -1 if necessary
         if (sign_u + sign_l) % 2:
-            return - TensorSymbol.__new__(cls, name, upper, lower,
-                                          bra_ket_sym)
+            return - super().__new__(cls, name, upper, lower,
+                                     bra_ket_sym)
         else:
-            return TensorSymbol.__new__(cls, name, upper, lower, bra_ket_sym)
+            return super().__new__(cls, name, upper, lower, bra_ket_sym)
 
     @classmethod
     def _need_bra_ket_swap(cls, upper: tuple[Index],
@@ -205,7 +206,7 @@ class SymmetricTensor(AntiSymmetricTensor):
     """
 
     def __new__(cls, name: str, upper: tuple[Index], lower: tuple[Index],
-                bra_ket_sym: int = 0) -> TensorSymbol:
+                bra_ket_sym: int = 0):
         # sort upper and lower. No need to track the number of swaps
         upper = sorted(upper, key=sort_idx_canonical)
         lower = sorted(lower, key=sort_idx_canonical)
@@ -227,10 +228,13 @@ class SymmetricTensor(AntiSymmetricTensor):
         upper, lower = Tuple(*upper), Tuple(*lower)
         # attach -1 if necessary
         if negative_sign:
-            return - TensorSymbol.__new__(cls, name, upper, lower,
-                                          bra_ket_sym)
+            return - super(AntiSymmetricTensor, cls).__new__(
+                cls, name, upper, lower, bra_ket_sym
+            )
         else:
-            return TensorSymbol.__new__(cls, name, upper, lower, bra_ket_sym)
+            return super(AntiSymmetricTensor, cls).__new__(
+                cls, name, upper, lower, bra_ket_sym
+            )
 
 
 class NonSymmetricTensor(SymbolicTensor):
@@ -245,10 +249,10 @@ class NonSymmetricTensor(SymbolicTensor):
         The indices of the tensor.
     """
 
-    def __new__(cls, name: str, indices: tuple[Index]) -> TensorSymbol:
+    def __new__(cls, name: str, indices: tuple[Index]):
         symbol = sympify(name)
         indices = Tuple(*indices)
-        return TensorSymbol.__new__(cls, symbol, indices)
+        return super().__new__(cls, symbol, indices)
 
     def _latex(self, printer) -> str:
         return "{%s_{%s}}" % (self.symbol, "".join([i._latex(printer)
