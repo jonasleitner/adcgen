@@ -1471,7 +1471,7 @@ class Obj(Container):
             unwrapped object.
         """
 
-        if isinstance(self.base, AntiSymmetricTensor) and self.is_amplitude:
+        if self.is_t_amplitude:
             old = self.name
             new = old.replace('c', '')
             if old == new:
@@ -1676,14 +1676,19 @@ class Obj(Container):
             return self.base.name
 
     @property
-    def is_amplitude(self):
-        """Whether the object is a ground state or ADC amplitude"""
+    def is_t_amplitude(self):
+        """Whether the object is a ground state t-amplitude."""
         name = self.name
         if name is None:
             return False
-        # ADC amplitude or t-amplitude
-        return name in ['X', 'Y'] or \
-            (name[0] == 't' and name[1:].replace('c', '').isnumeric())
+        return name[0] == "t" and name[1:].replace("c", "").isnumeric()
+
+    @property
+    def is_gs_density(self):
+        name = self.name
+        if name is None:
+            return False
+        return name[0] == "p" and name[1:].isnumeric()
 
     @cached_property
     def order(self):
@@ -1693,8 +1698,7 @@ class Obj(Container):
         if isinstance(self.base, SymbolicTensor):
             if (name := self.name) == 'V':  # eri
                 return 1
-            # t-amplitudes
-            elif name[0] == 't' and name[1:].replace('c', '').isnumeric():
+            elif self.is_t_amplitude:
                 return int(name[1:].replace('c', ''))
             # all intermediates
             itmd_cls = Intermediates().available.get(self.longname, None)
@@ -1713,7 +1717,7 @@ class Obj(Container):
         if isinstance(base, SymbolicTensor):
             name = base.name
             # t-amplitudes
-            if name[0] == 't' and name[1:].replace('c', '').isnumeric():
+            if self.is_t_amplitude:
                 if len(base.upper) != len(base.lower):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for t-amplitude {self}.")
@@ -1728,7 +1732,7 @@ class Obj(Container):
                     n = min([n_o, n_v]) + 1  # h -> 1 / 2h -> 1 / p-2h -> 2...
                 lr = "l" if name == "X" else 'r'
                 name = f"u{lr}{n}"
-            elif name[0] == 'p' and name[1:].isnumeric():  # mp densities
+            elif self.is_gs_density:  # mp densities
                 if len(base.upper) != len(base.lower):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for mp density {self}.")
@@ -1971,7 +1975,7 @@ class Obj(Container):
             # t-amplitudes: all spin conserving spin blocks are allowed, i.e.,
             # all blocks with the same amount of alpha and beta indices
             # in upper and lower
-            elif name[0] == 't' and name[1:].replace('c', '').isnumeric():
+            elif self.is_t_amplitude:
                 if len(self.idx) % 2:
                     raise ValueError("Expected t-amplitude to have the same "
                                      f"of upper and lower indices: {self}.")
@@ -2035,72 +2039,81 @@ class Obj(Container):
             if indices is None:
                 return None
             if spin_as_overbar:
-                ret = ""
-                for i in indices:
-                    spin = i.spin
-                    if not spin:
-                        raise ValueError(f"Index {i} has no spin and would "
-                                         "not be distinguishable from indices"
-                                         " with alpha spin.")
-                    if spin == "b":
-                        ret += f"\\overline{{{i.name}}}"
-                    else:
-                        ret += i.name
-                return ret
+                spins = [s.spin for s in indices]
+                if any(spins) and not all(spins):
+                    raise ValueError("All indices have to have a spin "
+                                     "assigned in order to differentiate "
+                                     "indices without spin from indices with "
+                                     f"alpha spin: {self}")
+                return "".join(
+                    f"\\overline{{{i.name}}}" if s == "b" else i.name
+                    for i, s in zip(indices, spins)
+                )
             else:
                 return "".join(latex(i) for i in indices)
 
-        def tensor_string(upper: tuple[Index] = None,
-                          lower: tuple[Index] = None) -> str:
-            upper, lower = format_indices(upper), format_indices(lower)
-            name = self.name
-            if name == 'V':  # ERI
-                tex_string = f"\\langle {upper}\\vert\\vert {lower}\\rangle"
-            elif name == 'f':  # fock matrix: only lower indices
-                tex_string = "f_{" + upper + lower + "}"
-            elif name == 'v':  # chemist notation ERI
-                tex_string = f"({upper}\\vert {lower})"
-            else:  # arbitrary other tensor and amplitudes
-                order_str = ""
-                # t-amplitudes
-                if name[0] == 't' and name[1:].replace('c', '').isnumeric():
-                    if 'c' in name[1:]:
-                        order = name[1:].replace('c', '')
-                    else:
-                        order = name[1:]
-                    name = "{t"
-                    order_str = "}^{(" + order + ")}"
-                elif name == 'e':  # orbital energies as epsilon
-                    name = "\\varepsilon"
-                elif name[0] == 'p' and name[1:].isnumeric():  # mp densities
-                    order = name[1:]
-                    name = "{\\rho"
-                    order_str = "}^{(" + order + ")}"
-
-                tex_string = name
-                if upper is not None:
-                    tex_string += "^{" + upper + "}"
-                if lower is not None:
-                    tex_string += "_{" + lower + "}"
-                tex_string += order_str
-
-            if (exp := self.exponent) != 1:
-                if name == 'V':  # ERI
-                    tex_string += "^{" + str(exp) + "}"
-                else:
-                    tex_string = f"\\bigl({tex_string}\\bigr)^{{{exp}}}"
-            return tex_string
-
-        obj = self.base
-        if only_pull_out_pref or not isinstance(obj, SymbolicTensor):
+        if only_pull_out_pref:  # use sympy latex print
             return self.__str__()
 
-        # Only For Tensors!
-        if isinstance(obj, AntiSymmetricTensor):  # amplitudes, ERI, fock, ...
-            kwargs = {'upper': obj.upper, 'lower': obj.lower}
-        elif isinstance(obj, NonSymmetricTensor):  # orb energy + some itmds
-            kwargs = {'lower': obj.indices}
-        return tensor_string(**kwargs)
+        name = self.name
+        obj, exp = self.base_and_exponent
+        if isinstance(obj, SymbolicTensor):
+            special_tensors = {
+                # antisym ERI physicist
+                "V": lambda up, lo: f"\\langle {up}\\vert\\vert {lo}\\rangle",
+                "f": lambda up, lo: f"f_{{{up}{lo}}}",  # fock matrix
+                # coulomb integral chemist notation
+                "v": lambda up, lo: f"({up}\\vert {lo})",
+                "e": lambda _, lo: f"\\varepsilon_{{{lo}}}"  # orbital energy
+            }
+            # convert the indices to string
+            if isinstance(obj, AntiSymmetricTensor):
+                upper = format_indices(obj.upper)
+                lower = format_indices(obj.lower)
+            elif isinstance(obj, NonSymmetricTensor):
+                upper, lower = None, format_indices(obj.indices)
+            else:
+                raise TypeError(f"Unknown tensor object {obj} of type "
+                                f"{type(obj)}")
+
+            if name in special_tensors:
+                tex_str = special_tensors[name](upper, lower)
+            else:
+                order_str = None
+                if self.is_t_amplitude:  # mp t-amplitudes
+                    if "c" in name:
+                        order_str = f"({name[1:].replace('c', '')})\\ast"
+                    else:
+                        order_str = f"({name[1:]})"
+                    order_str = f"}}^{{{order_str}}}"
+                    name = "{t"
+                elif self.is_gs_density:  # mp densities
+                    order_str = f"}}^{{({name[1:]})}}"
+                    name = "{\\rho"
+
+                tex_str = name
+                if upper is not None:
+                    tex_str += f"^{{{upper}}}"
+                tex_str += f"_{{{lower}}}"
+
+                # append pt order for amplitude and mp densities
+                if order_str is not None:
+                    tex_str += order_str
+        elif isinstance(obj, KroneckerDelta):
+            tex_str = f"\\delta_{{{format_indices(obj.idx)}}}"
+        elif isinstance(obj, F):  # annihilate
+            tex_str = f"a_{{{format_indices(obj.args)}}}"
+        elif isinstance(obj, Fd):  # create
+            tex_str = f"a^\\dagger_{{{format_indices(obj.args)}}}"
+        else:
+            return self.__str__()
+
+        if exp != 1:
+            if name in ["V", "v"]:  # special case for ERI and coulomb
+                tex_str += f"^{{{exp}}}"
+            else:
+                tex_str = f"\\bigl({tex_str}\\bigr)^{{{exp}}}"
+        return tex_str
 
 
 class NormalOrdered(Obj):
