@@ -1,51 +1,55 @@
 {
   "mp": {
-    "0": {
-      "expectation_value": "{d^{i}_{i}}",
-      "real_symmetric_expectation_value": "{d^{i}_{i}}",
-      "real_symmetric_dm": {
-        "oo": "\\delta_{i j}"
-      }
-    },
     "1": {
-      "expectation_value": "0",
-      "real_symmetric_expectation_value": "0",
-      "real_symmetric_dm": {
-        "none": "0"
-      }
-    },
-    "2": {
-      "expectation_value": "- \\frac{{t1^{ab}_{ik}} {t1cc^{ab}_{ij}} {d^{k}_{j}}}{2} - \\frac{{t1^{bc}_{ij}} {t1cc^{ab}_{ij}} {d^{a}_{c}}}{2} + {t2^{a}_{i}} {d^{i}_{a}} + {t2cc^{a}_{i}} {d^{a}_{i}}",
-      "real_symmetric_expectation_value": "- \\frac{{t1^{ab}_{ij}} {t1^{ab}_{ik}} {d^{j}_{k}}}{2} - \\frac{{t1^{ab}_{ij}} {t1^{bc}_{ij}} {d^{a}_{c}}}{2} + 2 {t2^{a}_{i}} {d^{i}_{a}}",
-      "real_symmetric_dm": {
-        "ov": "{t2^{a}_{i}}",
-        "oo": "- \\frac{{t1^{ab}_{ik}} {t1^{ab}_{jk}}}{2}",
-        "vv": "\\frac{{t1^{ac}_{ij}} {t1^{bc}_{ij}}}{2}"
+      "0": {
+        "expectation_value": "{d^{i}_{i}}",
+        "real_symmetric_expectation_value": "{d^{i}_{i}}",
+        "real_symmetric_dm": {
+          "oo": "\\delta_{i j}"
+        }
+      },
+      "1": {
+        "expectation_value": "0",
+        "real_symmetric_expectation_value": "0",
+        "real_symmetric_dm": {
+          "none": "0"
+        }
+      },
+      "2": {
+        "expectation_value": "- \\frac{{t1^{ab}_{ik}} {t1cc^{ab}_{ij}} {d^{k}_{j}}}{2} - \\frac{{t1^{bc}_{ij}} {t1cc^{ab}_{ij}} {d^{a}_{c}}}{2} + {t2^{a}_{i}} {d^{i}_{a}} + {t2cc^{a}_{i}} {d^{a}_{i}}",
+        "real_symmetric_expectation_value": "- \\frac{{t1^{ab}_{ij}} {t1^{ab}_{ik}} {d^{j}_{k}}}{2} - \\frac{{t1^{ab}_{ij}} {t1^{bc}_{ij}} {d^{a}_{c}}}{2} + 2 {t2^{a}_{i}} {d^{i}_{a}}",
+        "real_symmetric_dm": {
+          "ov": "{t2^{a}_{i}}",
+          "oo": "- \\frac{{t1^{ab}_{ik}} {t1^{ab}_{jk}}}{2}",
+          "vv": "\\frac{{t1^{ac}_{ij}} {t1^{bc}_{ij}}}{2}"
+        }
       }
     }
   },
   "re": {
-    "0": {
-      "expectation_value": "{d^{i}_{i}}",
-      "real_symmetric_expectation_value": "{d^{i}_{i}}",
-      "real_symmetric_dm": {
-        "oo": "\\delta_{i j}"
-      }
-    },
     "1": {
-      "expectation_value": "0",
-      "real_symmetric_expectation_value": "0",
-      "real_symmetric_dm": {
-        "none": "0"
-      }
-    },
-    "2": {
-      "expectation_value": "- \\frac{{t1^{ab}_{ik}} {t1cc^{ab}_{ij}} {d^{k}_{j}}}{2} - \\frac{{t1^{bc}_{ij}} {t1cc^{ab}_{ij}} {d^{a}_{c}}}{2} + {t2^{a}_{i}} {d^{i}_{a}} + {t2cc^{a}_{i}} {d^{a}_{i}}",
-      "real_symmetric_expectation_value": "- \\frac{{t1^{ab}_{ij}} {t1^{ab}_{ik}} {d^{j}_{k}}}{2} - \\frac{{t1^{ab}_{ij}} {t1^{bc}_{ij}} {d^{a}_{c}}}{2} + 2 {t2^{a}_{i}} {d^{i}_{a}}",
-      "real_symmetric_dm": {
-        "ov": "{t2^{a}_{i}}",
-        "oo": "- \\frac{{t1^{ab}_{ik}} {t1^{ab}_{jk}}}{2}",
-        "vv": "\\frac{{t1^{ac}_{ij}} {t1^{bc}_{ij}}}{2}"
+      "0": {
+        "expectation_value": "{d^{i}_{i}}",
+        "real_symmetric_expectation_value": "{d^{i}_{i}}",
+        "real_symmetric_dm": {
+          "oo": "\\delta_{i j}"
+        }
+      },
+      "1": {
+        "expectation_value": "0",
+        "real_symmetric_expectation_value": "0",
+        "real_symmetric_dm": {
+          "none": "0"
+        }
+      },
+      "2": {
+        "expectation_value": "- \\frac{{t1^{ab}_{ik}} {t1cc^{ab}_{ij}} {d^{k}_{j}}}{2} - \\frac{{t1^{bc}_{ij}} {t1cc^{ab}_{ij}} {d^{a}_{c}}}{2} + {t2^{a}_{i}} {d^{i}_{a}} + {t2cc^{a}_{i}} {d^{a}_{i}}",
+        "real_symmetric_expectation_value": "- \\frac{{t1^{ab}_{ij}} {t1^{ab}_{ik}} {d^{j}_{k}}}{2} - \\frac{{t1^{ab}_{ij}} {t1^{bc}_{ij}} {d^{a}_{c}}}{2} + 2 {t2^{a}_{i}} {d^{i}_{a}}",
+        "real_symmetric_dm": {
+          "ov": "{t2^{a}_{i}}",
+          "oo": "- \\frac{{t1^{ab}_{ik}} {t1^{ab}_{jk}}}{2}",
+          "vv": "\\frac{{t1^{ac}_{ij}} {t1^{bc}_{ij}}}{2}"
+        }
       }
     }
   }

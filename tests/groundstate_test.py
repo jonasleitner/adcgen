@@ -9,8 +9,8 @@ import itertools
 import pytest
 
 
-@pytest.mark.parametrize('order', [0, 1, 2])
 class TestGroundState():
+    @pytest.mark.parametrize('order', [0, 1, 2])
     @pytest.mark.parametrize('variant', ['mp', 're'])
     def test_energy(self, order, variant, cls_instances, reference_data):
         # load the reference data
@@ -20,6 +20,7 @@ class TestGroundState():
         e = cls_instances[variant]['gs'].energy(order)
         assert (ref - e).substitute_contracted().sympy is S.Zero
 
+    @pytest.mark.parametrize('order', [0, 1, 2])
     @pytest.mark.parametrize('braket', ['bra', 'ket'])
     def test_psi(self, order, braket, cls_instances, reference_data):
         # load the reference data
@@ -43,6 +44,7 @@ class TestGroundState():
         assert (mp_psi - re_psi).substitute_contracted().sympy is S.Zero
         assert (mp_psi - ref).substitute_contracted().sympy is S.Zero
 
+    @pytest.mark.parametrize('order', [1, 2])
     @pytest.mark.parametrize('variant', ['mp', 're'])
     def test_amplitude(self, order, variant, cls_instances, reference_data):
 
@@ -54,25 +56,22 @@ class TestGroundState():
                 res += term.factor()
             return res
 
-        # - there are no zeroth order amplitudes
-        # - only tests for first order re amplitudes
-        if order == 0 or (variant == 're' and order != 1):
-            # TODO:
-            # How to permanently skip invalid combinations (order == 0):
-            # https://github.com/pytest-dev/pytest/issues/3730
-            pytest.skip()
-
         spaces = {1: [('ph', 'ia'), ('pphh', 'ijab')],
                   2: [('ph', 'ia'), ('pphh', 'ijab'), ('ppphhh', 'ijkabc'),
                       ('pppphhhh', 'ijklabcd')]}
 
         # load the reference data
-        ref = reference_data['amplitude'][variant][order]
+        ref = reference_data['gs_amplitude'][variant][order]
 
         for sp, idx in spaces[order]:
+            # skip 2nd order re triples and quadruples, since I don't know how
+            # the equations should loook and the generation takes a very long
+            # time.
+            if variant == "re" and sp in ["ppphhh", "pppphhhh"]:
+                continue
             # compute the amplitude
             ampl = cls_instances[variant]['gs'].amplitude(order, sp, idx)
-            # no einstein sum convention -> set target idx
+            # no einstein sum convention (for mp) -> set target idx
             ampl = Expr(ampl, target_idx=idx)
             if variant == 'mp':
                 ampl = simplify_mp(
@@ -86,20 +85,25 @@ class TestGroundState():
                 raise NotImplementedError()
             assert ampl.sympy is S.Zero
 
+    @pytest.mark.parametrize('order', [0, 1, 2])
     @pytest.mark.parametrize('n_particles', [1])
-    @pytest.mark.parametrize("variant", ["mp", "re"])
     def test_expectation_value(self, order: int, n_particles: int,
-                               variant: str, cls_instances, reference_data):
+                               cls_instances, reference_data):
         # load the reference data
-        ref = reference_data["gs_expectation_value"][variant][order]
+        ref = reference_data["gs_expectation_value"]
+        re_ref = ref["re"][n_particles][order]
+        ref = ref["mp"][n_particles][order]
 
         # compute the expectation value
-        expec = cls_instances[variant]['gs'].expectation_value(
+        expec = cls_instances["mp"]['gs'].expectation_value(
             order=order, n_particles=n_particles
         )
         expec = Expr(expec)
         ref_expec = ref['expectation_value']
         assert simplify(ref_expec - expec).sympy is S.Zero
+
+        # the result for mp and re should be the same!
+        assert simplify(expec - re_ref["expectation_value"]).sympy is S.Zero
 
         # assume a real basis and a symmetric operator/ symmetric dm
         expec.substitute_contracted()

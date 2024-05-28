@@ -113,9 +113,10 @@ class Generator:
             results[variant] = {}
             gs = self.gs["mp"]
             for n_particles in [1]:
+                results[variant][n_particles] = {}
                 for order in [0, 1, 2]:
-                    results[variant][order] = {}
-                    dump: dict = results[variant][order]
+                    results[variant][n_particles][order] = {}
+                    dump: dict = results[variant][n_particles][order]
 
                     # complex non symmetric expec value
                     res = Expr(gs.expectation_value(
@@ -148,7 +149,7 @@ class Generator:
                 res += term.factor()
             return res
 
-        outfile = "amplitude.json"
+        outfile = "gs_amplitude.json"
 
         spaces = {1: [('ph', 'ia'), ('pphh', 'ijab')],
                   2: [('ph', 'ia'), ('pphh', 'ijab'), ('ppphhh', 'ijkabc'),
@@ -158,11 +159,10 @@ class Generator:
         for variant in ['mp', 're']:
             results[variant] = {}
             for order in [1, 2]:
-                if variant == 're' and order == 2:
-                    # TODO: add them when I know how they should look like
-                    continue
                 results[variant][order] = {}
                 for sp, idx in spaces[order]:
+                    if variant == "re" and sp in ["ppphhh", "pppphhhh"]:
+                        continue
                     ampl = self.gs[variant].amplitude(order, sp, idx)
                     # no einstein sum convention -> need to set target idx!
                     ampl = Expr(ampl, target_idx=idx).substitute_contracted()
