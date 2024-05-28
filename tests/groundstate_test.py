@@ -87,34 +87,36 @@ class TestGroundState():
             assert ampl.sympy is S.Zero
 
     @pytest.mark.parametrize('n_particles', [1])
+    @pytest.mark.parametrize("variant", ["mp", "re"])
     def test_expectation_value(self, order: int, n_particles: int,
-                               cls_instances, reference_data):
+                               variant: str, cls_instances, reference_data):
         # load the reference data
-        ref = reference_data["mp_1p_dm"][order]
+        ref = reference_data["gs_expectation_value"][variant][order]
 
         # compute the expectation value
-        expec = cls_instances['mp']['gs'].expectation_value(order, n_particles)
+        expec = cls_instances[variant]['gs'].expectation_value(
+            order=order, n_particles=n_particles
+        )
         expec = Expr(expec)
-        ref_expec = ref['expec_val']
+        ref_expec = ref['expectation_value']
         assert simplify(ref_expec - expec).sympy is S.Zero
 
         # assume a real basis and a symmetric operator/ symmetric dm
-        expec = expec.substitute_contracted()
-        expec = Expr(expec.sympy, real=True, sym_tensors=['d'])
+        expec.substitute_contracted()
+        expec.make_real()
+        expec.set_sym_tensors(["d"])
         expec = simplify(expec)
-        ref_expec = ref['real_sym_expec_val']
-        ref_expec = Expr(ref_expec.sympy, **expec.assumptions)
-        assert simplify(ref_expec - expec).sympy is S.Zero
+        ref_expec = ref['real_symmetric_expectation_value']
+        assert simplify(expec - ref_expec.sympy).sympy is S.Zero
 
         # extract all blocks of the symmetric dm
         density_matrix = remove_tensor(expec, 'd')
         for block, block_expr in density_matrix.items():
             assert len(block) == 1
-            ref_dm = ref["real_sym_dm"][block[0]]
-            ref_dm = Expr(ref_dm, **block_expr.assumptions)
-            assert simplify(block_expr - ref_dm).sympy is S.Zero
+            ref_dm = ref["real_symmetric_dm"][block[0]]
+            assert simplify(block_expr - ref_dm.sympy).sympy is S.Zero
 
-            # exploit permutational symmetry
+            # exploit permutational symmetry and collec the terms again
             re_expanded_dm = Expr(0, **block_expr.assumptions)
             for perm_sym, sub_expr in \
                     sort.exploit_perm_sym(block_expr).items():

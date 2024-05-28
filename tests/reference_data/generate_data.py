@@ -105,7 +105,40 @@ class Generator:
                     )
         write_json(results, outfile)
 
-    def gen_amplitude(self):
+    def gen_gs_expectation_value(self):
+        outfile = "gs_expectation_value.json"
+
+        results: dict = {}
+        for variant in ["mp", "re"]:
+            results[variant] = {}
+            gs = self.gs["mp"]
+            for n_particles in [1]:
+                for order in [0, 1, 2]:
+                    results[variant][order] = {}
+                    dump: dict = results[variant][order]
+
+                    # complex non symmetric expec value
+                    res = Expr(gs.expectation_value(
+                        order=order, n_particles=n_particles
+                    ))
+                    res.substitute_contracted()
+                    res = simplify(res)
+                    dump["expectation_value"] = str(res)
+                    # dump the real symmetric expec value
+                    res.make_real()
+                    res.set_sym_tensors(["d"])
+                    res = simplify(res)
+                    dump["real_symmetric_expectation_value"] = str(res)
+                    # dump the real symmetric density matrix
+                    dump["real_symmetric_dm"] = {}
+                    density = remove_tensor(res, "d")
+                    for block, dm_expr in density.items():
+                        assert len(block) == 1
+                        block = block[0]
+                        dump["real_symmetric_dm"][block] = str(dm_expr)
+        write_json(results, outfile)
+
+    def gen_gs_amplitude(self):
 
         def simplify_mp(ampl):
             res = 0
