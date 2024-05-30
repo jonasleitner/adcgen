@@ -124,17 +124,17 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
         if term.target != sorted_target:
             raise ValueError(f"Target indices of {term} {term.target} dont "
                              f"match the desired target indices {target_idx}")
-        # - check if the term is just a number: nothing to do, but the term
-        #   would be dropped below
-        #   A number can not have any target indices -> no need to adjust them
-        if term.sympy.is_number:
-            result += term
         # - ensure that no index in the term is holding a spin
         term_indices = set(term.idx)
         if any(s.spin for s in term_indices):
             raise ValueError("The function assumes that the input expression "
                              "is expressed in terms of spin orbitals. Found "
                              f"a spatial orbital in term {term}.")
+        # check of the term is just a number: nothing to do
+        # a number can not have any indices -> nothing to do
+        if not term_indices:
+            result += term
+            continue
         # - go through all objects in the term and get the allowed spin
         #   blocks of all tensors and deltas contained in the term
         #   filtering out those spin blocks that are in contradiction to the

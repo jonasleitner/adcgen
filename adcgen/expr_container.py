@@ -5,7 +5,7 @@ from .sympy_objects import (
     NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, SymmetricTensor,
     SymbolicTensor, Amplitude
 )
-from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify
+from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify, Symbol
 from sympy.physics.secondquant import NO, F, Fd, FermionicOperator
 import warnings
 
@@ -1287,10 +1287,10 @@ class Term(Container):
         idx_occurences = {}
         n = 0
         for o in self.objects:
-            if o.sympy.is_number:  # skip prefactors
+            base, exp = o.base_and_exponent
+            if o.sympy.is_number or isinstance(base, Symbol):  # skip numbers
                 continue
             # antisym-/sym-, nonsymtensors, amplitudes, deltas
-            base, exp = o.base_and_exponent
             if isinstance(base, (SymbolicTensor, KroneckerDelta)):
                 if exp < 0:
                     raise NotImplementedError("Contractions for divisions not "
@@ -1666,6 +1666,8 @@ class Obj(Container):
             return "annihilate"
         elif isinstance(obj, Fd):
             return "create"
+        elif isinstance(obj, Symbol):
+            return "symbol"
         else:
             raise TypeError(f"Unknown object {self} of type {type(obj)}.")
 
@@ -1788,6 +1790,8 @@ class Obj(Container):
             return obj.idx
         elif isinstance(obj, FermionicOperator):  # F and Fd
             return obj.args
+        elif isinstance(obj, Symbol):  # a symbol without indices
+            return tuple()
         else:
             raise TypeError("Can not determine the indices for an obj of type"
                             f"{type(obj)}: {self}.")
@@ -1808,7 +1812,7 @@ class Obj(Container):
         """Returns the 'crude' position of the indices in the object.
            (e.g. only if they are located in bra/ket, not the exact position)
            """
-        if self.sympy.is_number:  # for prefactor an empty dict is returned
+        if not self.idx:  # just a number (prefactor or symbol)
             return {}
 
         if include_target_idx:
@@ -1901,7 +1905,7 @@ class Obj(Container):
         """A string that describes the object."""
 
         descr = self.type_as_str
-        if descr == 'prefactor':
+        if descr in ['prefactor', 'symbol']:
             return descr
 
         if include_target_idx:
@@ -1963,7 +1967,8 @@ class Obj(Container):
         from .intermediates import Intermediates
         from itertools import product
 
-        if self.sympy.is_number:  # prefactor
+        # prefactor or symbol have no indices -> no allowed spin blocks
+        if not self.idx:
             return None
 
         obj = self.base

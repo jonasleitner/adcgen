@@ -10,7 +10,7 @@ from .sympy_objects import (
 from sympy.physics.secondquant import (
     F, Fd, FermionicOperator, NO
 )
-from sympy import S, Add, Mul, Pow, sqrt
+from sympy import S, Add, Mul, Pow, sqrt, Symbol
 
 from itertools import product
 
@@ -116,6 +116,7 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
         if temp:
             components.append("".join(temp))
         name, indices = components[0], components[1:]
+
         # remove 1 layer of brackets from all indices
         for i, idx in enumerate(indices):
             if idx[0] == "{":
@@ -124,7 +125,9 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
                 idx = idx[:-1]
             indices[i] = idx
 
-        if name == "a":  # create / annihilate
+        if len(indices) == 0:  # no indices -> a symbol
+            base = Symbol(name)
+        elif name == "a":  # create / annihilate
             if len(indices) == 2 and indices[0] == "\\dagger":
                 base = Fd(*import_indices(indices[1]))
             elif len(indices) == 1:
@@ -176,7 +179,7 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
                 raise NotImplementedError(f"Unexpected NO object: {obj_str}.")
             obj_str = no.replace("\\left\\{", "", 1)
             return NO(import_from_sympy_latex(obj_str).sympy)
-        else:  # tensor or creation/annihilation operator
+        else:  # tensor or creation/annihilation operator or symbol
             return import_tensor(obj_str)
 
     def split_terms(expr_string: str) -> list[str]:

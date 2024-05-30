@@ -3,7 +3,9 @@ from .misc import Inputerror
 from .sort_expr import exploit_perm_sym
 from .indices import sort_idx_canonical
 from .sympy_objects import SymbolicTensor, KroneckerDelta
+
 from collections import namedtuple
+from sympy import Symbol
 
 scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
 mem_scaling = namedtuple('mem_scaling', ['total', 'g', 'v', 'o'])
@@ -40,7 +42,7 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
                 idx = o.idx
                 indices.extend(idx for _ in range(exp))
                 contracted.update(s for s in idx if s not in target)
-            elif o.sympy.is_number:  # pref
+            elif o.sympy.is_number or isinstance(base, Symbol):  # prefactor
                 continue
             else:  # polynom / create / annihilate / NormalOrdered
                 raise NotImplementedError("Contractions not implemented for "
@@ -99,7 +101,15 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
                 pref_str = '+ '
             pref_str += backend_specifics['prefactor'](pref)
 
-            if term.sympy.is_number:  # term just consists of a number
+            # add symbols to the prefactor
+            symbol_pref = " * ".join(
+                [o.name for o in term.objects if isinstance(o.base, Symbol)
+                 for _ in range(o.exponent)]
+            )
+            if symbol_pref:
+                pref_str += f" * {symbol_pref}"
+
+            if not term.idx:  # the term just consists of numbers
                 contraction_code.append(pref_str)
                 continue
 
