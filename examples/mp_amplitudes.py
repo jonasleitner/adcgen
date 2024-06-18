@@ -20,8 +20,8 @@ ampl.use_symbolic_denominators()
 ampl = simplify(ampl)
 ampl.use_explicit_denominators()
 
-# - remove the common denominator from the expression, which sympy should
-#   sort as (a + b + c + ... - i - j - ...)
+# - remove the common orbital energy denominator from the expression,
+#   which sympy should sort as (a + b + c + ... - i - j - ...)
 common_denom = None
 ampl_without_denom = 0
 for term in ampl.terms:
