@@ -355,12 +355,19 @@ class Expr(Container):
         e.g., (e_a + e_b - e_i - e_j)^{-1} will be replaced by D^{ab}_{ij},
         where D is a SymmetricTensor."""
         symbolic_denom = 0
+        has_symbolic_denom = False
         for term in self.terms:
-            symbolic_denom += term.use_symbolic_denominators()
+            term = term.use_symbolic_denominators()
+            symbolic_denom += term.sympy
+            if "D" in term.antisym_tensors:
+                has_symbolic_denom = True
         # the symbolic denominators have additional antisymmetry
         # for bra ket swaps
-        self._expr = symbolic_denom.sympy
-        self._antisym_tensors.update(symbolic_denom.antisym_tensors)
+        # -> this is the only possible change in the assumptions
+        # -> only set if we replaced a denominator in the expr
+        self._expr = symbolic_denom
+        if has_symbolic_denom:
+            self._antisym_tensors.update("D")
         return self
 
     def use_explicit_denominators(self):
@@ -1077,7 +1084,7 @@ class Term(Container):
                 )
         return coupling
 
-    def use_symbolic_denominators(self):
+    def use_symbolic_denominators(self) -> 'Expr':
         """
         Replace all orbital energy denominators in the expression by tensors,
         e.g., (e_a + e_b - e_i - e_j)^{-1} will be replaced by D^{ab}_{ij},

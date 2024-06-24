@@ -10,6 +10,14 @@ from sympy import S, Rational
 
 
 class TestSymbolicDenominators:
+    def test_no_denom(self):
+        i, j, a, b = get_symbols("ijab")
+        original = AntiSymmetricTensor("V", (i, j), (a, b))
+        original = Expr(original, real=True)
+        symbolic = original.copy().use_symbolic_denominators()
+        assert symbolic.sympy - original.sympy is S.Zero
+        assert len(symbolic.antisym_tensors) == 0  # D not set
+
     def test_t2_1(self):
         t2 = Intermediates().available["t2_1"]
         original = t2.expand_itmd(fully_expand=False).make_real()
@@ -80,3 +88,15 @@ class TestSymbolicDenominators:
         assert symbolic.sympy - ref is S.Zero
         explicit = symbolic.use_explicit_denominators()
         assert explicit.sympy - original.sympy is S.Zero
+
+    def test_some_denom_terms(self):
+        t2 = Intermediates().available["t2_1"]
+        i, j, a, b = get_symbols("ijab")
+        original: Expr = (t2.expand_itmd(fully_expand=False).make_real()
+                          + AntiSymmetricTensor("V", (i, j), (a, b), 1))
+        symbolic = original.copy().use_symbolic_denominators()
+        assert "D" in symbolic.antisym_tensors
+        ref = (AntiSymmetricTensor("V", (i, j), (a, b), 1) *
+               SymmetricTensor("D", (a, b), (i, j), -1)
+               + AntiSymmetricTensor("V", (i, j), (a, b), 1))
+        assert symbolic.sympy - ref is S.Zero
