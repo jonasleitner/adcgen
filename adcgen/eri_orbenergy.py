@@ -1,6 +1,8 @@
 from .misc import Inputerror
 from . import expr_container as e
 from .sympy_objects import SymmetricTensor, SymbolicTensor
+from .logger import logger
+
 from sympy import Pow, S, Mul, Basic
 
 
@@ -457,7 +459,7 @@ class EriOrbenergy:
                     base = bracket.sympy
                 else:  # polynom
                     base, exponent = bracket.base_and_exponent
-                print(f"Cancelling: {e.Expr(base)}")
+                logger.info(f"Cancelling: {e.Expr(base)}")
                 num -= base
                 # build the new denominator -> lower bracket exponent by 1
                 if exponent == 1:
