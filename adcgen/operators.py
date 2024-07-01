@@ -2,6 +2,7 @@ from .misc import cached_property, cached_member
 from .indices import Indices
 from .rules import Rules
 from .sympy_objects import AntiSymmetricTensor
+from .logger import logger
 
 from sympy import Rational, factorial, Mul, latex
 from sympy.physics.secondquant import Fd, F
@@ -80,7 +81,7 @@ class Operators:
         f = AntiSymmetricTensor('f', (p,), (q,))
         pq = Fd(p) * F(q)
         h0 = f * pq
-        print("H0 = ", latex(h0))
+        logger.debug(f"H0 = {latex(h0)}")
         return h0, None
 
     @staticmethod
@@ -95,7 +96,7 @@ class Operators:
         v2 = AntiSymmetricTensor('V', (p, q), (r, s))
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
         h1 = -v1 * pq + Rational(1, 4) * v2 * pqsr
-        print("H1 = ", latex(h1))
+        logger.debug(f"H1 = {latex(h1)}")
         return h1, None
 
     @staticmethod
@@ -113,7 +114,7 @@ class Operators:
         op_pqsr = Fd(p) * Fd(q) * F(s) * F(r)
 
         h0 = f * op_pq - piqi * op_pq + Rational(1, 4) * pqrs * op_pqsr
-        print("H0 = ", latex(h0))
+        logger.debug(f"H0 = {latex(h0)}")
         # construct the rules for forbidden blocks in H0
         # we are not in a real orbital basis!! -> More canonical blocks
         rules = Rules(forbidden_tensor_blocks={
@@ -137,7 +138,7 @@ class Operators:
         op_pqsr = Fd(p) * Fd(q) * F(s) * F(r)
 
         h1 = f * op_pq - piqi * op_pq + Rational(1, 4) * pqrs * op_pqsr
-        print("H1 = ", latex(h1))
+        logger.debug(f"H1 = {latex(h1)}")
         # construct the rules for forbidden blocks in H1
         rules = Rules(forbidden_tensor_blocks={
             'f': ['oo', 'vv'],

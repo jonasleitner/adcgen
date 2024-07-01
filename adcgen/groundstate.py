@@ -9,6 +9,7 @@ from .simplify import simplify
 from .func import gen_term_orders, wicks
 from .expr_container import Expr
 from .operators import Operators
+from .logger import logger
 
 
 class GroundState:
@@ -62,7 +63,7 @@ class GroundState:
         # guess option 2 is nicer, because energy is more readable and shorter
         e = simplify(Expr(e))
         e = self.indices.substitute_with_generic(e)
-        print(f"E^({order}) = {e}")
+        logger.debug(f"E^({order}) = {e}")
         return e.sympy
 
     def psi(self, order: int, braket: str):
@@ -91,7 +92,7 @@ class GroundState:
 
         # catch 0th order wavefunction
         if order == 0:
-            print(f"Build gs({order}) {braket} = 1")
+            logger.debug(f"gs({order}) {braket} = 1")
             return sympify(1)
 
         # generalized gs wavefunction generation
@@ -125,7 +126,7 @@ class GroundState:
                 psi -= prefactor * t * NO(operators)
             else:
                 psi += prefactor * t * NO(operators)
-        print(f"Build gs({order}) {braket} = ", latex(psi))
+        logger.debug(f"gs({order}) {braket} = {latex(psi)}")
         return psi
 
     def amplitude(self, order: int, space: str, indices: str):
@@ -325,7 +326,7 @@ class GroundState:
             res += wicks(i1, simplify_kronecker_deltas=True)
         # simplify the result by permuting contracted indices
         res = simplify(Expr(res))
-        print(f"Build GS S^({order}) = {res}")
+        logger.debug(f"gs S^({order}) = {res}")
         return res.sympy
 
     @cached_member
@@ -407,7 +408,7 @@ class GroundState:
                     if i1 is S.Zero:
                         break
                 norm_factor += i1.expand()
-        print(f"norm_factor^({order}): {latex(norm_factor)}")
+        logger.debug(f"norm_factor^({order}): {latex(norm_factor)}")
         return norm_factor
 
     def expand_norm_factor(self, order, min_order=2) -> list:

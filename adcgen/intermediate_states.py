@@ -11,6 +11,7 @@ from .func import gen_term_orders, wicks, evaluate_deltas
 from .groundstate import GroundState
 from .expr_container import Expr
 from .sympy_objects import Amplitude
+from .logger import logger
 
 
 class IntermediateStates:
@@ -215,8 +216,8 @@ class IntermediateStates:
                 projection = evaluate_deltas(projection)
                 res -= (norm * projection).expand()
 
-        print(f"Build precursor {space}_({indices})^({order}) {braket}:"
-              f" {latex(res)}")
+        logger.debug(f"precursor {space}_({indices})^({order}) {braket} = "
+                     f"{latex(res)}")
         return res
 
     @cached_member
@@ -275,7 +276,7 @@ class IntermediateStates:
         # indices before returning -> should lower the overall size of the
         # final expression
         res = simplify(Expr(res))
-        print(f"Build overlap {block} S_{indices}^({order}) = {res}")
+        logger.debug(f"overlap {block} S_{indices}^({order}) = {res}")
         return res.sympy
 
     @cached_member
@@ -343,7 +344,7 @@ class IntermediateStates:
                 # in squared or higher terms S*S*... delta evaluation might
                 # be necessary
                 res += evaluate_deltas(i1.expand())
-        print(f"Build {block} S_root_{indices}^({order}) = {latex(res)}")
+        logger.debug(f"{block} S_root_{indices}^({order}) = {latex(res)}")
         return res
 
     @cached_member
@@ -396,8 +397,8 @@ class IntermediateStates:
                   self.precursor(order=term[1], space=space, braket=braket,
                                  indices=idx_pre))
             res += evaluate_deltas(i1.expand())
-        print(f"Build {space} ISR_({indices}^({order}) "
-              f"{braket} = {latex(res)}")
+        logger.debug(f"{space} ISR_({indices}^({order}) {braket} = "
+                     f"{latex(res)}")
         return res
 
     @cached_member
@@ -446,8 +447,8 @@ class IntermediateStates:
                 i1 = wicks(i1, simplify_kronecker_deltas=True)
                 overlap += i1
             res += (norm * overlap).expand()
-        print(f"Build ISR overlap {block} S_{indices}^({order}) = ",
-              latex(res))
+        logger.debug(f"ISR overlap {block} S_{indices}^({order}) = "
+                     f"{latex(res)}")
         return res
 
     @cached_member
