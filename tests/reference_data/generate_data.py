@@ -6,6 +6,7 @@ from adcgen.properties import Properties
 from adcgen.reduce_expr import factor_eri_parts, factor_denom
 from adcgen.simplify import simplify, remove_tensor
 from adcgen.factor_intermediates import factor_intermediates
+from adcgen.logger import logger
 
 import itertools
 import json
@@ -40,7 +41,7 @@ class Generator:
                           if any(name in m for name in self.names)]
         for m in generators:  # run all remaining generators
             print(f"Running {m} ... ", end='', flush=True)
-            mute_and_run(getattr(self, m))
+            getattr(self, m)()
             print("Done")
 
     def gen_operators(self):
@@ -289,14 +290,6 @@ class Generator:
         write_json(results, outfile)
 
 
-def mute_and_run(f):
-    import io
-    import sys
-    sys.stdout = io.StringIO()
-    f()
-    sys.stdout = sys.__stdout__
-
-
 def write_json(data, filename):
     json.dump(data, open(filename, 'w'), indent=2)
 
@@ -317,6 +310,7 @@ def parse_cmdline():
 def main():
     parser = parse_cmdline()
     generator = Generator(parser.name)
+    logger.setLevel("WARNING")
     generator.generate()
 
 
