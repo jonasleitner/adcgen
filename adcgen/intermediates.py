@@ -1,6 +1,7 @@
 from .indices import get_symbols, order_substitutions, sort_idx_canonical
 from .indices import Indices as idx_cls
 from .indices import Index
+from .logger import logger
 from .misc import Inputerror, Singleton, cached_property, cached_member
 from . import expr_container as e
 from .eri_orbenergy import EriOrbenergy
@@ -274,23 +275,28 @@ class RegisteredIntermediate:
         for term in reduced:
             itmd += term.factor()
 
-        print('\n', '-'*80, sep='')
-        print(f"Preparing Intermediate: Factoring {factored_itmds}")
+        logger.info("".join([
+            "\n", "-"*80, "\n",
+            f"Preparing Intermediate: Factoring {factored_itmds}"
+        ]))
 
         if factored_itmds:
             available = Intermediates().available
             # iterate through factored_itmds and factor them one after another
             # in the simplified base itmd
             for i, it in enumerate(factored_itmds):
-                print('-'*80)
-                print(f"Factoring {it} in {self.name}:")
+                logger.info("\n".join([
+                    "-"*80, f"Factoring {it} in {self.name}:"
+                ]))
                 itmd = available[it].factor_itmd(
                     itmd, factored_itmds=factored_itmds[:i],
                     max_order=self.order
                 )
-        print('\n', '-'*80, sep='')
-        print(f"Done with factoring {factored_itmds} in {self.name}")
-        print('-'*80)
+        logger.info("".join([
+            "\n", "-"*80, "\n",
+            f"Done with factoring {factored_itmds} in {self.name}", "\n",
+            "-"*80
+        ]))
         return itmd
 
     def factor_itmd(self, expr: e.Expr, factored_itmds: tuple[str] = tuple(),
@@ -517,8 +523,8 @@ class t2_1(RegisteredIntermediate):
             eri = term.cancel_eri_objects(eri_obj_to_remove)
             # - collect the remaining objects in the term and add to result
             factored_term *= term.pref * eri * term.num / denom
-            print(f"\nFactoring {self.name} in:\n{term}\nresult:\n"
-                  f"{EriOrbenergy(factored_term)}")
+            logger.info(f"\nFactoring {self.name} in:\n{term}\nresult:\n"
+                        f"{EriOrbenergy(factored_term)}")
             factored += factored_term
         return factored
 

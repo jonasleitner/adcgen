@@ -1,5 +1,6 @@
 from .indices import (get_lowest_avail_indices, get_symbols,
                       order_substitutions, Index, sort_idx_canonical)
+from .logger import logger
 from .misc import Inputerror, cached_property, cached_member
 from .sympy_objects import (
     NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, SymmetricTensor,
@@ -7,7 +8,6 @@ from .sympy_objects import (
 )
 from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify, Symbol
 from sympy.physics.secondquant import NO, F, Fd, FermionicOperator
-import warnings
 
 
 class Container:
@@ -2009,8 +2009,9 @@ class Obj(Container):
         # may be used to generate the spin blocks of other intermediates
         itmd = Intermediates().available.get(self.longname, None)
         if itmd is None:
-            warnings.warn(f"Could not determine valid spin blocks for {self}.",
-                          RuntimeWarning,)
+            logger.warning(
+                f"Could not determine valid spin blocks for {self}."
+            )
             return None
         else:
             return itmd.allowed_spin_blocks
