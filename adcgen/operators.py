@@ -3,6 +3,7 @@ from .indices import Indices
 from .rules import Rules
 from .sympy_objects import AntiSymmetricTensor
 from .logger import logger
+from .tensor_names import TensorNames
 
 from sympy import Rational, factorial, Mul, latex
 from sympy.physics.secondquant import Fd, F
@@ -22,6 +23,19 @@ class Operators:
     def __init__(self, variant: str = "mp"):
         self._indices = Indices()
         self._variant = variant
+        # load the names of the tensors used in this class tensors
+        # NOTE: due to the caching it does not make sense to store the
+        # TensorNames instance:
+        #  1) operator(0, 1) is constructed
+        #  2) the operator name is modified on the TensorNames instance
+        #  3) calling operator(0, 1) again will return the cached result with
+        #     the old name, while operator(1, 0) will use the modified operator
+        #     name.
+        # -> instead take a snapshot on class instantiation
+        tensor_names = TensorNames()
+        self._operator_name = tensor_names.operator
+        self._eri_name = tensor_names.eri
+        self._fock_name = tensor_names.fock
 
     @cached_property
     def h0(self):
@@ -68,48 +82,45 @@ class Operators:
         annihilate = idx[n_create:]
 
         pref = Rational(1, factorial(n_create) * factorial(n_annihilate))
-        d = AntiSymmetricTensor('d', create, annihilate)
+        d = AntiSymmetricTensor(self._operator_name, create, annihilate)
         op = Mul(*[Fd(s) for s in create]) * \
             Mul(*[F(s) for s in reversed(annihilate)])
         return pref * d * op, None
 
-    @staticmethod
-    def mp_h0():
+    def mp_h0(self):
         """Constructs the zeroth order MP-Hamiltonian."""
         idx_cls = Indices()
         p, q = idx_cls.get_indices('pq')['general']
-        f = AntiSymmetricTensor('f', (p,), (q,))
+        f = AntiSymmetricTensor(self._fock_name, (p,), (q,))
         pq = Fd(p) * F(q)
         h0 = f * pq
         logger.debug(f"H0 = {latex(h0)}")
         return h0, None
 
-    @staticmethod
-    def mp_h1():
+    def mp_h1(self):
         """Constructs the first order MP-Hamiltonian."""
         idx_cls = Indices()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H1
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
-        v1 = AntiSymmetricTensor('V', (p, occ), (q, occ))
+        v1 = AntiSymmetricTensor(self._eri_name, (p, occ), (q, occ))
         pq = Fd(p) * F(q)
-        v2 = AntiSymmetricTensor('V', (p, q), (r, s))
+        v2 = AntiSymmetricTensor(self._eri_name, (p, q), (r, s))
         pqsr = Fd(p) * Fd(q) * F(s) * F(r)
         h1 = -v1 * pq + Rational(1, 4) * v2 * pqsr
         logger.debug(f"H1 = {latex(h1)}")
         return h1, None
 
-    @staticmethod
-    def re_h0():
+    def re_h0(self):
         """Constructs the zeroth order RE-Hamiltonian."""
         idx_cls = Indices()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H0
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
 
-        f = AntiSymmetricTensor('f', (p,), (q,))
-        piqi = AntiSymmetricTensor('V', (p, occ), (q, occ))
-        pqrs = AntiSymmetricTensor('V', (p, q), (r, s))
+        f = AntiSymmetricTensor(self._fock_name, (p,), (q,))
+        piqi = AntiSymmetricTensor(self._eri_name, (p, occ), (q, occ))
+        pqrs = AntiSymmetricTensor(self._eri_name, (p, q), (r, s))
         op_pq = Fd(p) * F(q)
         op_pqsr = Fd(p) * Fd(q) * F(s) * F(r)
 
@@ -123,17 +134,16 @@ class Operators:
         })
         return h0, rules
 
-    @staticmethod
-    def re_h1():
+    def re_h1(self):
         """Constructs the first order RE-Hamiltonian."""
         idx_cls = Indices()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H0
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
 
-        f = AntiSymmetricTensor('f', (p,), (q,))
-        piqi = AntiSymmetricTensor('V', (p, occ), (q, occ))
-        pqrs = AntiSymmetricTensor('V', (p, q), (r, s))
+        f = AntiSymmetricTensor(self._fock_name, (p,), (q,))
+        piqi = AntiSymmetricTensor(self._eri_name, (p, occ), (q, occ))
+        pqrs = AntiSymmetricTensor(self._eri_name, (p, q), (r, s))
         op_pq = Fd(p) * F(q)
         op_pqsr = Fd(p) * Fd(q) * F(s) * F(r)
 

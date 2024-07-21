@@ -18,6 +18,7 @@ from .generate_code import generate_code
 from .sympy_objects import (AntiSymmetricTensor, SymmetricTensor, Amplitude,
                             NonSymmetricTensor, KroneckerDelta, SymbolicTensor)
 from .logger import set_log_level, _config_logger
+from .tensor_names import TensorNames
 
 
 __all__ = ["AntiSymmetricTensor", "SymmetricTensor", "NonSymmetricTensor",
@@ -33,7 +34,8 @@ __all__ = ["AntiSymmetricTensor", "SymmetricTensor", "NonSymmetricTensor",
            "sort",
            "transform_to_spatial_orbitals",
            "generate_code",
-           "set_log_level"]
+           "set_log_level",
+           "TensorNames"]
 
 __authors__ = ["Jonas Leitner", "Linus Dittmer"]
 __version__ = "0.0.4"
