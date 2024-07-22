@@ -41,4 +41,5 @@ __authors__ = ["Jonas Leitner", "Linus Dittmer"]
 __version__ = "0.0.4"
 
 
+# load the logger configuration and apply it
 _config_logger()
