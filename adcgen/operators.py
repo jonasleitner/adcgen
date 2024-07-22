@@ -3,7 +3,7 @@ from .indices import Indices
 from .rules import Rules
 from .sympy_objects import AntiSymmetricTensor
 from .logger import logger
-from .tensor_names import TensorNames
+from .tensor_names import tensor_names
 
 from sympy import Rational, factorial, Mul, latex
 from sympy.physics.secondquant import Fd, F
@@ -23,8 +23,6 @@ class Operators:
     def __init__(self, variant: str = "mp"):
         self._indices = Indices()
         self._variant = variant
-        # load the tensor names class
-        self._tensor_names = TensorNames()
 
     @cached_property
     def h0(self):
@@ -69,7 +67,7 @@ class Operators:
         idx = idx["general"]
         create = idx[:n_create]
         annihilate = idx[n_create:]
-        name = self._tensor_names.operator
+        name = tensor_names.operator
 
         pref = Rational(1, factorial(n_create) * factorial(n_annihilate))
         d = AntiSymmetricTensor(name, create, annihilate)
@@ -81,7 +79,6 @@ class Operators:
     def mp_h0():
         """Constructs the zeroth order MP-Hamiltonian."""
         idx_cls = Indices()
-        tensor_names = TensorNames()
         p, q = idx_cls.get_indices('pq')['general']
         f = AntiSymmetricTensor(tensor_names.fock, (p,), (q,))
         pq = Fd(p) * F(q)
@@ -93,7 +90,6 @@ class Operators:
     def mp_h1():
         """Constructs the first order MP-Hamiltonian."""
         idx_cls = Indices()
-        tensor_names = TensorNames()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H1
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
@@ -109,7 +105,6 @@ class Operators:
     def re_h0():
         """Constructs the zeroth order RE-Hamiltonian."""
         idx_cls = Indices()
-        tensor_names = TensorNames()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H0
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
@@ -134,7 +129,6 @@ class Operators:
     def re_h1():
         """Constructs the first order RE-Hamiltonian."""
         idx_cls = Indices()
-        tensor_names = TensorNames()
         p, q, r, s = idx_cls.get_indices('pqrs')['general']
         # get an occ index for 1 particle part of H0
         occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]

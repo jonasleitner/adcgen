@@ -1,6 +1,6 @@
 from .misc import Singleton
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 import json
 
 
@@ -50,7 +50,13 @@ class TensorNames(metaclass=Singleton):
         tensor_names: dict[str, str] = json.load(open(config_file, "r"))
         return TensorNames(**tensor_names)
 
+    @property
+    def names(self) -> tuple[tuple[str, str]]:
+        return tuple(
+            (field.name, getattr(self, field.name)) for field in fields(self)
+        )
+
 
 # init the TensorNames instance and overwrite the defaults with
 # values from the config file
-TensorNames._from_config()
+tensor_names = TensorNames._from_config()
