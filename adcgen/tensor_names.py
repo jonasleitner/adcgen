@@ -1,4 +1,4 @@
-from .misc import Singleton
+from .misc import Singleton, Inputerror
 from pathlib import Path
 from dataclasses import dataclass, fields
 import json
@@ -50,11 +50,27 @@ class TensorNames(metaclass=Singleton):
         tensor_names: dict[str, str] = json.load(open(config_file, "r"))
         return TensorNames(**tensor_names)
 
-    @property
-    def names(self) -> tuple[tuple[str, str]]:
-        return tuple(
-            (field.name, getattr(self, field.name)) for field in fields(self)
-        )
+    def rename_tensors(self, expr):
+        """
+        Renames all tensors in the expression form their default names to the
+        currently configured names.
+
+        Parameters
+        ----------
+        expr: Expr
+            The expression using the default tensor names.
+        """
+        from .expr_container import Expr
+
+        if not isinstance(expr, Expr):
+            raise Inputerror("Expr needs to be provided as Expr instance.")
+
+        for field in fields(self):
+            new = getattr(self, field.name)
+            if field.default == new:  # nothing to do
+                continue
+            expr.rename_tensor(field.default, new)
+        return expr
 
 
 # init the TensorNames instance and overwrite the defaults with

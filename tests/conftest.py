@@ -3,6 +3,7 @@ import pathlib
 import json
 
 from adcgen.func import import_from_sympy_latex
+from adcgen.tensor_names import tensor_names
 
 
 @pytest.fixture(scope='session')
@@ -49,7 +50,11 @@ def reference_data() -> dict[int, dict]:
             if isinstance(val, dict):
                 ret[key] = import_data_strings(val)
             elif isinstance(val, str):
-                ret[key] = import_from_sympy_latex(val)
+                # import the expression string and rename tensors to match
+                # the currently used tensor names
+                ret[key] = tensor_names.rename_tensors(
+                    import_from_sympy_latex(val)
+                )
             else:
                 raise TypeError(f"Unknown type {type(val)}.")
         return ret
