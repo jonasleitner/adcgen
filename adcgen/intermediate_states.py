@@ -12,6 +12,7 @@ from .groundstate import GroundState
 from .expr_container import Expr
 from .sympy_objects import Amplitude
 from .logger import logger
+from .tensor_names import TensorNames
 
 
 class IntermediateStates:
@@ -33,6 +34,7 @@ class IntermediateStates:
             raise Inputerror("Invalid ground state object.")
         self.gs = mp
         self.indices = Indices()
+        self.tensor_names = TensorNames()
 
         variants = {
             "pp": ["ph", "hp"],
@@ -471,7 +473,7 @@ class IntermediateStates:
         occ = idx["occ"] if "occ" in idx else []
         virt = idx["virt"] if "virt" in idx else []
 
-        name = "Y" if lr == "right" else "X"
+        name = getattr(self.tensor_names, f"{lr}_adc_amplitude")
         return Amplitude(name, virt, occ)
 
     def expand_S_taylor(self, order: int, min_order=2) -> list:

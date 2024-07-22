@@ -17,19 +17,28 @@ _config_file = "tensor_names.json"
 class TensorNames(metaclass=Singleton):
     """
     Singleton class that that is used to define the names of tensors
-    used throughout the code. The names may be changed either by modifying
-    'tensor_names.json' or by modifying the appropriate attributes on the
-    class instance. By default the following names are used:
+    used throughout the code. The names can be changed by modifying
+    'tensor_names.json'. By default, the following names are used, where
+    the attributes storing the names are given in brackets:
     - antisymmetric ERI in physicist notation (eri): V
-    - Coulomb integrals in chemist notation (coulomb): v,
-    - The fock matrix (fock): f,
+    - Coulomb integrals in chemist notation (coulomb): v
+    - The fock matrix (fock): f
     - The arbitrary N-particle operator matrix (operator): d
-    The attributes storing the tensor names are given in brackets.
+    - Ground state amplitudes (gs_amplitude): t
+      Additionally, an integer representing the perturbation theoretical order
+      and/or 'cc' to represent complex conjugate amplitudes are appended
+      to the name.
+    - ADC amplitudes belonging to the bra (left) state (left_adc_amplitude): X
+    - ADC amplitudes belonging to the ket (right) state
+      (right_adc_amplitude): X
     """
     eri: str = "V"
     coulomb: str = "v"
     fock: str = "f"
     operator: str = "d"
+    gs_amplitude: str = "t"
+    left_adc_amplitude: str = "X"
+    right_adc_amplitude: str = "Y"
 
     @staticmethod
     def _from_config() -> 'TensorNames':

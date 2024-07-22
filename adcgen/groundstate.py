@@ -10,6 +10,7 @@ from .func import gen_term_orders, wicks
 from .expr_container import Expr
 from .operators import Operators
 from .logger import logger
+from .tensor_names import TensorNames
 
 
 class GroundState:
@@ -31,6 +32,7 @@ class GroundState:
         if not isinstance(hamiltonian, Operators):
             raise Inputerror("Invalid hamiltonian.")
         self.indices = Indices()
+        self.tensor_names = TensorNames()
         self.h = hamiltonian
         self.singles = first_order_singles
 
@@ -96,7 +98,7 @@ class GroundState:
             return sympify(1)
 
         # generalized gs wavefunction generation
-        tensor_name = f"t{order}"
+        tensor_name = f"{self.tensor_names.gs_amplitude}{order}"
         if braket == "bra":
             tensor_name += "cc"
         idx = self.indices.get_generic_indices(n_o=2*order, n_v=2*order)
@@ -218,8 +220,9 @@ class GroundState:
             if (n_ov['n_occ'] > 2 * o2) or \
                     (n_ov['n_occ'] == 1 and o2 == 1 and not self.singles):
                 continue
+            name = f"{self.tensor_names.gs_amplitude}{o2}"
             contrib = (
-                self.energy(o1) * Amplitude(f"t{o2}", idx["virt"], idx["occ"])
+                self.energy(o1) * Amplitude(name, idx["virt"], idx["occ"])
             ).expand()
             if n_ov['n_occ'] == 2:  # doubles... special sign
                 ret += contrib
@@ -290,9 +293,10 @@ class GroundState:
             if n_ov['n_occ'] > 2 * t_order or \
                     (n_ov['n_occ'] == 1 and t_order == 1 and not self.singles):
                 continue
+            name = f"{self.tensor_names.gs_amplitude}{t_order}"
             contrib = (
                 self.energy(e_order) *
-                Amplitude(f"t{t_order}", idx['virt'], idx['occ'])
+                Amplitude(name, idx['virt'], idx['occ'])
             ).expand()
             if n_ov['n_occ'] == 2:  # doubles -> different sign!
                 res += contrib
