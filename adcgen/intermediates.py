@@ -8,6 +8,7 @@ from .eri_orbenergy import EriOrbenergy
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, Amplitude
 from .symmetry import LazyTermMap
 from .spatial_orbitals import allowed_spin_blocks
+from .tensor_names import tensor_names
 
 from sympy import S, Rational, Pow
 
@@ -1384,7 +1385,7 @@ def eri(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
     idx = get_symbols(idx)
     if len(idx) != 4:
         raise Inputerror(f'4 indices required to build a ERI. Got: {idx}.')
-    return AntiSymmetricTensor('V', idx[:2], idx[2:])
+    return AntiSymmetricTensor(tensor_names.eri, idx[:2], idx[2:])
 
 
 def fock(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
@@ -1396,7 +1397,7 @@ def fock(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
     if len(idx) != 2:
         raise Inputerror('2 indices required to build a Fock matrix element.'
                          f'Got: {idx}.')
-    return AntiSymmetricTensor('f', idx[:1], idx[1:])
+    return AntiSymmetricTensor(tensor_names.fock, idx[:1], idx[1:])
 
 
 def orb_energy(idx: str | Index) -> NonSymmetricTensor:
@@ -1408,4 +1409,4 @@ def orb_energy(idx: str | Index) -> NonSymmetricTensor:
     if len(idx) != 1:
         raise Inputerror("1 index required to build a orbital energy. Got: "
                          f"{idx}.")
-    return NonSymmetricTensor('e', idx)
+    return NonSymmetricTensor(tensor_names.orb_energy, idx)

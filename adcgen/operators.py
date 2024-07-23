@@ -120,8 +120,8 @@ class Operators:
         # construct the rules for forbidden blocks in H0
         # we are not in a real orbital basis!! -> More canonical blocks
         rules = Rules(forbidden_tensor_blocks={
-            'f': ('ov', 'vo'),
-            'V': ('ooov', 'oovv', 'ovvv', 'ovoo', 'vvoo', 'vvov')
+            tensor_names.fock: ('ov', 'vo'),
+            tensor_names.eri: ('ooov', 'oovv', 'ovvv', 'ovoo', 'vvoo', 'vvov')
         })
         return h0, rules
 
@@ -143,8 +143,8 @@ class Operators:
         logger.debug(f"H1 = {latex(h1)}")
         # construct the rules for forbidden blocks in H1
         rules = Rules(forbidden_tensor_blocks={
-            'f': ['oo', 'vv'],
-            'V': ['oooo', 'ovov', 'vvvv']
+            tensor_names.fock: ['oo', 'vv'],
+            tensor_names.eri: ['oooo', 'ovov', 'vvvv']
         })
         return h1, rules
 

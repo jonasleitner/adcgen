@@ -1,4 +1,5 @@
 from adcgen.rules import Rules
+from adcgen.tensor_names import tensor_names
 
 from sympy import S
 import pytest
@@ -18,8 +19,9 @@ class TestOperators:
             assert rules is None
         elif variant == 're':
             ref_rules = Rules(forbidden_tensor_blocks={
-                'V': ('ooov', 'ovoo', 'oovv', 'vvoo', 'ovvv', 'vvov'),
-                'f': ('ov', 'vo')
+                tensor_names.eri: ('ooov', 'ovoo', 'oovv', 'vvoo', 'ovvv',
+                                   'vvov'),
+                tensor_names.fock: ('ov', 'vo')
             })
             assert rules == ref_rules
 
@@ -35,8 +37,8 @@ class TestOperators:
             assert rules is None
         elif variant == 're':
             ref_rules = Rules(forbidden_tensor_blocks={
-                'V': ('oooo', 'ovov', 'vvvv'),
-                'f': ('oo', 'vv')
+                tensor_names.eri: ('oooo', 'ovov', 'vvvv'),
+                tensor_names.fock: ('oo', 'vv')
             })
             assert rules == ref_rules
 

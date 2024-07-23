@@ -3,6 +3,7 @@ from .misc import Inputerror
 from .sort_expr import exploit_perm_sym
 from .indices import sort_idx_canonical
 from .sympy_objects import SymbolicTensor, KroneckerDelta
+from .tensor_names import tensor_names
 
 from collections import namedtuple
 from sympy import Symbol
@@ -160,10 +161,10 @@ def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
     """Generate a contraction string using the einsum syntax."""
 
     translate_tensor_names = {
-        'V': lambda indices: (  # eri
+        tensor_names.eri: lambda indices: (  # eri
             f"hf.{''.join(s.space[0] for s in indices)}"
         ),
-        'f': lambda indices: (  # fock
+        tensor_names.fock: lambda indices: (  # fock
             f"hf.f{''.join(s.space[0] for s in indices)}"
         )
     }
@@ -257,7 +258,7 @@ def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
                                   f" not implemented.\n{c_data}.")
 
     translate_tensor_names = {
-        'V': lambda indices: (  # eri
+        tensor_names.eri: lambda indices: (  # eri
             f"i_{''.join(s.space[0] for s in indices)}"
         ),
     }

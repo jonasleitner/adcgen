@@ -1,6 +1,7 @@
 from adcgen.factor_intermediates import factor_intermediates
 from adcgen.func import import_from_sympy_latex
 from adcgen.simplify import simplify
+from adcgen.tensor_names import tensor_names
 
 from sympy import S
 
@@ -8,12 +9,19 @@ from sympy import S
 class TestFactorIntermediates:
     def test_factor_t2_1(self):
         # just factor it once
-        eri = import_from_sympy_latex("{V^{ij}_{ab}}").make_real()
-        denom = import_from_sympy_latex(
-            "{e_{a}} + {e_{b}} - {e_{i}} - {e_{j}}"
+        eri = import_from_sympy_latex(
+            "{V^{ij}_{ab}}".replace("V", tensor_names.eri)
         ).make_real()
-        t = import_from_sympy_latex("{t1^{ab}_{ij}}").make_real()
-        remainder = import_from_sympy_latex("{X_{ij}^{ab}}").make_real()
+        denom = "{e_{a}} + {e_{b}} - {e_{i}} - {e_{j}}"
+        denom = import_from_sympy_latex(
+            denom.replace("e", tensor_names.orb_energy)
+        ).make_real()
+        t = import_from_sympy_latex(
+            "{t1^{ab}_{ij}}".replace("t", tensor_names.gs_amplitude)
+        ).make_real()
+        remainder = import_from_sympy_latex(
+            "{X_{ij}^{ab}}".replace("X", tensor_names.left_adc_amplitude)
+        ).make_real()
 
         test = eri / denom * remainder / 2
         test.set_target_idx([])
@@ -22,11 +30,16 @@ class TestFactorIntermediates:
         assert (res.sympy - ref.sympy) is S.Zero
 
         # factor it twice
-        eri2 = import_from_sympy_latex("{V^{jk}_{bc}}").make_real()
-        denom2 = import_from_sympy_latex(
-            "{e_{b}} + {e_{c}} - {e_{j}} - {e_{k}}"
+        eri2 = import_from_sympy_latex(
+            "{V^{jk}_{bc}}".replace("V", tensor_names.eri)
         ).make_real()
-        t2 = import_from_sympy_latex("{t1^{bc}_{jk}}").make_real()
+        denom2 = "{e_{b}} + {e_{c}} - {e_{j}} - {e_{k}}"
+        denom2 = import_from_sympy_latex(
+            denom2.replace("e", tensor_names.orb_energy)
+        ).make_real()
+        t2 = import_from_sympy_latex(
+            "{t1^{bc}_{jk}}".replace("t", tensor_names.gs_amplitude)
+        ).make_real()
 
         test = eri * eri2 / (denom * denom2).expand() * remainder * 2
         test.set_target_idx('jk')
@@ -53,6 +66,7 @@ class TestFactorIntermediates:
             r"+ \frac{{V^{ij}_{ab}} {V^{km}_{ce}} {V^{le}_{md}}}{\left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{c}} + {e_{e}} - {e_{k}} - {e_{m}}\right)} "  # noqa E501
             r"- \frac{{V^{ij}_{ab}} {V^{kl}_{mn}} {V^{mn}_{cd}}}{2 \left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right) \left({e_{c}} + {e_{d}} - {e_{m}} - {e_{n}}\right)}"  # noqa E501
         ).make_real()
+        test = tensor_names.rename_tensors(test)
         test.set_target_idx('ijklabcd')
 
         # ensure that the same result is obtained indepent of the
@@ -64,7 +78,10 @@ class TestFactorIntermediates:
         assert simplify(res - res2).sympy is S.Zero
         assert simplify(res - res3).sympy is S.Zero
 
-        ref = import_from_sympy_latex("{V^{ab}_{ij}} {t2^{cd}_{kl}}")
+        ref = "{V^{ab}_{ij}} {t2^{cd}_{kl}}"
+        ref = ref.replace("V", tensor_names.eri)
+        ref = ref.replace("t", tensor_names.gs_amplitude)
+        ref = import_from_sympy_latex(ref)
         ref.make_real()
         ref.set_target_idx('ijklabcd')
         assert simplify(res - ref).sympy is S.Zero
@@ -76,9 +93,13 @@ class TestFactorIntermediates:
             r"+ \frac{2 {V^{ij}_{ab}} {V^{ik}_{ce}} {V^{je}_{kd}}}{\left({e_{c}} + {e_{d}} - {e_{i}} - {e_{j}}\right) \left({e_{c}} + {e_{e}} - {e_{i}} - {e_{k}}\right)} "  # noqa E501
             r"- \frac{{V^{ij}_{ab}} {V^{ij}_{kl}} {V^{kl}_{cd}}}{2 \left({e_{c}} + {e_{d}} - {e_{i}} - {e_{j}}\right) \left({e_{c}} + {e_{d}} - {e_{k}} - {e_{l}}\right)}"  # noqa E501
         ).make_real()
+        test = tensor_names.rename_tensors(test)
         test.set_target_idx('abcd')
 
-        ref = import_from_sympy_latex("{V^{ab}_{ij}} {t2^{cd}_{ij}}")
+        ref = "{V^{ab}_{ij}} {t2^{cd}_{ij}}"
+        ref = ref.replace("V", tensor_names.eri)
+        ref = ref.replace("t", tensor_names.gs_amplitude)
+        ref = import_from_sympy_latex(ref)
         ref.make_real()
         ref.set_target_idx('abcd')
 
@@ -91,9 +112,13 @@ class TestFactorIntermediates:
             r"+ \frac{4 {V^{ij}_{ab}} {V^{ik}_{ac}} {V^{jc}_{kb}}}{\left({e_{a}} + {e_{b}} - {e_{i}} - {e_{j}}\right) \left({e_{a}} + {e_{c}} - {e_{i}} - {e_{k}}\right)} "  # noqa E501
             r"- \frac{{V^{ij}_{ab}} {V^{ij}_{kl}} {V^{kl}_{ab}}}{2 \left({e_{a}} + {e_{b}} - {e_{i}} - {e_{j}}\right) \left({e_{a}} + {e_{b}} - {e_{k}} - {e_{l}}\right)}"   # noqa E501
         ).make_real()
+        test = tensor_names.rename_tensors(test)
         test.set_target_idx([])
 
-        ref = import_from_sympy_latex("{V^{ab}_{ij}} {t2^{ab}_{ij}}")
+        ref = "{V^{ab}_{ij}} {t2^{ab}_{ij}}"
+        ref = ref.replace("V", tensor_names.eri)
+        ref = ref.replace("t", tensor_names.gs_amplitude)
+        ref = import_from_sympy_latex(ref)
         ref.make_real()
         ref.set_target_idx([])
 
@@ -114,11 +139,13 @@ class TestFactorIntermediates:
         )
 
         test = import_from_sympy_latex(test).make_real()
+        test = tensor_names.rename_tensors(test)
         test.set_target_idx('ijab')
 
         res = factor_intermediates(test, types_or_names='re_residual')
 
         ref = r"- \frac{\delta_{i j} {f^{b}_{d}} {t1^{ac}_{kl}} {t1^{cd}_{kl}}}{4}"  # noqa E501
         ref = import_from_sympy_latex(ref).make_real()
+        ref = tensor_names.rename_tensors(ref)
 
         assert (res.sympy - ref.sympy) is S.Zero

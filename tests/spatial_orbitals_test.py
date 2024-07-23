@@ -78,8 +78,8 @@ class TestIntegrateSpin:
         ia, ja, aa, ba = get_symbols('ijab', "aaaa")
         ib, jb, ab, bb = get_symbols('ijab', "bbbb")
         tensors = (Rational(1, 4) *
-                   AntiSymmetricTensor("V", (i, j), (a, b)) *
-                   Amplitude("t1", (a, b), (i, j)))
+                   AntiSymmetricTensor(tensor_names.eri, (i, j), (a, b)) *
+                   Amplitude(f"{tensor_names.gs_amplitude}1", (a, b), (i, j)))
         test = Expr(tensors + num)
         res = integrate_spin(test, "", "")
         ref = tensors.subs({i: ia, j: ja, a: aa, b: ba})
@@ -92,18 +92,20 @@ class TestIntegrateSpin:
     def test_t1_2(self):
         # use one of the 2 t1_2 terms as test case (without denominator)
         i, j, a, b, c = get_symbols('ijabc')
-        term = Rational(1, 2) * Amplitude("t1", (b, c), (i, j)) * \
-            AntiSymmetricTensor("V", (j, a), (b, c))
+        term = (Rational(1, 2) *
+                Amplitude(f"{tensor_names.gs_amplitude}1", (b, c), (i, j)) *
+                AntiSymmetricTensor(tensor_names.eri, (j, a), (b, c)))
         term = Expr(term, real=True)
         # case 1: aa
         res = integrate_spin(term, 'ia', 'aa')
         ia, ja, aa, ba, ca = get_symbols('ijabc', 'aaaaa')
         jb, cb = get_symbols('jc', 'bb')
         ref = Expr(
-            Rational(1, 2) * Amplitude("t1", (ba, ca), (ia, ja)) *
-            AntiSymmetricTensor("V", (ja, aa), (ba, ca))
-            + Amplitude("t1", (ba, cb), (ia, jb)) *
-            AntiSymmetricTensor("V", (jb, aa), (ba, cb))
+            Rational(1, 2) *
+            Amplitude(f"{tensor_names.gs_amplitude}1", (ba, ca), (ia, ja)) *
+            AntiSymmetricTensor(tensor_names.eri, (ja, aa), (ba, ca))
+            + Amplitude(f"{tensor_names.gs_amplitude}1", (ba, cb), (ia, jb)) *
+            AntiSymmetricTensor(tensor_names.eri, (jb, aa), (ba, cb))
         ).make_real()
         assert simplify(res - ref).sympy is S.Zero
         # case 2: ab
@@ -114,10 +116,11 @@ class TestIntegrateSpin:
         res = integrate_spin(term, 'ia', 'bb')
         ib, jb, ab, bb, cb = get_symbols('ijabc', 'bbbbb')
         ref = Expr(
-            Rational(1, 2) * Amplitude("t1", (bb, cb), (ib, jb)) *
-            AntiSymmetricTensor("V", (jb, ab), (bb, cb))
-            + Amplitude("t1", (ba, cb), (ib, ja)) *
-            AntiSymmetricTensor("V", (ja, ab), (ba, cb))
+            Rational(1, 2) *
+            Amplitude(f"{tensor_names.gs_amplitude}1", (bb, cb), (ib, jb)) *
+            AntiSymmetricTensor(tensor_names.eri, (jb, ab), (bb, cb))
+            + Amplitude(f"{tensor_names.gs_amplitude}1", (ba, cb), (ib, ja)) *
+            AntiSymmetricTensor(tensor_names.eri, (ja, ab), (ba, cb))
         ).make_real()
         assert simplify(res - ref).sympy is S.Zero
 
@@ -126,7 +129,7 @@ class TestAllowedSpinBlocks:
     def test_single_objects(self):
         p, q, r, s = get_symbols("pqrs")
         # ERI
-        obj = Expr(AntiSymmetricTensor("V", (p, q), (r, s)))
+        obj = Expr(AntiSymmetricTensor(tensor_names.eri, (p, q), (r, s)))
         obj = obj.terms[0].objects[0]
         ref = ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
         assert obj.allowed_spin_blocks == ref
