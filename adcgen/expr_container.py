@@ -156,7 +156,7 @@ class Expr(Container):
         # first apply the tensor symmetry
         if self._sym_tensors or self._antisym_tensors:
             if real:
-                self._sym_tensors.update(['f', 'V'])
+                self._sym_tensors.update([tensor_names.fock, tensor_names.eri])
             self._apply_tensor_braket_sym()
         # then check if we are real (make real will adjust the tensor
         # symmetry too - if necessary)
@@ -236,9 +236,9 @@ class Expr(Container):
         """
         if not all(isinstance(t, str) for t in sym_tensors):
             raise Inputerror("Symmetric tensors need to be provided as str.")
-        sym_tensors = set(sym_tensors)
+        sym_tensors: set = set(sym_tensors)
         if self.real:
-            sym_tensors.update(['f', 'V'])
+            sym_tensors.update([tensor_names.fock, tensor_names.eri])
         if sym_tensors != self._sym_tensors:
             self._sym_tensors = sym_tensors
             self._apply_tensor_braket_sym()
@@ -287,8 +287,9 @@ class Expr(Container):
 
         self._real = True
         sym_tensors = self._sym_tensors
-        if 'f' not in sym_tensors or 'V' not in sym_tensors:
-            self._sym_tensors.update(['f', 'V'])
+        if tensor_names.fock not in sym_tensors or \
+                tensor_names.eri not in sym_tensors:
+            self._sym_tensors.update([tensor_names.fock, tensor_names.eri])
             self._apply_tensor_braket_sym()
         if self.sympy.is_number:
             return self
@@ -297,6 +298,10 @@ class Expr(Container):
         return self
 
     def _apply_tensor_braket_sym(self):
+        """
+        Adds the bra-ket symmetry defined in sym- and antisym_tensors to
+        the tensor objects in the expression.
+        """
         if self.sympy.is_number:
             return self
         expr_with_sym = Add(*[t._apply_tensor_braket_sym(return_sympy=True)
@@ -331,7 +336,7 @@ class Expr(Container):
         self._target_idx = diag.provided_target_idx
         return self
 
-    def rename_tensor(self, current, new):
+    def rename_tensor(self, current, new) -> 'Expr':
         """Changes the name of a tensor from current to new."""
         if not isinstance(current, str) or not isinstance(new, str):
             raise Inputerror("Old and new tensor name need to be provided as "
@@ -342,7 +347,7 @@ class Expr(Container):
         self._expr = renamed
         return self
 
-    def expand_antisym_eri(self):
+    def expand_antisym_eri(self) -> 'Expr':
         """
         Expands the antisymmetric ERI using chemists notation
         <pq||rs> = (pr|qs) - (ps|qr).
@@ -351,7 +356,9 @@ class Expr(Container):
         for symmetric ERI's <pq||rs> = <rs||pq>."""
         self._expr = Add(*[term.expand_antisym_eri(return_sympy=True)
                            for term in self.terms])
-        self._sym_tensors.add("v")
+        # only update the assumptions if there was an eri to expand
+        if Symbol(tensor_names.coulomb) in self._expr.atoms(Symbol):
+            self._sym_tensors.add(tensor_names.coulomb)
         return self
 
     def use_symbolic_denominators(self):
@@ -364,7 +371,7 @@ class Expr(Container):
         for term in self.terms:
             term = term.use_symbolic_denominators()
             symbolic_denom += term.sympy
-            if "D" in term.antisym_tensors:
+            if tensor_names.sym_orb_denom in term.antisym_tensors:
                 has_symbolic_denom = True
         # the symbolic denominators have additional antisymmetry
         # for bra ket swaps
@@ -372,7 +379,7 @@ class Expr(Container):
         # -> only set if we replaced a denominator in the expr
         self._expr = symbolic_denom
         if has_symbolic_denom:
-            self._antisym_tensors.update("D")
+            self._antisym_tensors.update(tensor_names.sym_orb_denom)
         return self
 
     def use_explicit_denominators(self):
@@ -383,6 +390,9 @@ class Expr(Container):
         """
         self._expr = Add(*[term.use_explicit_denominators(return_sympy=True)
                            for term in self.terms])
+        # remove the symbolic denom from the assumptions if necessary
+        if tensor_names.sym_orb_denom in self._antisym_tensors:
+            self._antisym_tensors.remove(tensor_names.sym_orb_denom)
         return self
 
     def expand(self):
@@ -831,11 +841,13 @@ class Term(Container):
                          for o in self.objects])
         if return_sympy:
             return expanded
-        else:
-            # add chemist notation eri to sym_tensors
-            assumptions = self.assumptions
-            assumptions['sym_tensors'] = assumptions['sym_tensors'] + ("v",)
-            return Expr(expanded, **assumptions)
+        assumptions = self.assumptions
+        # add chemist notation eri to sym_tensors if necessary
+        if Symbol(tensor_names.coulomb) in expanded.atoms(Symbol):
+            assumptions['sym_tensors'] = (
+                assumptions['sym_tensors'] + (tensor_names.coulomb,)
+            )
+        return Expr(expanded, **assumptions)
 
     def factor(self):
         from sympy import factor
@@ -1113,8 +1125,14 @@ class Term(Container):
                                for obj in self.objects])
         if return_sympy:
             return explicit_denom
-        else:
-            return Expr(explicit_denom, **self.assumptions)
+        assumptions = self.assumptions
+        # remove the tensor from the assumptions
+        if tensor_names.sym_orb_denom in self.antisym_tensors:
+            assumptions["antisym_tensors"] = tuple(
+                n for n in assumptions["antisym_tensors"]
+                if n != tensor_names.sym_orb_denom
+            )
+        return Expr(explicit_denom, **assumptions)
 
     def split_orb_energy(self) -> dict:
         """
@@ -1203,7 +1221,7 @@ class Term(Container):
 
         def extract_data(o):
             if isinstance(o, Obj):
-                return o.idx, o.longname
+                return o.idx, o.longname()
             elif isinstance(o, contraction_data):
                 return o.target, 'contraction'
             else:
@@ -1354,7 +1372,7 @@ class Term(Container):
             else:  # contraction -> trace is possible
                 contracted = tuple(s for s, n in Counter(indices).items()
                                    if n > 1)
-            return [contraction_data((i,), (indices,), (o.longname,),
+            return [contraction_data((i,), (indices,), (o.longname(),),
                                      contracted, target_indices, scal)]
 
         if max_tensor_dim is not None and not isinstance(max_tensor_dim, int):
@@ -1537,7 +1555,7 @@ class Obj(Container):
             If this is set no Expr object will be returned but the raw
             unwrapped object.
         """
-        if self.name == 'f' and self.space in ['ov', 'vo']:
+        if self.name == tensor_names.fock and self.space in ['ov', 'vo']:
             bl_diag = 0
         else:
             bl_diag = self.sympy
@@ -1548,7 +1566,7 @@ class Obj(Container):
     def diagonalize_fock(self, target: tuple[Index] = None,
                          return_sympy: bool = False):
         sub = {}
-        if self.name == 'f':  # self contains a fock element
+        if self.name == tensor_names.fock:  # self contains a fock element
             # off diagonal fock matrix block -> return 0
             if self.space in ['ov', 'vo']:
                 diag = 0
@@ -1576,8 +1594,11 @@ class Obj(Container):
                         sub[idx[0]] = idx[1]
                         preferred = idx[1]
                     # construct a orbital energy e with the preferred idx
-                    diag = Pow(NonSymmetricTensor('e', (preferred,)),
-                               self.exponent)
+                    diag = Pow(
+                        NonSymmetricTensor(tensor_names.orb_energy,
+                                           (preferred,)),
+                        self.exponent
+                    )
         else:  # no fock matrix element
             diag = self.sympy
 
@@ -1616,6 +1637,7 @@ class Obj(Container):
         Currently this only works for real orbitals, i.e.,
         for symmetric ERI's <pq||rs> = <rs||pq>.
         """
+        expanded_coulomb = False
         if self.name == tensor_names.eri:
             # ensure that the eri is Symmetric. Otherwise we would introduce
             # additional unwanted symmetry in the result
@@ -1625,19 +1647,24 @@ class Obj(Container):
             p, q, r, s = self.idx  # <pq||rs>
             res = S.Zero
             if p.spin == r.spin and q.spin == s.spin:
-                res += SymmetricTensor("v", (p, r), (q, s), 1)
+                res += SymmetricTensor(tensor_names.coulomb, (p, r), (q, s), 1)
+                expanded_coulomb = True
             if p.spin == s.spin and q.spin == r.spin:
-                res -= SymmetricTensor("v", (p, s), (q, r), 1)
+                res -= SymmetricTensor(tensor_names.coulomb, (p, s), (q, r), 1)
+                expanded_coulomb = True
             res = Pow(res, self.exponent)
         else:  # nothing to do
             res = self.sympy
 
         if return_sympy:
             return res
-        else:
-            assumptions = self.assumptions
-            assumptions['sym_tensors'] = assumptions['sym_tensors'] + ("v",)
-            return Expr(res, **assumptions)
+        assumptions = self.assumptions
+        # add the coulomb integral to sym_tensors if necessary
+        if expanded_coulomb:
+            assumptions['sym_tensors'] = (
+                assumptions['sym_tensors'] + (tensor_names.coulomb,)
+            )
+        return Expr(res, **assumptions)
 
     @property
     def base_and_exponent(self) -> tuple:
@@ -1711,22 +1738,29 @@ class Obj(Container):
         from .intermediates import Intermediates
 
         if isinstance(self.base, SymbolicTensor):
-            if (name := self.name) == 'V':  # eri
+            if (name := self.name) == tensor_names.eri:  # eri
                 return 1
             elif is_t_amplitude(name):
                 _, ext = split_t_amplitude_name(name)
                 return int(ext.replace('c', ''))
             # all intermediates
-            itmd_cls = Intermediates().available.get(self.longname, None)
+            itmd_cls = Intermediates().available.get(self.longname(True), None)
             if itmd_cls is not None:
                 return itmd_cls.order
         return 0
 
-    @property
-    def longname(self):
+    def longname(self, use_default_names: bool = False):
         """
         Returns a more exhaustive name of the object. Used for intermediates
         and transformation to code.
+
+        Parameters
+        ----------
+        use_default_names: bool, optional
+            If set, the default names are used to generate the longname.
+            This is necessary to e.g., map a tensor name to an intermediate
+            name, since they are defined using the default names.
+            (default: False)
         """
         name = None
         base = self.base
@@ -1737,9 +1771,11 @@ class Obj(Container):
                 if len(base.upper) != len(base.lower):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for t-amplitude {self}.")
-                name = (
-                    f"{tensor_names.gs_amplitude}{len(base.upper)}_{name[1:]}"
-                )
+                base_name, ext = split_t_amplitude_name(name)
+                if use_default_names:
+                    base_name = tensor_names.defaults().get("gs_amplitude")
+                    assert base_name is not None
+                name = f"{base_name}{len(base.upper)}_{ext}"
             elif is_adc_amplitude(name):  # adc amplitudes
                 # need to determine the excitation space as int
                 space = self.space
@@ -1755,6 +1791,9 @@ class Obj(Container):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for mp density {self}.")
                 base_name, ext = split_gs_density_name(name)
+                if use_default_names:
+                    base_name = tensor_names.defaults().get("gs_density")
+                    assert base_name is not None
                 name = f"{base_name}0_{ext}_{self.space}"
             elif name.startswith('t2eri'):  # t2eri
                 name = f"t2eri_{name[5:]}"
@@ -1897,7 +1936,7 @@ class Obj(Container):
             target = self.term.target
 
         itmd = Intermediates()
-        itmd = itmd.available.get(self.longname, None)
+        itmd = itmd.available.get(self.longname(True), None)
         if itmd is None:
             expanded = self.sympy
         else:
@@ -2007,7 +2046,7 @@ class Obj(Container):
                     ["".join(block) for block in product("ab", repeat=len(idx))
                      if block[:n].count("a") == block[n:].count("a")]
                 ))
-            elif name == "v":  # ERI in chemist notation
+            elif name == tensor_names.coulomb:  # ERI in chemist notation
                 return ("aaaa", "aabb", "bbaa", "bbbb")
         elif isinstance(obj, KroneckerDelta):  # delta
             # spins have to be equal
@@ -2017,7 +2056,7 @@ class Obj(Container):
             return ("a", "b")
         # the known allowed spin blocks of eri, t-amplitudes and deltas
         # may be used to generate the spin blocks of other intermediates
-        itmd = Intermediates().available.get(self.longname, None)
+        itmd = Intermediates().available.get(self.longname(True), None)
         if itmd is None:
             logger.warning(
                 f"Could not determine valid spin blocks for {self}."
@@ -2032,27 +2071,37 @@ class Obj(Container):
         replacing all symbolic denominators by their explicit counter part,
         i.e., D^{ij}_{ab} -> (e_i + e_j - e_a - e_b)^{-1}.+
         """
-        if self.name == "D":
+        if self.name == tensor_names.sym_orb_denom:
             tensor, exponent = self.base_and_exponent
             # upper indices are added, lower indices subtracted
             explicit_denom = 0
             for s in tensor.upper:
-                explicit_denom += NonSymmetricTensor("e", (s,))
+                explicit_denom += NonSymmetricTensor(
+                    tensor_names.orb_energy, (s,)
+                )
             for s in tensor.lower:
-                explicit_denom -= NonSymmetricTensor("e", (s,))
+                explicit_denom -= NonSymmetricTensor(
+                    tensor_names.orb_energy, (s,)
+                )
             explicit_denom = Pow(explicit_denom, -exponent)
         else:
             explicit_denom = self.sympy
         if return_sympy:
             return explicit_denom
-        else:
-            return Expr(explicit_denom, **self.assumptions)
+        assumptions = self.assumptions
+        # remove the symbolic denom from the assumptions if necessary
+        if tensor_names.sym_orb_denom in self.antisym_tensors:
+            assumptions["antisym_tensors"] = tuple(
+                n for n in assumptions["antisym_tensors"]
+                if n != tensor_names.sym_orb_denom
+            )
+        return Expr(explicit_denom, **assumptions)
 
     @property
     def contains_only_orb_energies(self):
         """Whether the term only contains orbital energies."""
         # all orb energies should be nonsym_tensors actually
-        return self.name == 'e' and len(self.idx) == 1
+        return self.name == tensor_names.orb_energy and len(self.idx) == 1
 
     def to_latex_str(self, only_pull_out_pref: bool = False,
                      spin_as_overbar: bool = False) -> str:
@@ -2138,7 +2187,8 @@ class Obj(Container):
             return self.__str__()
 
         if exp != 1:
-            if name in ["V", "v"]:  # special case for ERI and coulomb
+            # special case for ERI and coulomb
+            if name in [tensor_names.eri, tensor_names.coulomb]:
                 tex_str += f"^{{{exp}}}"
             else:
                 tex_str = f"\\bigl({tex_str}\\bigr)^{{{exp}}}"
@@ -2387,10 +2437,13 @@ class Polynom(Obj):
         expanded = Pow(expanded, self.exponent)
         if return_sympy:
             return expanded
-        else:
-            assumptions = self.assumptions
-            assumptions['sym_tensors'] = assumptions['sym_tensors'] + ("v",)
-            return Expr(expanded, **assumptions)
+        assumptions = self.assumptions
+        # add the coulomb tensor to sym_tensors if necessary
+        if Symbol(tensor_names.coulomb) in expanded.atoms(Symbol):
+            assumptions['sym_tensors'] = (
+                assumptions['sym_tensors'] + (tensor_names.coulomb,)
+            )
+        return Expr(expanded, **assumptions)
 
     @property
     def order(self):
@@ -2429,8 +2482,13 @@ class Polynom(Obj):
         explicit_denom = Pow(explicit_denom, self.exponent)
         if return_sympy:
             return explicit_denom
-        else:
-            return Expr(explicit_denom, **self.assumptions)
+        assumptions = self.assumptions
+        if tensor_names.sym_orb_denom in self.antisym_tensors:
+            assumptions["antisym_tensors"] = tuple(
+                n for n in assumptions["antisym_tensors"]
+                if n != tensor_names.sym_orb_denom
+            )
+        return Expr(explicit_denom, **assumptions)
 
     def description(self, *args, **kwargs):
         raise NotImplementedError("description not implemented for polynoms:",

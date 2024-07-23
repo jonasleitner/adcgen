@@ -9,16 +9,23 @@ from adcgen.sympy_objects import (
     AntiSymmetricTensor, SymmetricTensor, NonSymmetricTensor, KroneckerDelta,
     Amplitude
 )
+from adcgen.tensor_names import tensor_names
 
 from sympy import S, Rational
 from sympy.physics.secondquant import F, Fd
 
 
 class TestExpandAntiSymEri:
+    def test_no_eri(self):
+        test = Expr(AntiSymmetricTensor("d", tuple(), tuple())).make_real()
+        test = test.expand_antisym_eri()
+        assert tensor_names.coulomb not in test.sym_tensors
+
     def test_t2_1(self):
         t2 = Intermediates().available["t2_1"]
-        t2 = t2.expand_itmd(fully_expand=False).make_real()
+        t2: Expr = t2.expand_itmd(fully_expand=False).make_real()
         res = t2.expand_antisym_eri()
+        assert tensor_names.coulomb in res.sym_tensors
         i, j, a, b = get_symbols('ijab')
         ref = (SymmetricTensor("v", (i, a), (j, b), 1)
                - SymmetricTensor("v", (i, b), (j, a), 1))

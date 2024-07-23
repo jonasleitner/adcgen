@@ -59,6 +59,11 @@ class TensorNames(metaclass=Singleton):
         tensor_names: dict[str, str] = json.load(open(config_file, "r"))
         return TensorNames(**tensor_names)
 
+    @staticmethod
+    def defaults() -> dict[str, str]:
+        """Returns the default values of all fields."""
+        return {field.name: field.default for field in fields(TensorNames)}
+
     def rename_tensors(self, expr):
         """
         Renames all tensors in the expression form their default names to the

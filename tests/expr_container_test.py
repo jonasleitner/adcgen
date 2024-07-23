@@ -16,11 +16,11 @@ class TestSymbolicDenominators:
         original = Expr(original, real=True)
         symbolic = original.copy().use_symbolic_denominators()
         assert symbolic.sympy - original.sympy is S.Zero
-        assert len(symbolic.antisym_tensors) == 0  # D not set
+        assert not symbolic.antisym_tensors  # D not set
 
     def test_t2_1(self):
         t2 = Intermediates().available["t2_1"]
-        original = t2.expand_itmd(fully_expand=False).make_real()
+        original: Expr = t2.expand_itmd(fully_expand=False).make_real()
         symbolic = original.copy().use_symbolic_denominators()
         assert "D" in symbolic.antisym_tensors
         i, j, a, b = get_symbols("ijab")
@@ -29,6 +29,7 @@ class TestSymbolicDenominators:
         assert symbolic.sympy - ref is S.Zero
         # reintroduce the explicit denominators
         explicit = symbolic.use_explicit_denominators()
+        assert "D" not in explicit.antisym_tensors
         # need to fix the sign in the denominator for the test to pass
         explicit = EriOrbenergy(explicit).canonicalize_sign().expr
         original = EriOrbenergy(original).canonicalize_sign().expr
@@ -37,7 +38,7 @@ class TestSymbolicDenominators:
     def test_t1_2(self):
         t1 = Intermediates().available["t1_2"]
         # first without fully expanding -> only 1 Denominator
-        original = t1.expand_itmd(fully_expand=False).make_real()
+        original: Expr = t1.expand_itmd(fully_expand=False).make_real()
         original.substitute_contracted()
         symbolic = original.copy().use_symbolic_denominators()
         assert "D" in symbolic.antisym_tensors
@@ -49,6 +50,7 @@ class TestSymbolicDenominators:
         ref *= SymmetricTensor("D", (i,), (a,), -1)
         assert symbolic.sympy - ref.expand() is S.Zero
         explicit = symbolic.use_explicit_denominators().expand()
+        assert "D" not in explicit.antisym_tensors
         assert explicit.sympy - original.sympy is S.Zero
 
         # fully expand the itmd -> 2 denominators
@@ -65,9 +67,10 @@ class TestSymbolicDenominators:
         ref *= SymmetricTensor("D", (i,), (a,), -1)
         assert symbolic.sympy - ref.expand() is S.Zero
         # need to fix the sign of the denominators!
-        explicit = 0
+        explicit: Expr = 0
         for term in symbolic.use_explicit_denominators().terms:
             explicit += EriOrbenergy(term).canonicalize_sign().expr
+        assert "D" not in explicit.antisym_tensors
         ref = 0
         for term in original.terms:
             ref += EriOrbenergy(term).canonicalize_sign().expr
