@@ -6,6 +6,10 @@ from .sympy_objects import (
     NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, SymmetricTensor,
     SymbolicTensor, Amplitude
 )
+from .tensor_names import (
+    tensor_names, is_t_amplitude, split_t_amplitude_name, is_adc_amplitude,
+    is_gs_density, split_gs_density_name
+)
 from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify, Symbol
 from sympy.physics.secondquant import NO, F, Fd, FermionicOperator
 
@@ -342,8 +346,9 @@ class Expr(Container):
         """
         Expands the antisymmetric ERI using chemists notation
         <pq||rs> = (pr|qs) - (ps|qr).
-        ERI's in chemists notation are denoted as 'v' Currently this only works
-        for real orbitals, i.e., for symmetric ERI's <pq||rs> = <rs||pq>."""
+        ERI's in chemists notation are by default denoted as 'v'.
+        Currently this only works for real orbitals, i.e.,
+        for symmetric ERI's <pq||rs> = <rs||pq>."""
         self._expr = Add(*[term.expand_antisym_eri(return_sympy=True)
                            for term in self.terms])
         self._sym_tensors.add("v")
@@ -815,11 +820,13 @@ class Term(Container):
             return Expr(renamed, **self.assumptions)
 
     def expand_antisym_eri(self, return_sympy: bool = False):
-        """Expands the antisymmetric ERI using chemists notation
-           <pq||rs> = (pr|qs) - (ps|qr).
-           ERI's in chemists notation are denoted as 'v'
-           Currently this only works for real orbitals, i.e., for
-           symmetric ERI's <pq||rs> = <rs||pq>."""
+        """
+        Expands the antisymmetric ERI using chemists notation
+        <pq||rs> = (pr|qs) - (ps|qr).
+        ERI's in chemists notation are by default denoted as 'v'.
+        Currently this only works for real orbitals, i.e., for
+        symmetric ERI's <pq||rs> = <rs||pq>.
+        """
         expanded = Mul(*[o.expand_antisym_eri(return_sympy=True)
                          for o in self.objects])
         if return_sympy:
@@ -1480,7 +1487,8 @@ class Obj(Container):
 
         if self.is_t_amplitude:
             old = self.name
-            new = old.replace('c', '')
+            base_name, ext = split_t_amplitude_name(old)
+            new = f"{base_name}{ext.replace('c', '')}"
             if old == new:
                 real_obj = self.sympy
             else:
@@ -1604,10 +1612,11 @@ class Obj(Container):
         """
         Expands the antisymmetric ERI using chemists notation
         <pq||rs> = (pr|qs) - (ps|qr).
-        ERI's in chemists notation are denoted as 'v'. Currently this only
-        works for real orbitals, i.e., for symmetric ERI's <pq||rs> = <rs||pq>.
+        ERI's in chemists notation are by default denoted as 'v'.
+        Currently this only works for real orbitals, i.e.,
+        for symmetric ERI's <pq||rs> = <rs||pq>.
         """
-        if self.name == "V":
+        if self.name == tensor_names.eri:
             # ensure that the eri is Symmetric. Otherwise we would introduce
             # additional unwanted symmetry in the result
             if self.bra_ket_sym != 1:
@@ -1685,19 +1694,16 @@ class Obj(Container):
             return self.base.name
 
     @property
-    def is_t_amplitude(self):
+    def is_t_amplitude(self) -> bool:
         """Whether the object is a ground state t-amplitude."""
         name = self.name
-        if name is None:
-            return False
-        return name[0] == "t" and name[1:].replace("c", "").isnumeric()
+        return False if name is None else is_t_amplitude(name)
 
     @property
-    def is_gs_density(self):
+    def is_gs_density(self) -> bool:
+        """Check whether the object is a ground state density tensor."""
         name = self.name
-        if name is None:
-            return False
-        return name[0] == "p" and name[1:].isnumeric()
+        return False if name is None else is_gs_density(name)
 
     @cached_property
     def order(self):
@@ -1707,8 +1713,9 @@ class Obj(Container):
         if isinstance(self.base, SymbolicTensor):
             if (name := self.name) == 'V':  # eri
                 return 1
-            elif self.is_t_amplitude:
-                return int(name[1:].replace('c', ''))
+            elif is_t_amplitude(name):
+                _, ext = split_t_amplitude_name(name)
+                return int(ext.replace('c', ''))
             # all intermediates
             itmd_cls = Intermediates().available.get(self.longname, None)
             if itmd_cls is not None:
@@ -1726,12 +1733,14 @@ class Obj(Container):
         if isinstance(base, SymbolicTensor):
             name = base.name
             # t-amplitudes
-            if self.is_t_amplitude:
+            if is_t_amplitude(name):
                 if len(base.upper) != len(base.lower):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for t-amplitude {self}.")
-                name = f"t{len(base.upper)}_{name[1:]}"
-            elif name in ['X', 'Y']:  # adc amplitudes
+                name = (
+                    f"{tensor_names.gs_amplitude}{len(base.upper)}_{name[1:]}"
+                )
+            elif is_adc_amplitude(name):  # adc amplitudes
                 # need to determine the excitation space as int
                 space = self.space
                 n_o, n_v = space.count('o'), space.count('v')
@@ -1739,13 +1748,14 @@ class Obj(Container):
                     n = n_o  # p-h -> 1 // 2p-2h -> 2 etc.
                 else:  # ip-/ea-/dip-/dea-ADC
                     n = min([n_o, n_v]) + 1  # h -> 1 / 2h -> 1 / p-2h -> 2...
-                lr = "l" if name == "X" else 'r'
+                lr = "l" if name == tensor_names.left_adc_amplitude else 'r'
                 name = f"u{lr}{n}"
-            elif self.is_gs_density:  # mp densities
+            elif is_gs_density(name):  # mp densities
                 if len(base.upper) != len(base.lower):
                     raise RuntimeError("Number of upper and lower indices not "
                                        f"equal for mp density {self}.")
-                name = f"p0_{name[1:]}_{self.space}"
+                base_name, ext = split_gs_density_name(name)
+                name = f"{base_name}0_{ext}_{self.space}"
             elif name.startswith('t2eri'):  # t2eri
                 name = f"t2eri_{name[5:]}"
             elif name == 't2sq':
@@ -1982,21 +1992,21 @@ class Obj(Container):
         # antisym-, sym-, nonsymtensor and amplitude
         if isinstance(obj, SymbolicTensor):
             name = obj.name
-            if name == "V":  # hardcode the ERI spin blocks
+            if name == tensor_names.eri:  # hardcode the ERI spin blocks
                 return ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
             # t-amplitudes: all spin conserving spin blocks are allowed, i.e.,
             # all blocks with the same amount of alpha and beta indices
             # in upper and lower
-            elif self.is_t_amplitude:
-                if len(self.idx) % 2:
+            elif is_t_amplitude(name):
+                idx = obj.idx
+                if len(idx) % 2:
                     raise ValueError("Expected t-amplitude to have the same "
                                      f"of upper and lower indices: {self}.")
-                n = len(self.idx)//2
-                return tuple(
-                    sorted(["".join(block)
-                            for block in product("ab", repeat=len(self.idx))
-                            if block[:n].count("a") == block[n:].count("a")])
-                )
+                n = len(idx)//2
+                return tuple(sorted(
+                    ["".join(block) for block in product("ab", repeat=len(idx))
+                     if block[:n].count("a") == block[n:].count("a")]
+                ))
             elif name == "v":  # ERI in chemist notation
                 return ("aaaa", "aabb", "bbaa", "bbbb")
         elif isinstance(obj, KroneckerDelta):  # delta
@@ -2072,12 +2082,16 @@ class Obj(Container):
         obj, exp = self.base_and_exponent
         if isinstance(obj, SymbolicTensor):
             special_tensors = {
-                # antisym ERI physicist
-                "V": lambda up, lo: f"\\langle {up}\\vert\\vert {lo}\\rangle",
-                "f": lambda up, lo: f"f_{{{up}{lo}}}",  # fock matrix
+                tensor_names.eri: (  # antisym ERI physicist
+                    lambda up, lo: f"\\langle {up}\\vert\\vert {lo}\\rangle"
+                ),
+                tensor_names.fock: (  # fock matrix
+                    lambda up, lo: f"{tensor_names.fock}_{{{up}{lo}}}"
+                ),
                 # coulomb integral chemist notation
-                "v": lambda up, lo: f"({up}\\vert {lo})",
-                "e": lambda _, lo: f"\\varepsilon_{{{lo}}}"  # orbital energy
+                tensor_names.coulomb: lambda up, lo: f"({up}\\vert {lo})",
+                # orbital energy
+                tensor_names.orb_energy: lambda _, lo: f"\\varepsilon_{{{lo}}}"
             }
             # convert the indices to string
             if isinstance(obj, AntiSymmetricTensor):
@@ -2093,15 +2107,17 @@ class Obj(Container):
                 tex_str = special_tensors[name](upper, lower)
             else:
                 order_str = None
-                if self.is_t_amplitude:  # mp t-amplitudes
-                    if "c" in name:
-                        order_str = f"({name[1:].replace('c', '')})\\ast"
+                if is_t_amplitude(name):  # mp t-amplitudes
+                    base_name, ext = split_t_amplitude_name(name)
+                    if "c" in ext:
+                        order_str = f"({ext.replace('c', '')})\\ast"
                     else:
-                        order_str = f"({name[1:]})"
+                        order_str = f"({ext})"
                     order_str = f"}}^{{{order_str}}}"
-                    name = "{t"
-                elif self.is_gs_density:  # mp densities
-                    order_str = f"}}^{{({name[1:]})}}"
+                    name = f"{{{base_name}"
+                elif is_gs_density(name):  # mp densities
+                    _, ext = split_gs_density_name(name)
+                    order_str = f"}}^{{({ext})}}"
                     name = "{\\rho"
 
                 tex_str = name
@@ -2362,8 +2378,9 @@ class Polynom(Obj):
         """
         Expands the antisymmetric ERI using chemists notation
         <pq||rs> = (pr|qs) - (ps|qr).
-        ERI's in chemists notation are denoted as 'v'. Currently this only
-        works for real orbitals, i.e., for symmetric ERI's <pq||rs> = <rs||pq>.
+        ERI's in chemists notation are by default denoted as 'v'.
+        Currently this only works for real orbitals, i.e.,
+        for symmetric ERI's <pq||rs> = <rs||pq>.
         """
         expanded = Add(*(term.expand_antisym_eri(return_sympy=True)
                          for term in self.terms))
