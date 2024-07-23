@@ -7,6 +7,7 @@ from adcgen.reduce_expr import factor_eri_parts, factor_denom
 from adcgen.simplify import simplify, remove_tensor
 from adcgen.factor_intermediates import factor_intermediates
 from adcgen.logger import logger
+from adcgen.tensor_names import tensor_names
 
 import itertools
 import json
@@ -294,6 +295,14 @@ def write_json(data, filename):
     json.dump(data, open(filename, 'w'), indent=2)
 
 
+def use_default_tensor_names():
+    from dataclasses import fields
+
+    # hack to set all fields of the dataclass to it's default value
+    for field in fields(tensor_names):
+        object.__setattr__(tensor_names, field.name, field.default)
+
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         prog='generate data',
@@ -309,6 +318,8 @@ def parse_cmdline():
 
 def main():
     parser = parse_cmdline()
+    # ensure that all the test data uses the default tensor names
+    use_default_tensor_names()
     generator = Generator(parser.name)
     logger.setLevel("WARNING")
     generator.generate()
