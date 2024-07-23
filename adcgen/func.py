@@ -6,6 +6,7 @@ from .sympy_objects import (
     KroneckerDelta, NonSymmetricTensor, AntiSymmetricTensor, SymmetricTensor,
     Amplitude
 )
+from .tensor_names import is_adc_amplitude, is_t_amplitude, tensor_names
 
 from sympy.physics.secondquant import (
     F, Fd, FermionicOperator, NO
@@ -139,10 +140,9 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
             upper = import_indices(indices[0])
             lower = import_indices(indices[1])
             # ADC-Amplitude or t-amplitudes
-            if name in ["X", "Y"] or \
-                    name[0] == "t" and name[1:].replace("c", "").isnumeric():
+            if is_adc_amplitude(name) or is_t_amplitude(name):
                 base = Amplitude(name, upper, lower)
-            elif name == "v":  # eri in chemist notation
+            elif name == tensor_names.coulomb:  # eri in chemist notation
                 base = SymmetricTensor(name, upper, lower)
             else:
                 base = AntiSymmetricTensor(name, upper, lower)

@@ -1,4 +1,7 @@
 from .misc import Singleton, Inputerror
+
+from sympy import Symbol
+
 from pathlib import Path
 from dataclasses import dataclass, fields
 import json
@@ -83,7 +86,26 @@ class TensorNames(metaclass=Singleton):
             new = getattr(self, field.name)
             if field.default == new:  # nothing to do
                 continue
-            expr.rename_tensor(field.default, new)
+            # find the necessary substitutions
+            if field.name == "gs_amplitude":  # special case for t_amplitudes
+                subs = []
+                for sym in expr.sympy.atoms(Symbol):
+                    split_name = verify_and_split_default_t_amplitude(sym.name)
+                    if split_name is None:
+                        continue
+                    subs.append((sym.name, new + split_name[1]))
+            elif field.name == "gs_density":  # and for gs densities
+                subs = []
+                for sym in expr.sympy.atoms(Symbol):
+                    split_name = verify_and_split_default_gs_density(sym.name)
+                    if split_name is None:
+                        continue
+                    subs.append((sym.name, new + split_name[1]))
+            else:
+                subs = [(field.default, new)]
+
+            for old, new in subs:
+                expr.rename_tensor(old, new)
         return expr
 
 
@@ -136,3 +158,30 @@ def split_gs_density_name(name: str) -> tuple[str, str]:
     """Splits the name of a ground state density matrix in base and order."""
     n = len(tensor_names.gs_density)
     return name[:n], name[n:]
+
+
+def verify_and_split_default_t_amplitude(name: str) -> tuple[str, str] | None:
+    """
+    Checks whether the name belongs to a t amplitude with the default name
+    and return the base and extension of the name
+    """
+    default = tensor_names.defaults()["gs_amplitude"]
+    base, ext = name[:len(default)], name[len(default):]
+    if base != default:
+        return None
+    order = ext.replace("c", "")
+    if order and not order.isnumeric():
+        return None
+    return base, ext
+
+
+def verify_and_split_default_gs_density(name: str) -> tuple[str, str] | None:
+    """
+    Checks whether the name belongs to a ground stat density with the default
+    name and returns the base and extension of the name.
+    """
+    default = tensor_names.defaults()["gs_density"]
+    base, order = name[:len(default)], name[len(default):]
+    if base != default or not order.isnumeric():
+        return None
+    return base, order
