@@ -235,7 +235,8 @@ class Generator:
                     # for a single state
                     res.make_real()
                     res.set_sym_tensors([tensor_names.operator])
-                    res.rename_tensor("X", "Y")
+                    res.rename_tensor(tensor_names.left_adc_amplitude,
+                                      tensor_names.right_adc_amplitude)
                     res = simplify(res)
                     dump["real_symmetric_state_expectation_value"] = str(res)
                     # dump the real symmetric density matrix

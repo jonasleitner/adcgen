@@ -646,7 +646,7 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
         #   -> we obtain an overall factor of
         #      sqrt(n_perms + 1) / (n_perms + 1) = 1 / sqrt(n_perms + 1)
         tensor_sym = tensor.symmetry()
-        if t_name in ['X', 'Y']:  # are we removing an ADC amplitude?
+        if is_adc_amplitude(t_name):  # are we removing an ADC amplitude?
             if bra_ket_sym is not S.Zero:
                 raise ValueError("ADC amplitude vectors should have "
                                  "no bra ket symmetry.")
