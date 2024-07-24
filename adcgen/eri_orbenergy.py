@@ -2,6 +2,7 @@ from .misc import Inputerror
 from . import expr_container as e
 from .sympy_objects import SymmetricTensor, SymbolicTensor
 from .logger import logger
+from .tensor_names import tensor_names
 
 from sympy import Pow, S, Mul, Basic
 
@@ -507,7 +508,7 @@ class EriOrbenergy:
 
         return cancel(self.num, denom, self.pref)
 
-    def symbolic_denominator(self):
+    def symbolic_denominator(self) -> e.Expr:
         """
         Replaces the explicit orbital energy denominator with a tensor
         of the correct symmetry (a SymmetricTensor with bra-ket antisymmetry):
@@ -539,11 +540,11 @@ class EriOrbenergy:
                                    f"subtracted in a denominator: {bracket}.")
             has_symbolic_denom = True
             exponent = 1 if isinstance(bracket, e.Expr) else bracket.exponent
-            symbolic_denom *= Pow(
-                SymmetricTensor("D", signs['+'], signs['-'], -1), exponent
-            )
+            symbolic_denom *= Pow(SymmetricTensor(
+                tensor_names.sym_orb_denom, signs['+'], signs['-'], -1
+            ), exponent)
         if has_symbolic_denom:
             symbolic_denom.set_antisym_tensors(
-                symbolic_denom.antisym_tensors + ("D",)
+                symbolic_denom.antisym_tensors + (tensor_names.sym_orb_denom,)
             )
         return symbolic_denom

@@ -379,7 +379,7 @@ class Expr(Container):
         # -> only set if we replaced a denominator in the expr
         self._expr = symbolic_denom
         if has_symbolic_denom:
-            self._antisym_tensors.update(tensor_names.sym_orb_denom)
+            self._antisym_tensors.add(tensor_names.sym_orb_denom)
         return self
 
     def use_explicit_denominators(self):
@@ -1138,9 +1138,10 @@ class Term(Container):
         """
         Splits the term in a orbital energy fraction and a remainder, e.g.
         (e_i + e_j) / (e_i + e_j - e_a - e_b) * (tensor1 * tensor2).
-        To this end all polynoms that only contain 'e' tensors are collected to
-        form the numerator and denominator, while the rest of the term is
-        collected in the remainder. Prefactors are collected in the numerator.
+        To this end all polynoms that only contain orbital energy tensors
+        ('e' by default) are collected to form the numerator and denominator,
+        while the rest of the term is collected in the remainder.
+        Prefactors are collected in the numerator.
         """
 
         assumptions = self.assumptions
