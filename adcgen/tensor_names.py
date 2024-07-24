@@ -67,10 +67,31 @@ class TensorNames(metaclass=Singleton):
         """Returns the default values of all fields."""
         return {field.name: field.default for field in fields(TensorNames)}
 
+    def map_default_name(self, name: str) -> str:
+        """
+        Takes a tensor name, checks whether it corresponds to any of the
+        default names and returns the currently used name.
+        """
+        # split the name in base and extension for t-amplitudes and
+        # ground state densities
+        if (split_name := _split_default_t_amplitude(name)) is not None:
+            _, ext = split_name
+            return self.gs_amplitude + ext
+        elif (split_name := _split_default_gs_density(name)) is not None:
+            _, ext = split_name
+            return self.gs_density + ext
+
+        for field in fields(self):
+            if field.default == name:
+                return getattr(self, field.name)
+        return name  # found not matching default name -> return input
+
     def rename_tensors(self, expr):
         """
         Renames all tensors in the expression form their default names to the
-        currently configured names.
+        currently configured names. Note that only the name of the tensors
+        is changed, while their type (Amplitude, AntiSymmetricTensor, ...)
+        remains the same.
 
         Parameters
         ----------
@@ -90,14 +111,14 @@ class TensorNames(metaclass=Singleton):
             if field.name == "gs_amplitude":  # special case for t_amplitudes
                 subs = []
                 for sym in expr.sympy.atoms(Symbol):
-                    split_name = verify_and_split_default_t_amplitude(sym.name)
+                    split_name = _split_default_t_amplitude(sym.name)
                     if split_name is None:
                         continue
                     subs.append((sym.name, new + split_name[1]))
             elif field.name == "gs_density":  # and for gs densities
                 subs = []
                 for sym in expr.sympy.atoms(Symbol):
-                    split_name = verify_and_split_default_gs_density(sym.name)
+                    split_name = _split_default_gs_density(sym.name)
                     if split_name is None:
                         continue
                     subs.append((sym.name, new + split_name[1]))
@@ -160,7 +181,7 @@ def split_gs_density_name(name: str) -> tuple[str, str]:
     return name[:n], name[n:]
 
 
-def verify_and_split_default_t_amplitude(name: str) -> tuple[str, str] | None:
+def _split_default_t_amplitude(name: str) -> tuple[str, str] | None:
     """
     Checks whether the name belongs to a t amplitude with the default name
     and return the base and extension of the name
@@ -175,13 +196,13 @@ def verify_and_split_default_t_amplitude(name: str) -> tuple[str, str] | None:
     return base, ext
 
 
-def verify_and_split_default_gs_density(name: str) -> tuple[str, str] | None:
+def _split_default_gs_density(name: str) -> tuple[str, str] | None:
     """
     Checks whether the name belongs to a ground stat density with the default
     name and returns the base and extension of the name.
     """
     default = tensor_names.defaults()["gs_density"]
     base, order = name[:len(default)], name[len(default):]
-    if base != default or not order.isnumeric():
+    if base != default or (order and not order.isnumeric()):
         return None
     return base, order

@@ -4,6 +4,7 @@ from .misc import Inputerror
 from .sympy_objects import (
     KroneckerDelta, Amplitude, AntiSymmetricTensor, NonSymmetricTensor
 )
+from .tensor_names import is_adc_amplitude, is_t_amplitude
 from . import expr_container as e
 
 from sympy import Add, Pow, S, sqrt, Rational
@@ -55,12 +56,14 @@ def filter_tensor(expr, t_strings: list[str], strict: str = 'low',
         elif strict == 'high':
             if ignore_amplitudes:
                 requested_amplitudes = [
-                    name for name in t_strings if name[0] in ['X', 'Y'] or
-                    (name[0] == 't' and name[1:].replace('c', '').isnumeric())
+                    name for name in t_strings
+                    if is_adc_amplitude(name) or is_t_amplitude(name)
                 ]
-                ignored_amplitudes = {name for name in available
-                                      if name[0] in ['t', 'X', 'Y'] and
-                                      name not in requested_amplitudes}
+                ignored_amplitudes = {
+                    name for name in available if
+                    (is_adc_amplitude(name) or is_t_amplitude(name)) and
+                    name not in requested_amplitudes
+                }
                 available = Counter([t for t in available
                                      if t not in ignored_amplitudes])
             else:

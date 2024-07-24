@@ -40,9 +40,11 @@ class TestExpandAntiSymEri:
         t1: Expr = t1.expand_itmd(fully_expand=False).make_real()
         res = t1.expand_antisym_eri().substitute_contracted()
         i, j, k, a, b, c = get_symbols("ijkabc")
-        ref = (Rational(1, 2) * Amplitude("t1", (b, c), (i, j))
-               * (SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1)
-                  - SymmetricTensor(tensor_names.coulomb, (j, c), (a, b), 1)))
+        ref = (Rational(1, 2) *
+               Amplitude(f"{tensor_names.gs_amplitude}1", (b, c), (i, j)) * (
+                   SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1)
+                   - SymmetricTensor(tensor_names.coulomb, (j, c), (a, b), 1)
+               ))
         ref += (Rational(1, 2) *
                 Amplitude(f"{tensor_names.gs_amplitude}1", (a, b), (j, k))
                 * (SymmetricTensor(tensor_names.coulomb, (j, i), (k, b), 1)

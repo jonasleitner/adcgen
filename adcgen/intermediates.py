@@ -425,7 +425,9 @@ class t2_1(RegisteredIntermediate):
     def _build_tensor(self, indices) -> Amplitude:
         # guess its not worth caching here. Maybe if used a lot.
         # build the tensor
-        return Amplitude('t1', indices[2:], indices[:2])
+        return Amplitude(
+            f"{tensor_names.gs_amplitude}1", indices[2:], indices[:2]
+        )
 
     def factor_itmd(self, expr: e.Expr, factored_itmds: list[str] = None,
                     max_order: int = None):
@@ -557,7 +559,9 @@ class t1_2(RegisteredIntermediate):
         return base_expr(term1/denom + term2/denom, (i, a), (j, k, b, c))
 
     def _build_tensor(self, indices) -> Amplitude:
-        return Amplitude('t2', (indices[1],), (indices[0],))
+        return Amplitude(
+            f"{tensor_names.gs_amplitude}2", (indices[1],), (indices[0],)
+        )
 
 
 class t2_2(RegisteredIntermediate):
@@ -592,7 +596,9 @@ class t2_2(RegisteredIntermediate):
         return base_expr(itmd / denom, (i, j, a, b), (k, l, c, d))
 
     def _build_tensor(self, indices) -> Amplitude:
-        return Amplitude('t2', indices[2:], indices[:2])
+        return Amplitude(
+            f"{tensor_names.gs_amplitude}2", indices[2:], indices[:2]
+        )
 
 
 class t3_2(RegisteredIntermediate):
@@ -635,7 +641,9 @@ class t3_2(RegisteredIntermediate):
         return base_expr(itmd/denom, (i, j, k, a, b, c), (l, d))
 
     def _build_tensor(self, indices) -> Amplitude:
-        return Amplitude('t2', indices[3:], indices[:3])
+        return Amplitude(
+            f"{tensor_names.gs_amplitude}2", indices[3:], indices[:3]
+        )
 
 
 class t4_2(RegisteredIntermediate):
@@ -672,7 +680,9 @@ class t4_2(RegisteredIntermediate):
         return base_expr(t4, (i, j, k, l, a, b, c, d), None)
 
     def _build_tensor(self, indices) -> Amplitude:
-        return Amplitude('t2', indices[4:], indices[:4])
+        return Amplitude(
+            f"{tensor_names.gs_amplitude}2", indices[4:], indices[:4]
+        )
 
 
 class t1_3(RegisteredIntermediate):
@@ -725,7 +735,8 @@ class t1_3(RegisteredIntermediate):
         return base_expr(itmd / denom, target, contracted)
 
     def _build_tensor(self, indices) -> Amplitude:
-        return Amplitude('t3', (indices[1],), (indices[0],))
+        return Amplitude(
+            f"{tensor_names.gs_amplitude}3", (indices[1],), (indices[0],))
 
 
 class t2_3(RegisteredIntermediate):
@@ -805,7 +816,9 @@ class t2_3(RegisteredIntermediate):
         return base_expr(itmd / denom, target, contracted)
 
     def _build_tensor(self, indices) -> Amplitude:
-        return Amplitude('t3', indices[2:], indices[:2])
+        return Amplitude(
+            f"{tensor_names.gs_amplitude}3", indices[2:], indices[:2]
+        )
 
 
 class t2_1_re_residual(RegisteredIntermediate):

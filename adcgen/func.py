@@ -46,7 +46,8 @@ def gen_term_orders(order: int, term_length: int, min_order: int):
     return [comb for comb in combinations if sum(comb) == order]
 
 
-def import_from_sympy_latex(expr_string: str) -> Expr:
+def import_from_sympy_latex(expr_string: str,
+                            convert_default_names: bool = False) -> Expr:
     """
     Imports an expression from a string created by the 'sympy.latex' function.
 
@@ -55,6 +56,9 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
     Expr
         The imported expression in a 'Expr' container. Note that no assumptions
         (sym_tensors or antisym_tensors) have been applied yet.
+    convert_default_names : bool, optional
+        If set, all default tensor names found in the expression to import
+        will be converted to the currently configured names.
     """
 
     def import_indices(indices: str):
@@ -117,6 +121,13 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
         if temp:
             components.append("".join(temp))
         name, indices = components[0], components[1:]
+        # if desired map the default tensor names to their currently
+        # configured name
+        # -> this allows expressions with the default names to
+        #    be imported and mapped to the current configuration, correctly
+        #    recognizing Amplitudes and SymmetricTensors.
+        if convert_default_names:
+            name = tensor_names.map_default_name(name)
 
         # remove 1 layer of brackets from all indices
         for i, idx in enumerate(indices):
@@ -172,13 +183,19 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
             else:
                 exponent = 1
             obj_str = base.replace("\\left(", "", 1)
-            return Pow(import_from_sympy_latex(obj_str).sympy, exponent)
+            obj = import_from_sympy_latex(
+                obj_str, convert_default_names=convert_default_names
+            )
+            return Pow(obj.sympy, exponent)
         elif obj_str.startswith("\\left\\{"):  # NO
             no, unexpected_stuff = obj_str.rsplit("\\right\\}", 1)
             if unexpected_stuff:
                 raise NotImplementedError(f"Unexpected NO object: {obj_str}.")
             obj_str = no.replace("\\left\\{", "", 1)
-            return NO(import_from_sympy_latex(obj_str).sympy)
+            obj = import_from_sympy_latex(
+                obj_str, convert_default_names=convert_default_names
+            )
+            return NO(obj.sympy)
         else:  # tensor or creation/annihilation operator or symbol
             return import_tensor(obj_str)
 
@@ -217,7 +234,9 @@ def import_from_sympy_latex(expr_string: str) -> Expr:
             # in case we have a denom of the form:
             # 2a+2b+4c and not 2 * (a+b+2c)
             elif char in ['+', '-'] and not stack:
-                return import_from_sympy_latex(term_string).sympy
+                return import_from_sympy_latex(
+                    term_string, convert_default_names=convert_default_names
+                ).sympy
             elif char == " " and not stack and i != obj_start_idx:
                 objects.append(term_string[obj_start_idx:i])
                 obj_start_idx = i + 1
