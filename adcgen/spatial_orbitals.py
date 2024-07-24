@@ -36,7 +36,8 @@ def transform_to_spatial_orbitals(expr: Expr, target_idx: str,
         If set, the antisymmetric ERI (in physicist notation) are expanded
         to coulomb integrals using chemist notation
         <pq||rs> = <pq|rs> - <pq|sr> = (pr|qs) - (ps|qr),
-        where a SymmetricTensor 'v' is used to represent the coulomb integrals.
+        where by default a SymmetricTensor 'v' is used to represent the
+        coulomb integrals.
     """
 
     # perform the integration first, since the intermediates are defined

@@ -27,25 +27,28 @@ class TestExpandAntiSymEri:
         res = t2.expand_antisym_eri()
         assert tensor_names.coulomb in res.sym_tensors
         i, j, a, b = get_symbols('ijab')
-        ref = (SymmetricTensor("v", (i, a), (j, b), 1)
-               - SymmetricTensor("v", (i, b), (j, a), 1))
-        ref /= (NonSymmetricTensor("e", (a,)) + NonSymmetricTensor("e", (b,))
-                - NonSymmetricTensor("e", (i,))
-                - NonSymmetricTensor("e", (j,)))
+        ref = (SymmetricTensor(tensor_names.coulomb, (i, a), (j, b), 1)
+               - SymmetricTensor(tensor_names.coulomb, (i, b), (j, a), 1))
+        ref /= (NonSymmetricTensor(tensor_names.orb_energy, (a,))
+                + NonSymmetricTensor(tensor_names.orb_energy, (b,))
+                - NonSymmetricTensor(tensor_names.orb_energy, (i,))
+                - NonSymmetricTensor(tensor_names.orb_energy, (j,)))
         assert ref - res.sympy is S.Zero
 
     def test_t1_2(self):
         t1 = Intermediates().available["t1_2"]
-        t1 = t1.expand_itmd(fully_expand=False).make_real()
+        t1: Expr = t1.expand_itmd(fully_expand=False).make_real()
         res = t1.expand_antisym_eri().substitute_contracted()
         i, j, k, a, b, c = get_symbols("ijkabc")
         ref = (Rational(1, 2) * Amplitude("t1", (b, c), (i, j))
-               * (SymmetricTensor("v", (j, b), (a, c), 1)
-                  - SymmetricTensor("v", (j, c), (a, b), 1)))
-        ref += (Rational(1, 2) * Amplitude("t1", (a, b), (j, k))
-                * (SymmetricTensor("v", (j, i), (k, b), 1)
-                   - SymmetricTensor("v", (j, b), (k, i), 1)))
-        ref /= NonSymmetricTensor("e", (i,)) - NonSymmetricTensor("e", (a,))
+               * (SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1)
+                  - SymmetricTensor(tensor_names.coulomb, (j, c), (a, b), 1)))
+        ref += (Rational(1, 2) *
+                Amplitude(f"{tensor_names.gs_amplitude}1", (a, b), (j, k))
+                * (SymmetricTensor(tensor_names.coulomb, (j, i), (k, b), 1)
+                   - SymmetricTensor(tensor_names.coulomb, (j, b), (k, i), 1)))
+        ref /= (NonSymmetricTensor(tensor_names.orb_energy, (i,))
+                - NonSymmetricTensor(tensor_names.orb_energy, (a,)))
         assert res.sympy.expand() - ref.expand() is S.Zero
 
 
@@ -134,7 +137,7 @@ class TestAllowedSpinBlocks:
         ref = ("aaaa", "abab", "abba", "baab", "baba", "bbbb")
         assert obj.allowed_spin_blocks == ref
         # ERI: chemist notation
-        obj = Expr(SymmetricTensor("v", (p, q), (r, s)))
+        obj = Expr(SymmetricTensor(tensor_names.coulomb, (p, q), (r, s)))
         obj = obj.terms[0].objects[0]
         ref = ("aaaa", "aabb", "bbaa", "bbbb")
         assert obj.allowed_spin_blocks == ref
@@ -196,14 +199,16 @@ class TestAllowedSpinBlocks:
 class TestTransformToSpatialOrbitals:
     def test_t2_1(self):
         t2 = Intermediates().available["t2_1"]
-        t2 = t2.expand_itmd(fully_expand=False).make_real()
+        t2: Expr = t2.expand_itmd(fully_expand=False).make_real()
         # unrestricted:
         res = transform_to_spatial_orbitals(t2, "ijab", "abab",
                                             restricted=False)
         i, j, a, b = get_symbols("ijab", "abab")
-        ref = SymmetricTensor("v", (i, a), (j, b), 1) / (
-            NonSymmetricTensor("e", (a,)) + NonSymmetricTensor("e", (b,))
-            - NonSymmetricTensor("e", (i,)) - NonSymmetricTensor("e", (j,))
+        ref = SymmetricTensor(tensor_names.coulomb, (i, a), (j, b), 1) / (
+            NonSymmetricTensor(tensor_names.orb_energy, (a,))
+            + NonSymmetricTensor(tensor_names.orb_energy, (b,))
+            - NonSymmetricTensor(tensor_names.orb_energy, (i,))
+            - NonSymmetricTensor(tensor_names.orb_energy, (j,))
         )
         assert res.sympy - ref is S.Zero
         assert set(res.provided_target_idx) == {i, j, a, b}
@@ -211,16 +216,18 @@ class TestTransformToSpatialOrbitals:
         res = transform_to_spatial_orbitals(t2, "ijab", "abab",
                                             restricted=True)
         i, j, a, b = get_symbols("ijab", "aaaa")
-        ref = SymmetricTensor("v", (i, a), (j, b), 1) / (
-            NonSymmetricTensor("e", (a,)) + NonSymmetricTensor("e", (b,))
-            - NonSymmetricTensor("e", (i,)) - NonSymmetricTensor("e", (j,))
+        ref = SymmetricTensor(tensor_names.coulomb, (i, a), (j, b), 1) / (
+            NonSymmetricTensor(tensor_names.orb_energy, (a,))
+            + NonSymmetricTensor(tensor_names.orb_energy, (b,))
+            - NonSymmetricTensor(tensor_names.orb_energy, (i,))
+            - NonSymmetricTensor(tensor_names.orb_energy, (j,))
         )
         assert res.sympy - ref is S.Zero
         assert set(res.provided_target_idx) == {i, j, a, b}
 
     def test_t1_2(self):
         t1 = Intermediates().available["t1_2"]
-        t1 = t1.expand_itmd(fully_expand=True).make_real()
+        t1: Expr = t1.expand_itmd(fully_expand=True).make_real()
         t1.substitute_contracted().use_symbolic_denominators()
         # unrestricted
         unrestricted = transform_to_spatial_orbitals(t1, "ia", "aa",
@@ -228,37 +235,43 @@ class TestTransformToSpatialOrbitals:
         unrestricted = simplify(unrestricted)
         i, j, k, a, b, c = get_symbols("ijkabc", "aaaaaa")
         jb, kb, bb = get_symbols("jkb", "bbb")
-        ref = (SymmetricTensor("D", (b, c), (i, j), -1) *
-               SymmetricTensor("v", (j, b), (a, c), 1)
-               * (SymmetricTensor("v", (i, b), (j, c), 1)
-                  - SymmetricTensor("v", (i, c), (j, b), 1))
-               - SymmetricTensor("D", (bb, c), (i, jb), -1) *
-               SymmetricTensor("v", (jb, bb), (a, c), 1) *
-               SymmetricTensor("v", (i, c), (jb, bb), 1)
-               + SymmetricTensor("D", (a, b), (j, k), -1) *
-               SymmetricTensor("v", (i, j), (k, b), 1)
-               * (SymmetricTensor("v", (j, a), (k, b), 1)
-                  - SymmetricTensor("v", (j, b), (k, a), 1))
-               + SymmetricTensor("D", (a, bb), (j, kb), -1) *
-               SymmetricTensor("v", (i, j), (kb, bb), 1) *
-               SymmetricTensor("v", (j, a), (kb, bb), 1))
-        ref *= SymmetricTensor("D", (i,), (a,), -1)
+        ref = (
+            SymmetricTensor(tensor_names.sym_orb_denom, (b, c), (i, j), -1) *
+            SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1) * (
+                SymmetricTensor(tensor_names.coulomb, (i, b), (j, c), 1)
+                - SymmetricTensor(tensor_names.coulomb, (i, c), (j, b), 1)
+            )
+            - SymmetricTensor(tensor_names.sym_orb_denom, (bb, c), (i, jb),
+                              -1) *
+            SymmetricTensor(tensor_names.coulomb, (jb, bb), (a, c), 1) *
+            SymmetricTensor(tensor_names.coulomb, (i, c), (jb, bb), 1)
+            + SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (j, k), -1) *
+            SymmetricTensor(tensor_names.coulomb, (i, j), (k, b), 1) * (
+                SymmetricTensor(tensor_names.coulomb, (j, a), (k, b), 1)
+                - SymmetricTensor(tensor_names.coulomb, (j, b), (k, a), 1)
+            )
+            + SymmetricTensor(tensor_names.sym_orb_denom, (a, bb), (j, kb),
+                              -1) *
+            SymmetricTensor(tensor_names.coulomb, (i, j), (kb, bb), 1) *
+            SymmetricTensor(tensor_names.coulomb, (j, a), (kb, bb), 1)
+        )
+        ref *= SymmetricTensor(tensor_names.sym_orb_denom, (i,), (a,), -1)
         assert simplify(unrestricted - ref.expand()).sympy is S.Zero
         assert set(unrestricted.provided_target_idx) == {i, a}
         # restricted
         restricted = transform_to_spatial_orbitals(t1, "ia", "aa",
                                                    restricted=True)
         restricted = simplify(restricted)
-        ref = (SymmetricTensor("D", (b, c), (i, j), -1) *
-               SymmetricTensor("v", (j, b), (a, c), 1)
-               * (
-                   SymmetricTensor("v", (i, b), (j, c), 1)
-                   - 2 * SymmetricTensor("v", (i, c), (j, b), 1)
-               ) + SymmetricTensor("D", (a, b), (j, k), -1) *
-               SymmetricTensor("v", (j, a), (k, b), 1)
-               * (
-                   2 * SymmetricTensor("v", (j, i), (k, b), 1)
-                   - SymmetricTensor("v", (j, b), (k, i), 1)
-               )) * SymmetricTensor("D", (i,), (a,), -1)
+        ref = (
+            SymmetricTensor(tensor_names.sym_orb_denom, (b, c), (i, j), -1) *
+            SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1) * (
+                SymmetricTensor(tensor_names.coulomb, (i, b), (j, c), 1)
+                - 2 * SymmetricTensor(tensor_names.coulomb, (i, c), (j, b), 1)
+            )
+            + SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (j, k), -1) *
+            SymmetricTensor(tensor_names.coulomb, (j, a), (k, b), 1) * (
+                2 * SymmetricTensor(tensor_names.coulomb, (j, i), (k, b), 1)
+                - SymmetricTensor(tensor_names.coulomb, (j, b), (k, i), 1)
+            )) * SymmetricTensor(tensor_names.sym_orb_denom, (i,), (a,), -1)
         assert simplify(restricted - ref.expand()).sympy is S.Zero
         assert set(restricted.provided_target_idx) == {i, a}
