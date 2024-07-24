@@ -976,7 +976,9 @@ class p0_2_oo(RegisteredIntermediate):
         return base_expr(p0, (i, j), (k, a, b))
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('p2', (indices[0],), (indices[1],), 1)
+        return AntiSymmetricTensor(
+            f"{tensor_names.gs_density}2", (indices[0],), (indices[1],), 1
+        )
 
 
 class p0_2_vv(RegisteredIntermediate):
@@ -1003,7 +1005,8 @@ class p0_2_vv(RegisteredIntermediate):
         return base_expr(p0, (a, b), (i, j, c))
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('p2', (indices[0],), (indices[1],), 1)
+        return AntiSymmetricTensor(
+            f"{tensor_names.gs_density}2", (indices[0],), (indices[1],), 1)
 
 
 class p0_3_oo(RegisteredIntermediate):
@@ -1043,7 +1046,8 @@ class p0_3_oo(RegisteredIntermediate):
         return base_expr(p0, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
+        return AntiSymmetricTensor(
+            f"{tensor_names.gs_density}3", (indices[0],), (indices[1],), 1)
 
 
 class p0_3_ov(RegisteredIntermediate):
@@ -1098,7 +1102,8 @@ class p0_3_ov(RegisteredIntermediate):
         return base_expr(p0, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
+        return AntiSymmetricTensor(
+            f"{tensor_names.gs_density}3", (indices[0],), (indices[1],), 1)
 
 
 class p0_3_vv(RegisteredIntermediate):
@@ -1138,7 +1143,8 @@ class p0_3_vv(RegisteredIntermediate):
         return base_expr(p0, target, contracted)
 
     def _build_tensor(self, indices) -> AntiSymmetricTensor:
-        return AntiSymmetricTensor('p3', (indices[0],), (indices[1],), 1)
+        return AntiSymmetricTensor(
+            f"{tensor_names.gs_density}3", (indices[0],), (indices[1],), 1)
 
 
 class t2eri_1(RegisteredIntermediate):
