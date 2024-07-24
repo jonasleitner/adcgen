@@ -1,4 +1,6 @@
-from adcgen import Expr, simplify, remove_tensor, factor_intermediates
+from adcgen import (
+    Expr, simplify, remove_tensor, factor_intermediates, tensor_names
+)
 
 from sympy import S
 
@@ -33,8 +35,9 @@ class TestProperties():
 
         # real state expectation value for a symmetric operator matrix
         res.make_real()
-        res.set_sym_tensors(["d"])
-        res.rename_tensor("X", "Y")
+        res.set_sym_tensors([tensor_names.operator])
+        res.rename_tensor(tensor_names.left_adc_amplitude,
+                          tensor_names.right_adc_amplitude)
         res = simplify(res)
         ref_expec = ref["real_symmetric_state_expectation_value"]
         assert simplify(res - ref_expec.sympy).sympy is S.Zero
@@ -43,7 +46,8 @@ class TestProperties():
         # extract the state density matrix and factor intermediates
         res = factor_intermediates(res, ["t_amplitude", "mp_density"],
                                    adc_order)
-        for block, block_expr in remove_tensor(res, "d").items():
+        for block, block_expr in \
+                remove_tensor(res, tensor_names.operator).items():
             assert len(block) == 1
             block = block[0]
             assert block in ref
@@ -88,7 +92,8 @@ class TestProperties():
         # extract the transition dm and factor intermediates
         res = factor_intermediates(res, ["t_amplitude", "mp_density"],
                                    adc_order)
-        for block, block_expr in remove_tensor(res, "d").items():
+        for block, block_expr in \
+                remove_tensor(res, tensor_names.operator).items():
             assert len(block) == 1
             block = block[0]
             assert block in ref

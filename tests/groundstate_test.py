@@ -2,6 +2,7 @@ from adcgen.expr_container import Expr
 from adcgen.simplify import simplify, remove_tensor
 from adcgen import sort_expr as sort
 from adcgen.reduce_expr import factor_eri_parts, factor_denom
+from adcgen.tensor_names import tensor_names
 
 from sympy import S
 
@@ -108,13 +109,13 @@ class TestGroundState():
         # assume a real basis and a symmetric operator/ symmetric dm
         expec.substitute_contracted()
         expec.make_real()
-        expec.set_sym_tensors(["d"])
+        expec.set_sym_tensors([tensor_names.operator])
         expec = simplify(expec)
         ref_expec = ref['real_symmetric_expectation_value']
         assert simplify(expec - ref_expec.sympy).sympy is S.Zero
 
         # extract all blocks of the symmetric dm
-        density_matrix = remove_tensor(expec, 'd')
+        density_matrix = remove_tensor(expec, tensor_names.operator)
         for block, block_expr in density_matrix.items():
             assert len(block) == 1
             ref_dm = ref["real_symmetric_dm"][block[0]]

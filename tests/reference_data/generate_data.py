@@ -129,12 +129,12 @@ class Generator:
                     dump["expectation_value"] = str(res)
                     # dump the real symmetric expec value
                     res.make_real()
-                    res.set_sym_tensors(["d"])
+                    res.set_sym_tensors([tensor_names.operator])
                     res = simplify(res)
                     dump["real_symmetric_expectation_value"] = str(res)
                     # dump the real symmetric density matrix
                     dump["real_symmetric_dm"] = {}
-                    density = remove_tensor(res, "d")
+                    density = remove_tensor(res, tensor_names.operator)
                     for block, dm_expr in density.items():
                         assert len(block) == 1
                         block = block[0]
@@ -234,7 +234,7 @@ class Generator:
                     # dump the real result for a symmetric operator
                     # for a single state
                     res.make_real()
-                    res.set_sym_tensors(["d"])
+                    res.set_sym_tensors([tensor_names.operator])
                     res.rename_tensor("X", "Y")
                     res = simplify(res)
                     dump["real_symmetric_state_expectation_value"] = str(res)
@@ -243,7 +243,7 @@ class Generator:
                     res = factor_intermediates(
                         res, ['t_amplitude', 'mp_density'], adc_order
                     )
-                    density = remove_tensor(res, "d")
+                    density = remove_tensor(res, tensor_names.operator)
                     for block, expr in density.items():
                         assert len(block) == 1
                         block = block[0]
@@ -283,7 +283,7 @@ class Generator:
                     res = factor_intermediates(
                         res, ["t_amplitude", "mp_density"], adc_order
                     )
-                    density = remove_tensor(res, "d")
+                    density = remove_tensor(res, tensor_names.operator)
                     for block, expr in density.items():
                         assert len(block) == 1
                         block = block[0]
