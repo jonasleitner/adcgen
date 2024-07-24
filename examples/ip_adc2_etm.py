@@ -1,6 +1,6 @@
 from adcgen import (
     Operators, GroundState, IntermediateStates, Properties, simplify,
-    remove_tensor, Expr
+    remove_tensor, Expr, tensor_names
 )
 
 # init the class structure.
@@ -16,12 +16,12 @@ expec = Expr(expec, real=True).substitute_contracted()
 expec = simplify(expec)
 
 # remove the operator matrix to obtain the transition dm
-dm = remove_tensor(expec, "d")
+dm = remove_tensor(expec, tensor_names.operator)
 for dm_block, dm_expr in dm.items():
     assert len(dm_block) == 1
     dm_block = dm_block[0]
     # remove the (left) adc vector to obtain the effective transition moments
-    etm = remove_tensor(dm_expr, "X")
+    etm = remove_tensor(dm_expr, tensor_names.left_adc_amplitude)
     for etm_block, etm_expr in etm.items():
         assert len(etm_block) == 1
         etm_block = etm_block[0]
