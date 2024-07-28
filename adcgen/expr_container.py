@@ -1776,7 +1776,10 @@ class Obj(Container):
                 if use_default_names:
                     base_name = tensor_names.defaults().get("gs_amplitude")
                     assert base_name is not None
-                name = f"{base_name}{len(base.upper)}_{ext}"
+                if ext:
+                    name = f"{base_name}{len(base.upper)}_{ext}"
+                else:  # name for t-amplitudes without a order
+                    name = f"{base_name}{len(base.upper)}"
             elif is_adc_amplitude(name):  # adc amplitudes
                 # need to determine the excitation space as int
                 space = self.space
@@ -1795,7 +1798,10 @@ class Obj(Container):
                 if use_default_names:
                     base_name = tensor_names.defaults().get("gs_density")
                     assert base_name is not None
-                name = f"{base_name}0_{ext}_{self.space}"
+                if ext:
+                    name = f"{base_name}0_{ext}_{self.space}"
+                else:  # name for gs-dentity without a order
+                    name = f"{base_name}0_{self.space}"
             elif name.startswith('t2eri'):  # t2eri
                 name = f"t2eri_{name[5:]}"
             elif name == 't2sq':

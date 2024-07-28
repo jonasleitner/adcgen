@@ -148,7 +148,7 @@ def is_t_amplitude(name: str) -> bool:
     order = order.replace("c", "")
     if order:
         return base == tensor_names.gs_amplitude and order.isnumeric()
-    else:  # also all
+    else:
         return base == tensor_names.gs_amplitude
 
 
@@ -172,7 +172,10 @@ def is_gs_density(name: str) -> bool:
     Checks whether the tensor name belongs to the ground state density matrix
     """
     base, order = split_gs_density_name(name)
-    return base == tensor_names.gs_density and order.isnumeric()
+    if order:
+        return base == tensor_names.gs_density and order.isnumeric()
+    else:
+        return base == tensor_names.gs_density
 
 
 def split_gs_density_name(name: str) -> tuple[str, str]:
