@@ -225,7 +225,7 @@ def find_compatible_terms(terms: list[e.Term]) -> dict:
         target = term.target
         term_target.append(target)
         # pattern
-        pattern = term.pattern
+        pattern = term.pattern()
         term_pattern.append(pattern)
         # obj name, space, exponent, obj_target_indices, repeating_indices
         descriptions = []

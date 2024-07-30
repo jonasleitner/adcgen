@@ -1036,18 +1036,31 @@ class Term(Container):
         """Returns the sign of the term."""
         return "minus" if self.prefactor < 0 else "plus"
 
-    @cached_property
-    def pattern(self) -> dict:
+    @cached_member
+    def pattern(self, include_target_idx: bool = True,
+                include_exponent: bool = True) -> dict:
         """
         Determins the pattern of the indices in the term. This is a (kind of)
         readable string hash for each index that is based upon the positions
         the index appears and the coupling of the objects.
+
+        Parameters
+        ----------
+        include_target_idx: bool, optional
+            If set, the explicit names of target indices are included to make
+            the pattern more precise. Should be set if the target indices
+            are not allowed to be renamed. (default: True)
+        include_exponent: bool, optional
+            If set, the exponents of the objects are included in the pattern
+            (default: True)
         """
 
-        coupl = self.coupling()
+        coupl = self.coupling(include_target_idx=include_target_idx,
+                              include_exponent=include_exponent)
         pattern = {}
         for i, o in enumerate(self.objects):
-            positions = o.crude_pos()
+            positions = o.crude_pos(include_target_idx=include_target_idx,
+                                    include_exponent=include_exponent)
             c = f"_{'_'.join(sorted(coupl[i]))}" if i in coupl else None
             for s, pos in positions.items():
                 key = s.space_and_spin
