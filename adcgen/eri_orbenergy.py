@@ -4,7 +4,7 @@ from .sympy_objects import SymmetricTensor, SymbolicTensor
 from .logger import logger
 from .tensor_names import tensor_names
 
-from sympy import Pow, S, Mul, Basic
+from sympy import Pow, S, Mul, Basic, nsimplify
 
 
 class EriOrbenergy:
@@ -59,8 +59,10 @@ class EriOrbenergy:
         elif self._pref is S.One:  # nothing to factor
             self._num = term['num']
         else:
-            self._num: e.Expr = \
-                (term['num'].factor(self._pref) / self._pref).doit()
+            # we can factor a number and remove it afterwards from the term
+            # the result of the division needs to be converted to rational
+            # again!
+            self._num = factor_and_remove_number(term['num'], self._pref)
         # ensure that the numerator is what we expect
         self._validate_num()
 
@@ -314,9 +316,7 @@ class EriOrbenergy:
         elif additional_pref is S.One:  # nothing to factor
             self._num = num
         else:
-            self._num: e.Expr = (
-                (num.factor(additional_pref) / additional_pref).doit()
-            )
+            self._num = factor_and_remove_number(num, additional_pref)
         self._validate_num()
         return self
 
@@ -443,7 +443,7 @@ class EriOrbenergy:
 
                 if min_pref is not S.One:
                     pref *= min_pref
-                    num = (num.factor(min_pref) / min_pref).doit()
+                    num = factor_and_remove_number(num, min_pref)
 
                 # all orbital energies that also occur in the bracket now
                 # have at least a prefactor of 1
@@ -548,3 +548,15 @@ class EriOrbenergy:
                 symbolic_denom.antisym_tensors + (tensor_names.sym_orb_denom,)
             )
         return symbolic_denom
+
+
+def factor_and_remove_number(expr: e.Expr, number) -> e.Expr:
+    """
+    Factors the given number in the expression and removes it afterwards by
+    dividing through the number. The operations are performed in place!
+    """
+    expr.factor(num=number)
+    expr /= number
+    expr.doit()
+    expr._expr = nsimplify(expr.sympy, rational=True)
+    return expr

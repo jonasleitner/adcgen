@@ -10,7 +10,9 @@ from .tensor_names import (
     tensor_names, is_t_amplitude, split_t_amplitude_name, is_adc_amplitude,
     is_gs_density, split_gs_density_name
 )
-from sympy import latex, Add, Mul, Pow, sympify, S, Basic, nsimplify, Symbol
+from sympy import (
+    latex, Add, Mul, Pow, sympify, S, Basic, nsimplify, Symbol, factor
+)
 from sympy.physics.secondquant import NO, F, Fd, FermionicOperator
 
 
@@ -424,7 +426,7 @@ class Expr(Container):
         num : optional
             Number to factor in the expression.
         """
-        from sympy import factor, nsimplify
+
         if num is None:
             self._expr = factor(self.sympy)
             return self
