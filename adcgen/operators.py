@@ -25,6 +25,11 @@ class Operators:
         self._variant = variant
 
     @cached_property
+    def hamiltonian(self):
+        """Constructs the full electronic Hamiltonian."""
+        return self.mp_h0()[0] + self.mp_h1()[0]
+
+    @cached_property
     def h0(self):
         """Constructs the zeroth order Hamiltonian."""
         if self._variant == 'mp':
