@@ -766,8 +766,14 @@ class Term(Container):
 
     def substitute_contracted(self, return_sympy: bool = False,
                               only_build_sub: bool = False):
-        """Substitute contracted indices in the term by the lowest available
-           indices."""
+        """
+        Replace the contracted indices in the term with the lowest available
+        (non-target) indices. This is done for each space and spin
+        independently, i.e.,
+        i_{\\alpha} j_{\\beta} -> i_{\\alpha} i_{\\beta}
+        assuming both indices are contracted indices and
+        i_{\\alpha} i_{\\beta} are not used as target indices.
+        """
 
         # 1) determine the target and contracted indices
         #    and split them according to their space

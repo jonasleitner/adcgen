@@ -82,6 +82,15 @@ class Indices(metaclass=Singleton):
                       'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2')
         self._general = ('p', 'q', 'r', 's', 't', 'u', 'v', 'w')
 
+    def is_cached_index(self, index: Index) -> bool:
+        """
+        Whether an index was generated with the 'Indices' class and is thus
+        cached in the class.
+        """
+        space, spin = index.space_and_spin
+        key = f"{space}_{spin}" if spin else space
+        return self._symbols[key].get(index.name, None) is index
+
     def _gen_generic_idx(self, space: str, spin: str):
         """
         Generated the next 'generation' of generic indices, i.e. extends
