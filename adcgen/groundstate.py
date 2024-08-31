@@ -1,5 +1,5 @@
-from sympy import Rational, latex, sympify, Mul, S
-from sympy.physics.secondquant import NO, F, Fd, Dagger
+from sympy import Rational, latex, sympify, S
+from sympy.physics.secondquant import NO, Dagger
 from math import factorial
 
 from .sympy_objects import Amplitude
@@ -108,12 +108,13 @@ class GroundState:
             if order == 1 and not self.singles and excitation == 1:
                 continue
             # build tensor
-            virt = idx["virt"][:excitation]
-            occ = idx["occ"][:excitation]
+            virt: list = idx["virt"][:excitation]
+            occ: list = idx["occ"][:excitation]
             t = Amplitude(tensor_name, virt, occ)
             # build operators
-            operators = (Mul(*[Fd(s) for s in virt]) *
-                         Mul(*[F(s) for s in reversed(occ)]))
+            operators = self.h.excitation_operator(creation=virt,
+                                                   annihilation=occ,
+                                                   reverse_annihilation=True)
             if braket == "bra":
                 operators = Dagger(operators)
             # prefactor for lifting index restrictions
@@ -201,11 +202,9 @@ class GroundState:
             denom += virt_factor * orb_energy(s)
 
         # build the bra state: <k|
-        bra = 1
-        for s in idx["occ"]:
-            bra *= Fd(s)
-        for s in reversed(idx["virt"]):
-            bra *= F(s)
+        bra = self.h.excitation_operator(creation=idx["occ"],
+                                         annihilation=idx["virt"],
+                                         reverse_annihilation=True)
 
         # construct <k|H1|psi^(n-1)>
         h1, rules = self.h.h1
@@ -270,11 +269,9 @@ class GroundState:
                              f"{space}.")
 
         # - build <Phi_k|
-        bra = 1
-        if 'occ' in idx:
-            bra *= Mul(*(Fd(s) for s in idx['occ']))
-        if 'virt' in idx:
-            bra *= Mul(*(F(s) for s in reversed(idx['virt'])))
+        bra = self.h.excitation_operator(creation=idx["occ"],
+                                         annihilation=idx["virt"],
+                                         reverse_annihilation=True)
 
         # - compute (<Phi_k|0|n> + <Phi_k|1|n-1>)
         h0, rule = self.h.h0

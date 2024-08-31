@@ -1,5 +1,5 @@
 from .misc import cached_property, cached_member
-from .indices import Indices
+from .indices import Indices, Index, get_symbols
 from .rules import Rules
 from .sympy_objects import AntiSymmetricTensor
 from .logger import logger
@@ -76,9 +76,42 @@ class Operators:
 
         pref = Rational(1, factorial(n_create) * factorial(n_annihilate))
         d = AntiSymmetricTensor(name, create, annihilate)
-        op = Mul(*[Fd(s) for s in create]) * \
-            Mul(*[F(s) for s in reversed(annihilate)])
+        op = self.excitation_operator(creation=create,
+                                      annihilation=annihilate,
+                                      reverse_annihilation=True)
         return pref * d * op, None
+
+    def excitation_operator(self, creation: tuple[Index | str] = None,
+                            annihilation: tuple[Index | str] = None,
+                            reverse_annihilation: bool = True):
+        """
+        Creates an arbitrary string of second quantized excitation operators.
+        Operators are concatenated as [creation * annihilation]
+
+        Parameters
+        ----------
+        creation : list[Index | str], optional
+            Each of the provided indices is placed on a creation operator.
+            Operators are concatenated in the provided order:
+            [i, j] -> Fd(i) * Fd(j).
+        annihilation : list[Index | str], optional
+            Each of the provided indices is placed on a annihilation operator.
+            Operators are concatenated in the provided order:
+            [i, j] -> F(i) * F(j)
+        reverse_annihilation : bool, optional
+            If set, the order of the annihilation operators is reversed, i.e.
+            [i, j] -> F(j) * F(i)
+            (default: True).
+        """
+        res = 1
+        if creation is not None:
+            res *= Mul(*[Fd(s) for s in get_symbols(creation)])
+        if annihilation is not None:
+            if reverse_annihilation:
+                annihilation = [annihilation[i] for i in
+                                range(len(annihilation) - 1, -1, -1)]
+            res *= Mul(*[F(s) for s in get_symbols(annihilation)])
+        return res
 
     @staticmethod
     def mp_h0():

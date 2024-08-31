@@ -1,4 +1,5 @@
-from sympy import latex, Rational, S, Mul, sympify
+from sympy import latex, Rational, S, sympify
+from sympy.physics.secondquant import NO, Dagger
 
 from math import factorial
 
@@ -66,7 +67,6 @@ class IntermediateStates:
         indices : str
             The indices of the precursor state.
         """
-        from sympy.physics.secondquant import F, Fd, NO, Dagger
 
         # check input parameters
         indices = transform_to_tuple(indices)
@@ -96,11 +96,9 @@ class IntermediateStates:
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
         # ADC literature.
-        operators = 1
-        if idx.get('virt'):
-            operators *= Mul(*[Fd(s) for s in idx['virt']])
-        if idx.get('occ'):
-            operators *= Mul(*[F(s) for s in idx['occ']])
+        operators = self.gs.h.excitation_operator(creation=idx["virt"],
+                                                  annihilation=idx["occ"],
+                                                  reverse_annihilation=False)
         if braket == "bra":
             operators = Dagger(operators)
 

@@ -59,3 +59,22 @@ class TestOperators:
         assert (ref - op).substitute_contracted().sympy is S.Zero
 
         assert rules is None
+
+    @pytest.mark.parametrize("creation", [None, "a", "ab"])
+    @pytest.mark.parametrize("annihilation", [None, "i", "ij"])
+    def test_excitation_operator(self, variant, creation, annihilation,
+                                 cls_instances, reference_data):
+        # load the reference data
+        ref = reference_data["operators"]["excitation"]
+        ref = ref[f"{creation}_{annihilation}"]
+
+        op = cls_instances[variant]["op"].excitation_operator(
+            creation=creation, annihilation=annihilation,
+            reverse_annihilation=True
+        )
+        assert op - ref["true"].sympy is S.Zero
+        op = cls_instances[variant]["op"].excitation_operator(
+            creation=creation, annihilation=annihilation,
+            reverse_annihilation=False
+        )
+        assert op - ref["false"].sympy is S.Zero

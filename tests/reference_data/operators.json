@@ -15,5 +15,43 @@
   "2_3": "\\frac{{d^{pq}_{rst}} {a^\\dagger_{p}} {a^\\dagger_{q}} a_{t} a_{s} a_{r}}{12}",
   "3_1": "\\frac{{d^{pqr}_{s}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{s}}{6}",
   "3_2": "\\frac{{d^{pqr}_{st}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{t} a_{s}}{12}",
-  "3_3": "\\frac{{d^{pqr}_{stu}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{u} a_{t} a_{s}}{36}"
+  "3_3": "\\frac{{d^{pqr}_{stu}} {a^\\dagger_{p}} {a^\\dagger_{q}} {a^\\dagger_{r}} a_{u} a_{t} a_{s}}{36}",
+  "excitation": {
+    "None_None": {
+      "true": "1",
+      "false": "1"
+    },
+    "None_i": {
+      "true": "a_{i}",
+      "false": "a_{i}"
+    },
+    "None_ij": {
+      "true": "a_{j} a_{i}",
+      "false": "a_{i} a_{j}"
+    },
+    "a_None": {
+      "true": "{a^\\dagger_{a}}",
+      "false": "{a^\\dagger_{a}}"
+    },
+    "a_i": {
+      "true": "{a^\\dagger_{a}} a_{i}",
+      "false": "{a^\\dagger_{a}} a_{i}"
+    },
+    "a_ij": {
+      "true": "{a^\\dagger_{a}} a_{j} a_{i}",
+      "false": "{a^\\dagger_{a}} a_{i} a_{j}"
+    },
+    "ab_None": {
+      "true": "{a^\\dagger_{a}} {a^\\dagger_{b}}",
+      "false": "{a^\\dagger_{a}} {a^\\dagger_{b}}"
+    },
+    "ab_i": {
+      "true": "{a^\\dagger_{a}} {a^\\dagger_{b}} a_{i}",
+      "false": "{a^\\dagger_{a}} {a^\\dagger_{b}} a_{i}"
+    },
+    "ab_ij": {
+      "true": "{a^\\dagger_{a}} {a^\\dagger_{b}} a_{j} a_{i}",
+      "false": "{a^\\dagger_{a}} {a^\\dagger_{b}} a_{i} a_{j}"
+    }
+  }
 }

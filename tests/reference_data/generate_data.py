@@ -66,6 +66,21 @@ class Generator:
                 res = Expr(op.operator(n_create, n_annihilate)[0])
                 res.substitute_contracted()
                 results[f"{n_create}_{n_annihilate}"] = str(res)
+        # excitation operators
+        results["excitation"] = {}
+        create = [None, "a", "ab"]
+        annihilate = [None, "i", "ij"]
+        for creation, annihilation in itertools.product(create, annihilate):
+            key = f"{creation}_{annihilation}"
+            results["excitation"][key] = {}
+            res = self.op["mp"].excitation_operator(creation=creation,
+                                                    annihilation=annihilation,
+                                                    reverse_annihilation=True)
+            results["excitation"][key][True] = str(Expr(res))
+            res = self.op["mp"].excitation_operator(creation=creation,
+                                                    annihilation=annihilation,
+                                                    reverse_annihilation=False)
+            results["excitation"][key][False] = str(Expr(res))
         write_json(results, outfile)
 
     def gen_gs_energy(self):
