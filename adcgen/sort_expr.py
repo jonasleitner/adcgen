@@ -1,6 +1,11 @@
 from . import expr_container as e
-from .misc import Inputerror
+from .eri_orbenergy import EriOrbenergy
 from .indices import get_symbols, sort_idx_canonical
+from .misc import Inputerror
+from .simplify import simplify
+from .sympy_objects import AntiSymmetricTensor, SymmetricTensor
+
+from collections import defaultdict
 
 
 def by_delta_types(expr: e.Expr) -> dict[tuple[str], e.Expr]:
@@ -163,7 +168,9 @@ def by_tensor_target_indices(expr: e.Expr,
 
 def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
                      target_spin: str = None,
-                     bra_ket_sym: int = 0) -> dict[tuple, e.Expr]:
+                     bra_ket_sym: int = 0,
+                     antisymmetric_result_tensor: bool = True
+                     ) -> dict[tuple, e.Expr]:
     """
     Reduces the number of terms in an expression by exploiting the symmetry:
     by applying permutations of target indices it might be poossible to map
@@ -183,6 +190,11 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
     bra_ket_sym : int, optional
         Defines the bra-ket symmetry of the result tensor of the expression.
         Only considered if the names of target indices are separated by a ','.
+    antisymmetric_result_tensor : bool, optional
+        If set, the result tensor will be treated as AntiSymmetricTensor
+        d_{ij}^{ab} = - d_{ji}^{ab}. Otherwise, a SymmetricTensor will be used
+        to mimic the symmetry of the result tensor, i.e.,
+        d_{ij}^{ab} = d_{ji}^{ab}. (default: True)
 
     Returns
     -------
@@ -192,13 +204,9 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
         value: The part of the expression to which the permutations have to be
                applied in order to recover the original expression.
     """
-    from .sympy_objects import AntiSymmetricTensor
-    from .eri_orbenergy import EriOrbenergy
-    from .simplify import simplify
     from .reduce_expr import factor_eri_parts, factor_denom
-    from itertools import chain
     from sympy import S
-    from collections import defaultdict
+    from itertools import chain
 
     def simplify_terms_with_denom(sub_expr: e.Expr):
         factored = chain.from_iterable(
@@ -266,7 +274,10 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
         upper, lower = ref_target, tuple()
         bra_ket_sym = 0
     # build a tensor holding the target indices and determine its symmetry
-    tensor = AntiSymmetricTensor('x', upper, lower, bra_ket_sym)
+    if antisymmetric_result_tensor:
+        tensor = AntiSymmetricTensor("x", upper, lower, bra_ket_sym)
+    else:
+        tensor = SymmetricTensor("x", upper, lower, bra_ket_sym)
     symmetry = e.Expr(tensor).terms[0].symmetry()
 
     # prefilter the terms according to the contained objects (name, space, exp)
