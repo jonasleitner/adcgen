@@ -1,9 +1,11 @@
-from . import expr_container as e
-from .misc import Inputerror
-from .sort_expr import exploit_perm_sym
-from .indices import sort_idx_canonical
-from .sympy_objects import SymbolicTensor, KroneckerDelta
-from .tensor_names import tensor_names
+from .. import expr_container as e
+from ..misc import Inputerror
+from ..sort_expr import exploit_perm_sym
+from ..indices import sort_idx_canonical, get_symbols
+from ..sympy_objects import SymbolicTensor, KroneckerDelta
+from ..tensor_names import tensor_names
+
+from .optimize_contractions import optimize_contractions
 
 from collections import namedtuple
 from sympy import Symbol
@@ -17,7 +19,7 @@ contraction_data = namedtuple('contraction_data',
 
 def generate_code(expr: e.Expr, target_indices: str, backend: str,
                   bra_ket_sym: int = 0, max_tensor_dim: int = None,
-                  optimize_contractions: bool = True) -> str:
+                  optimize_contraction_scheme: bool = True) -> str:
     """Transforms an expression to contractions using either einsum (python)
        or libtensor (C++) syntax. Additionally, the computational and the
        memory scaling of each term is given as comment after each contraction
@@ -25,7 +27,6 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
        """
 
     def unoptimized_contraction(term: e.Term, target_indices: str):
-        from .indices import get_symbols
         # construct a contraction_data object for the simulötaneous,
         # unoptimized contraction of all objects of a term.
         target = get_symbols(target_indices)
@@ -114,9 +115,9 @@ def generate_code(expr: e.Expr, target_indices: str, backend: str,
                 contraction_code.append(pref_str)
                 continue
 
-            if optimize_contractions:  # only two objects at once - min scaling
-                contractions = term.optimized_contractions(target_indices,
-                                                           max_tensor_dim)
+            if optimize_contraction_scheme:
+                contractions = optimize_contractions(term, target_indices,
+                                                     max_tensor_dim)
             else:  # just contract all objects at once
                 contractions = unoptimized_contraction(term, target_indices)
 
