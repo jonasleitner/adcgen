@@ -1,5 +1,6 @@
 from ..expr_container import Expr, Term
 from ..indices import Index
+from ..logger import logger
 from ..misc import Inputerror
 from ..sort_expr import exploit_perm_sym
 from ..symmetry import Permutation
@@ -70,6 +71,12 @@ def generate_code(expr: Expr, target_indices: str, bra_ket_sym: int = 0,
             if not term.idx:  # term is just a prefactor
                 contraction_code.append(prefactor)
                 continue
+            if len({idx.spin for idx in term.idx}) > 1:
+                logger.warning("Found more than one spin in the indices of "
+                               f"term {term}. Indices with different spin "
+                               "might not be distinguishable in the "
+                               "generated contractions, because only the name "
+                               "of the indices is considered.")
 
             # generate the contractions for the term
             if optimize_contraction_scheme:
@@ -137,15 +144,10 @@ def format_contraction(contraction: Contraction,
         if indices:  # we have a tensor
             tensors.append(name)
             # build a string for the indices
-            assert not any(idx.spin for idx in indices)
             idx_str.append("".join(idx.name for idx in indices))
         else:  # we have a factor without indices
             factors.append(name)
-    # also transform the target and contracted indices to string
-    # ensure that none of the indices has a spin. otherwise the name might
-    # not be suffiecient to differentiate them.
-    assert not any(idx.spin for idx in contraction.target)
-    assert not any(idx.spin for idx in contraction.contracted)
+    # also transform the target indices to string
     target = "".join(idx.name for idx in contraction.target)
 
     if backend == "einsum":
@@ -234,6 +236,9 @@ def translate_libadc_names(name: str, indices: tuple[Index]) -> str:
     if name.startswith(tensor_names.eri):
         space = "".join(s.space[0] for s in indices)
         return f"i_{space}"
+    elif name.startswith("t2eri"):
+        _, n = name.split("_")
+        return f"pi{n}"
     return name
 
 
@@ -323,7 +328,7 @@ def _format_cpp_prefactor(prefactor) -> str:
     elif isinstance(prefactor, Rational):
         return f"{float(prefactor.p)} / {float(prefactor.q)}"
     elif isinstance(prefactor, Pow) and prefactor.args[1] == 0.5:
-        return f"constances::sq{prefactor.args[0]}"
+        return f"constants::sq{prefactor.args[0]}"
     elif isinstance(prefactor, Mul):
         return " * ".join(
             _format_cpp_prefactor(pref) for pref in prefactor.args

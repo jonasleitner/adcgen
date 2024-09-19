@@ -173,8 +173,11 @@ def _group_objects(obj_indices: tuple[tuple[Index]],
                 idx_occurences[idx] = []
             idx_occurences[idx].append(pos)
 
-    # list for grouped objects and isolated objects (outer products)
-    groups: list[tuple[int]] = []
+    # store grouped objects and isolated objects (outer products)
+    # for the groups we are using a dict, since it by default returns
+    # keys in the order they were inserted. A set would need to be sorted
+    # before returning to produce consistent results.
+    groups: dict[tuple[int], set[Index]] = {}
     outer_products: list[tuple[int]] = []
     # iterate over all pairs of contracted indices (objects)
     for (pos1, indices1), (pos2, indices2) in \
@@ -185,16 +188,21 @@ def _group_objects(obj_indices: tuple[tuple[Index]],
         if not common_contracted:
             outer_products.append((pos1, pos2))
             continue
-        # do we already have a group containing both objects
-        # (avoid duplicated groups)
-        if any(pos1 in positions and pos2 in positions
-               for positions in groups):
+        # avoid duplication: 0, 1 and 2 are connected by a common index
+        # -> the pair 0,1 and 0,2 will both immediately give the triple 0,1,2
+        #    which will then grow in the same way independent of the starting
+        #    pair.
+        if any(pos1 in positions and pos2 in positions and
+               common_contracted == contracted
+               for positions, contracted in groups.items()):
             continue
 
         positions = {pos1, pos2}
         # self-consistently pull in new objects holding the contracted indices
         # and update the common contracted indices for those new positions.
         # This corresponds to maximizing the group size.
+        # However, it is unclear if growing the group leads to a better
+        # scaling contraction. Therefore, also store smaller groups
         while True:
             # pull in all positions that also hold the common contracted idx
             new_positions = set()
@@ -203,18 +211,20 @@ def _group_objects(obj_indices: tuple[tuple[Index]],
             if new_positions == positions:  # no new positions
                 break
             positions = new_positions
+            # store the current group before trying to grow the group
+            groups[tuple(sorted(positions))] = common_contracted
             # pull in additional contracted indices
             new_common_contracted = set()
             for p1, p2 in itertools.combinations(positions, 2):
                 new_common_contracted.update(
                     contracted_indices[p1] & contracted_indices[p2]
                 )
+            # no new contracted indices pulled in -> we are done
             if common_contracted == new_common_contracted:
-                # no new contracted indices pulled in
                 break
             common_contracted = new_common_contracted
-        groups.append(tuple(sorted(positions)))
-    return (*groups, *outer_products)
+        groups[tuple(sorted(positions))] = common_contracted
+    return (*groups.keys(), *outer_products)
 
 
 def unoptimized_contraction(term: Term, target_indices: str | None = None):
