@@ -20,9 +20,12 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
 
     Parameters
     ----------
+    term: Term
+        Find the optimal contraction scheme for this term.
     target_indices: str, optional
         The target indices of the term. If not given, the canonical target
-        indices of the term will be used For instance, 2 occupied and 2 virtual
+        indices of the term according to the Einstein sum convention
+        will be used. For instance, 2 occupied and 2 virtual
         indices will always be in the order 'ijab'. Therefore, target indices
         have to be provided if the result tensor has indices 'iajb'.
     max_itmd_dim: int, optional
@@ -37,7 +40,6 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
     else:
         target_indices = tuple(get_symbols(target_indices))
     # - extract the relevant part (tensors and deltas) of the term
-    #   and track on which objects each index occures
     relevant_obj_names: list[str] = []
     relevant_obj_indices: list[tuple[Index]] = []
     for obj in term.objects:
@@ -46,7 +48,7 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
             continue
         if not isinstance(base, (SymbolicTensor, KroneckerDelta)):
             raise NotImplementedError("Contractions can only be optimized for "
-                                      "tensors and 'KroneckerDeltas'.")
+                                      "tensors and KroneckerDeltas.")
         name, indices = obj.longname(), obj.idx
         relevant_obj_names.extend(name for _ in range(exp))
         relevant_obj_indices.extend(indices for _ in range(exp))
@@ -92,6 +94,12 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
         if optimal_scaling is None or scaling < optimal_scaling:
             optimal_scheme = scheme
             optimal_scaling = scaling
+    # the generator is empty, i.e., we could not find any contraction scheme
+    if optimal_scheme is None:
+        raise RuntimeError("Could not find a valid contraction scheme for "
+                           f"term {term} while restricting the maximum "
+                           f"dimensionality of intermediates to "
+                           f"{max_itmd_dim}.")
     return optimal_scheme
 
 
@@ -114,21 +122,21 @@ def _optimize_contractions(relevant_obj_names: tuple[str],
     )
 
     for group in connected_groups:
-        contr_indices = [relevant_obj_indices[pos] for pos in group]
-        contr_names = [relevant_obj_names[pos] for pos in group]
+        contr_indices = tuple(relevant_obj_indices[pos] for pos in group)
+        contr_names = tuple(relevant_obj_names[pos] for pos in group)
         contraction = Contraction(indices=contr_indices, names=contr_names,
                                   target_indices=target_indices)
         # if the contraction is not an outer contraction we have to check
         # the dimensionality of the intermediate tensor
         if max_itmd_dim is not None and \
-                contraction.target == target_indices and \
+                contraction.target != target_indices and \
                 len(contraction.target) > max_itmd_dim:
             continue
         # remove the contracted names and indices
         remaining_pos = [pos for pos in range(len(relevant_obj_names))
                          if pos not in group]
-        remaining_names = ("contraction", *(relevant_obj_names[pos]
-                                            for pos in remaining_pos))
+        remaining_names = (f"contraction_{contraction.id}",
+                           *(relevant_obj_names[pos] for pos in remaining_pos))
         remaining_indices = (contraction.target, *(relevant_obj_indices[pos]
                                                    for pos in remaining_pos))
         # there are no objects left to contract -> we are done
@@ -167,17 +175,20 @@ def _group_objects(obj_indices: tuple[tuple[Index]],
 
     # list for grouped objects and isolated objects (outer products)
     groups: list[tuple[int]] = []
-    grouped_objects = set()
+    outer_products: list[tuple[int]] = []
     # iterate over all pairs of contracted indices (objects)
     for (pos1, indices1), (pos2, indices2) in \
             itertools.combinations(enumerate(contracted_indices), 2):
         # check if the objects have any common contracted indices
-        # or if we already have a group containing both objects (avoid
-        # duplicated groups)
+        # -> outer products can be treated as pair
         common_contracted = indices1 & indices2
-        if not common_contracted or \
-                any(pos1 in positions and pos2 in positions
-                    for positions in groups):
+        if not common_contracted:
+            outer_products.append((pos1, pos2))
+            continue
+        # do we already have a group containing both objects
+        # (avoid duplicated groups)
+        if any(pos1 in positions and pos2 in positions
+               for positions in groups):
             continue
 
         positions = {pos1, pos2}
@@ -203,14 +214,43 @@ def _group_objects(obj_indices: tuple[tuple[Index]],
                 break
             common_contracted = new_common_contracted
         groups.append(tuple(sorted(positions)))
-        grouped_objects.update(positions)
-    # collect all objects with no overlap to any other object
-    # -> outer product or a number
-    # -> we need to try each object (except self) to multiply with each
-    #    isolated object
-    isolated = tuple(pos for pos in range(len(obj_indices))
-                     if pos not in grouped_objects)
-    for pos in isolated:
-        groups.extend(tuple(sorted([p, pos])) for p in range(len(obj_indices))
-                      if p != pos)
-    return tuple(groups)
+    return (*groups, *outer_products)
+
+
+def unoptimized_contraction(term: Term, target_indices: str | None = None):
+    """
+    Determines the unoptimized contraction for the given term, i.e.,
+    a simultaneous hyper-contraction of all tensors and deltas.
+
+    Parameters
+    ----------
+    term: Term
+        Build an unoptimized contraction for the given term.
+    target_indices: str, optional
+        The target indices of the term. If not given, the canonical target
+        indices of the term according to the Einstein sum convention
+        will be used.
+    """
+    # - import (or extract) the target indices
+    if target_indices is None:
+        target_indices = term.target
+    else:
+        target_indices = tuple(get_symbols(target_indices))
+    # extract the relevant part of the term
+    relevant_obj_names: list[str] = []
+    relevant_obj_indices: list[tuple[Index]] = []
+    contracted = set()
+    for obj in term.objects:
+        base, exp = obj.base_and_exponent
+        if obj.sympy.is_number or isinstance(base, Symbol):  # skip prefactor
+            continue
+        if not isinstance(base, (SymbolicTensor, KroneckerDelta)):
+            raise NotImplementedError("Contractions only implemented for "
+                                      "tensors and KroneckerDeltas.")
+        name, indices = obj.longname(), obj.idx
+        relevant_obj_names.extend(name for _ in range(exp))
+        relevant_obj_indices.extend(indices for _ in range(exp))
+        contracted.update(idx for idx in indices if idx not in target_indices)
+    assert len(relevant_obj_indices) == len(relevant_obj_names)
+    return [Contraction(indices=relevant_obj_indices, names=relevant_obj_names,
+                        target_indices=target_indices)]

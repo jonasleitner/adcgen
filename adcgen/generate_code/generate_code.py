@@ -1,365 +1,348 @@
-from .. import expr_container as e
+from ..expr_container import Expr, Term
+from ..indices import Index
 from ..misc import Inputerror
 from ..sort_expr import exploit_perm_sym
-from ..indices import sort_idx_canonical, get_symbols
-from ..sympy_objects import SymbolicTensor, KroneckerDelta
+from ..symmetry import Permutation
 from ..tensor_names import tensor_names
 
-from .optimize_contractions import optimize_contractions
+from .contraction import Contraction, term_memory_requirements
+from .optimize_contractions import (
+    optimize_contractions, unoptimized_contraction
+)
 
-from collections import namedtuple
-from sympy import Symbol
-
-scaling = namedtuple('scaling', ['total', 'g', 'v', 'o', 'mem'])
-mem_scaling = namedtuple('mem_scaling', ['total', 'g', 'v', 'o'])
-contraction_data = namedtuple('contraction_data',
-                              ['obj_idx', 'indices', 'obj_names',
-                               'contracted', 'target', 'scaling'])
+from sympy import Symbol, Rational, Pow, Mul
+from collections import Counter
 
 
-def generate_code(expr: e.Expr, target_indices: str, backend: str,
-                  bra_ket_sym: int = 0, max_tensor_dim: int = None,
+def generate_code(expr: Expr, target_indices: str, bra_ket_sym: int = 0,
+                  antisymmetric_result_tensor: bool = True,
+                  backend: str = "einsum", max_itmd_dim: int = None,
                   optimize_contraction_scheme: bool = True) -> str:
-    """Transforms an expression to contractions using either einsum (python)
-       or libtensor (C++) syntax. Additionally, the computational and the
-       memory scaling of each term is given as comment after each contraction
-       string in the form '{comp_scaling} / {mem_scaling}'.
-       """
+    """
+    Generates contractions for a given expression using either 'einsum'
+    (Python) or 'libtensor' (C++) syntax.
 
-    def unoptimized_contraction(term: e.Term, target_indices: str):
-        # construct a contraction_data object for the simulötaneous,
-        # unoptimized contraction of all objects of a term.
-        target = get_symbols(target_indices)
-        o_idx = []
-        indices = []
-        names = []
-        contracted = set()
-        for i, o in enumerate(term.objects):
-            # nonsym_tensor / antisym_tensor / delta
-            # -> extract relevant data
-            base, exp = o.base_and_exponent
-            if isinstance(base, (SymbolicTensor, KroneckerDelta)):
-                o_idx.extend(i for _ in range(exp))
-                names.extend(o.longname() for _ in range(exp))
-                idx = o.idx
-                indices.extend(idx for _ in range(exp))
-                contracted.update(s for s in idx if s not in target)
-            elif o.sympy.is_number or isinstance(base, Symbol):  # prefactor
-                continue
-            else:  # polynom / create / annihilate / NormalOrdered
-                raise NotImplementedError("Contractions not implemented for "
-                                          "polynoms, creation and annihilation"
-                                          f"operators: {term}")
-        contracted = sorted(contracted, key=sort_idx_canonical)
-        # determine the scaling
-        target_sp = [s.space[0] for s in target]
-        contracted_sp = [s.space[0] for s in contracted]
-
-        occ = target_sp.count('o') + contracted_sp.count('o')
-        virt = target_sp.count('v') + contracted_sp.count('v')
-        general = target_sp.count('g') + contracted_sp.count('g')
-        total = occ + virt + general
-        mem = mem_scaling(len(target_indices), target_sp.count('g'),
-                          target_sp.count('v'), target_sp.count('o'))
-        scal = scaling(total, general, virt, occ, mem)
-        return [contraction_data(tuple(o_idx), tuple(indices), tuple(names),
-                                 tuple(contracted), tuple(target), scal)]
-
-    if not isinstance(expr, e.Expr):
-        raise Inputerror("The expression needs to be provided as an instance "
-                         "of the expr container.")
-
-    if backend not in ['einsum', 'libtensor']:
-        raise Inputerror(f"Unknown backend {backend}. Available:"
-                         "'einsum' and 'libtensor'.")
-
-    backend_specifics = {
-        'einsum': {'prefactor': _einsum_prefactor, 'comment': '#',
-                   'contraction': _einsum_contraction},
-        'libtensor': {'prefactor': _libtensor_prefactor, 'comment': '//',
-                      'contraction': _libtensor_contraction}
-    }
-    backend_specifics = backend_specifics[backend]
+    Parameters
+    ----------
+    expr: Expr
+        The expression to generate contractions for.
+    target_indices: str
+        String of target indices. A ',' might be inserted to indicate where
+        the indices are split in upper and lower indices of the result tensor,
+        e.g., 'ia,jb' for 'r^{ia}_{jb}'.
+    bra_ket_sym: int, optional
+        The bra-ket symmetry of the result tensor. (default: 0, i.e.,
+        no bra-ket symmetry)
+    antisymmetric_result_tensor: bool, optional
+        If set, teh result tensor will be treated as AntiSymmetricTensor
+        d_{ij}^{ab} = - d_{ji}^{ab}. Otherwise, a SymmetricTensor will be used
+        to mimic the symmetry of the result tensor, i.e.,
+        d_{ij}^{ab} = d_{ji}^{ab}. (default: True)
+    backend: str, optional
+        The backend for which to generate contractions. (default: einsum)
+    max_itmd_dim: int, optional
+        Upper bound for the dimensionality of intermediate results, that
+        may be generated if the contractions are optimized.
+    optimize_contraction_scheme: bool, optional
+        If set, we try to find the contractions with the lowest arithmetic
+        and memory scaling, i.e., if possible only 2 tensors are contracted
+        simultaneously. (default: True)
+    """
+    if not isinstance(expr, Expr):
+        raise Inputerror("The expression needs to be provided as 'Expr'.")
 
     # try to reduce the number of terms by exploiting permutational symmetry
     expr_with_perm_sym = exploit_perm_sym(
-        expr=expr, target_indices=target_indices, bra_ket_sym=bra_ket_sym)
-    if ',' in target_indices:  # remove the separator in target indices
-        target_indices = "".join(target_indices.split(','))
+        expr=expr, target_indices=target_indices, bra_ket_sym=bra_ket_sym,
+        antisymmetric_result_tensor=antisymmetric_result_tensor)
+    if ',' in target_indices:  # remove the bra-ket separator in target indices
+        target_indices = target_indices.replace(",", "")
 
-    ret = []
-    for perm_symmetry, expr in expr_with_perm_sym.items():
-        # make symmetry more readable
-        perm_symmetry = _pretty_perm_symmetry(perm_symmetry)
+    code = []
+    for perm_symmetry, sub_expr in expr_with_perm_sym.items():
+        perm_str = format_perm_symmetry(perm_symmetry)
 
-        # generate contractions for each term
+        # generate the contrations for each of the terms
         contraction_code = []
-        for term in expr.terms:
-            # 1) generate a string for the prefactor
-            if (pref := term.prefactor) < 0:
-                pref_str = '- '
-                pref *= -1  # abs(pref)
-            else:
-                pref_str = '+ '
-            pref_str += backend_specifics['prefactor'](pref)
+        for term in sub_expr.terms:
+            prefactor = format_prefactor(term, backend)
 
-            # add symbols to the prefactor
-            symbol_pref = " * ".join(
-                [o.name for o in term.objects if isinstance(o.base, Symbol)
-                 for _ in range(o.exponent)]
-            )
-            if symbol_pref:
-                pref_str += f" * {symbol_pref}"
-
-            if not term.idx:  # the term just consists of numbers
-                contraction_code.append(pref_str)
+            if not term.idx:  # term is just a prefactor
+                contraction_code.append(prefactor)
                 continue
 
+            # generate the contractions for the term
             if optimize_contraction_scheme:
-                contractions = optimize_contractions(term, target_indices,
-                                                     max_tensor_dim)
-            else:  # just contract all objects at once
-                contractions = unoptimized_contraction(term, target_indices)
-
-            # 2) construct a comment string that describes the scaling:
-            #    computational and memory
-            max_scal: scaling = max(contr.scaling for contr in contractions)
-            max_itmd_mem = max(contr.scaling.mem for contr in contractions)
-            max_mem: mem_scaling = max(max_itmd_mem, term.memory_requirements)
-            comp_scaling = ""
-            mem_scal = ""
-            for sp in ['o', 'v', 'g']:
-                if (n := getattr(max_scal, sp)):
-                    comp_scaling += f"{sp.capitalize()}^{n}"
-                if (n := getattr(max_mem, sp)):
-                    mem_scal += f"{sp.capitalize()}^{n}"
-            scaling_comment = f"{backend_specifics['comment']} "
-            scaling_comment += f"N^{max_scal.total}: {comp_scaling} / "
-            scaling_comment += f"N^{max_mem.total}: {mem_scal}"
-
-            # 3) construct a string for the contraction
-            contraction_strings = {}  # cache for not final contractions
-            last_idx = len(contractions) - 1
-            for i, c_data in enumerate(contractions):
-                c_str = backend_specifics['contraction'](c_data,
-                                                         contraction_strings)
-                if i == last_idx:  # only the last contraction is relevant
-                    contraction_code.append(
-                        f"{pref_str} * {c_str}  {scaling_comment}"
-                    )
-                else:  # save the contraction -> need it in the final
-                    contraction_strings[c_data.obj_idx] = (c_str, c_data)
-        contraction_code = "\n".join(contraction_code)
-        res_string = (
-            "The scaling comment is given as: [comp_scaling] / "
-            f"[mem_scaling]\nApply {perm_symmetry} to:\n{contraction_code}"
-        )
-        ret.append(res_string)
-    return "\n\n".join(ret)
-
-
-def _einsum_contraction(c_data: contraction_data, c_strings: dict) -> str:
-    """Generate a contraction string using the einsum syntax."""
-
-    translate_tensor_names = {
-        tensor_names.eri: lambda indices: (  # eri
-            f"hf.{''.join(s.space[0] for s in indices)}"
-        ),
-        tensor_names.fock: lambda indices: (  # fock
-            f"hf.f{''.join(s.space[0] for s in indices)}"
-        )
-    }
-
-    # special case:
-    #  we only have a single object that has exactly matching indices
-    if len(c_data.obj_idx) == 1 and c_data.indices[0] == c_data.target:
-        name = c_data.obj_names[0]
-        if name.split('_')[0] in translate_tensor_names:
-            name = translate_tensor_names[name.split('_')[0]]
-            name = name(c_data.indices[0])
-        return name
-
-    obj_strings = []
-    idx_strings = []
-    factors = []
-    for o_idx, indices, name in \
-            zip(c_data.obj_idx, c_data.indices, c_data.obj_names):
-        if name == 'contraction':  # nested contraction
-            try:  # get the contraction string and its target indices
-                c_str, other_c_data = c_strings[o_idx]
-                if indices:
-                    obj_strings.append(c_str)
-                    idx_strings.append(
-                        "".join(s.name for s in other_c_data.target)
-                    )
-                else:  # the object has no indices -> its a number
-                    factors.append(c_str)
-            except KeyError:
-                raise KeyError(f"Could not find the contraction {o_idx} to "
-                               f"use in the nested contraction {c_data}. "
-                               "Should have been constructed ealier.")
-        else:  # contraction of two tensors
-            if name.split('_')[0] in translate_tensor_names:
-                name = translate_tensor_names[name.split('_')[0]](indices)
-
-            if indices:
-                obj_strings.append(name)
-                idx_strings.append("".join(s.name for s in indices))
-            else:  # no indices -> its a number
-                raise RuntimeError("An object that is no contraction should "
-                                   "hold indices. Did we miss a prefactor?",
-                                   c_data)
-
-    contraction_str = ""
-    if factors:
-        contraction_str += " * ".join(factors)
-    if obj_strings:
-        if contraction_str:
-            contraction_str += " * "
-        target_str = "".join(s.name for s in c_data.target)
-        # if we only have a single tensor with correct target indices
-        # -> factor * tensor
-        if len(idx_strings) == 1 and idx_strings[0] == target_str:
-            contraction_str += obj_strings[0]
-        else:
-            # build the einsum contraction string
-            contraction_str += (
-                f"einsum('{','.join(idx_strings)}->{target_str}', "
+                contractions = optimize_contractions(
+                    term=term, target_indices=target_indices,
+                    max_itmd_dim=max_itmd_dim
+                )
+            else:
+                contractions = unoptimized_contraction(
+                    term=term, target_indices=target_indices
+                )
+            # build a comment describing the scaling of the contraction
+            # scheme
+            scaling_comment = format_scaling_comment(
+                term=term, contractions=contractions, backend=backend
             )
-            contraction_str += f"{', '.join(obj_strings)})"
-    if not contraction_str:
-        raise RuntimeError(f"Could not translate {c_data} to a contraction "
-                           "string.")
-    return contraction_str
+            # contractions are sorted in the way they need to be performed,
+            # i.e., inner contractions are listed first. Therefore,
+            # we need to cache the strings from the inner contractions
+            # using the unique contraction id.
+            contraction_cache = {}
+            for contr in contractions[:-1]:
+                contr_str = format_contraction(contr, contraction_cache,
+                                               backend=backend)
+                contraction_cache[contr.id] = contr_str
+            contr_str = format_contraction(contractions[-1], contraction_cache,
+                                           backend=backend)
+            contraction_code.append(
+                f"{prefactor} * {contr_str}  {scaling_comment}"
+            )
+        contraction_code = '\n'.join(contraction_code)
+        code.append(
+            "The scaling comment is given as: [comp_scaling] / [mem_scaling]\n"
+            f"Apply {perm_str} to:\n{contraction_code}"
+        )
+    return "\n\n".join(code)
 
 
-def _libtensor_contraction(c_data: contraction_data, c_strings: dict) -> str:
-    """Generate a contraction string using the libtensor syntax."""
-    from collections import Counter
+def format_contraction(contraction: Contraction,
+                       contraction_cache: dict[int, str],
+                       backend: str) -> str:
+    """
+    Builds a backend specific string for the given contraction.
+    """
+    # split the objects in tensors and factors
+    # and transform the indices of the tensors to string
+    tensors: list[str] = []
+    factors: list[str] = []
+    idx_str: list[str] = []
+    for name, indices in zip(contraction.names, contraction.indices):
+        # check the cache for the contraction string of the other contraction
+        if name.startswith("contraction"):
+            id = int(name.split("_")[-1])
+            name = contraction_cache.get(id, None)
+            if name is None:
+                raise KeyError("Could not find contraction string for inner "
+                               f"contraction {contraction}.")
+        else:  # translate eri and fock matrix
+            if backend == "einsum":
+                name = translate_adcc_names(name, indices)
+            elif backend == "libtensor":
+                name = translate_libadc_names(name, indices)
+                name = format_libtensor_tensor(name, indices)
 
-    def libtensor_object(name: str, indices):
-        # if no index is repeating -> return name(i|j)
-        # else name(i|i) -> diag(i, i|j, name(i|j)
+        if indices:  # we have a tensor
+            tensors.append(name)
+            # build a string for the indices
+            assert not any(idx.spin for idx in indices)
+            idx_str.append("".join(idx.name for idx in indices))
+        else:  # we have a factor without indices
+            factors.append(name)
+    # also transform the target and contracted indices to string
+    # ensure that none of the indices has a spin. otherwise the name might
+    # not be suffiecient to differentiate them.
+    assert not any(idx.spin for idx in contraction.target)
+    assert not any(idx.spin for idx in contraction.contracted)
+    target = "".join(idx.name for idx in contraction.target)
 
-        # get the basic name of the tensor (special case for ERI)
-        if name.split('_')[0] in translate_tensor_names:
-            name = translate_tensor_names[name.split('_')[0]](indices)
+    if backend == "einsum":
+        return format_einsum_contraction(tensors=tensors, factors=factors,
+                                         indices=idx_str, target=target)
+    elif backend == "libtensor":
+        return format_libtensor_contraction(tensors=tensors, factors=factors,
+                                            target=target,
+                                            contracted=contraction.contracted)
+    else:
+        raise NotImplementedError("Contraction not implemented for backend "
+                                  f"{backend}.")
 
-        # count indices
-        if not indices:
-            raise ValueError("An object is expected to hold indices. "
-                             f"Found: {name} with indices {indices}.")
-        counted_idx = Counter(indices)
-        # all indices occur exactly once -> everything is fine
-        if all(n == 1 for n in counted_idx.values()):
-            return f"{name}({'|'.join(s.name for s in indices)})"
-        # indices repeat on a tensor -> problem for libtensor
-        raise NotImplementedError("Libtensor can not handle repeating indices"
-                                  " on 1 tensor, i.e., contract(i, tensor) is"
-                                  f" not implemented.\n{c_data}.")
 
-    translate_tensor_names = {
-        tensor_names.eri: lambda indices: (  # eri
-            f"i_{''.join(s.space[0] for s in indices)}"
-        ),
-    }
+def format_einsum_contraction(tensors: list[str], factors: list[str],
+                              indices: list[str], target: str) -> str:
+    """
+    Builds a contraction string for the given contraction using Python
+    numpy einsum syntax.
+    """
 
-    # contraction of a single object -> trace/transpose/just add the object
-    if len(c_data.obj_idx) == 1:
-        if c_data.contracted:  # trace
-            raise NotImplementedError(f"trace or sth like that {c_data}")
-        # just return the object?
-        # TODO: what about transpose?
-        name = c_data.obj_names[0]
-        indices = c_data.indices[0]
-        return libtensor_object(name, indices)
+    components = [*factors]
+    # special case: single tensor with the correct target indices
+    # -> no einsum needed
+    if len(tensors) == 1 and indices[0] == target:
+        components.append(tensors[0])
+    elif tensors:  # we need a einsum: reorder or contraction or outer
+        contr_str = f"\"{','.join(indices)}->{target}\""
+        components.append(
+            f"einsum({contr_str}, {', '.join(tensors)})"
+        )
+    return " * ".join(components)
 
-    if c_data.contracted and c_data.target:  # contract
-        start = f"contract({'|'.join(s.name for s in c_data.contracted)}, "
-        end = ")"
-        separator = ", "
-    elif not c_data.contracted and c_data.target:  # outer product
-        start = ""
-        end = ""
-        separator = ' * '
-    elif c_data.contracted and not c_data.target:  # inner product
-        start = "dot_product("
-        end = ")"
-        separator = ", "
-    else:  # neither target nor contracted indices -> a number
-        raise ValueError("Numbers should have been catched ealier: "
-                         f"{c_data}")
 
-    obj_strings = []
-    factors = []
-    for o_idx, indices, name in \
-            zip(c_data.obj_idx, c_data.indices, c_data.obj_names):
-        if name == 'contraction':
-            try:
-                c_str, _ = c_strings[o_idx]
-                if indices:
-                    obj_strings.append(c_str)
-                else:
-                    factors.append(c_str)
-            except KeyError:
-                raise KeyError(f"The contraction {o_idx} has not been "
-                               "constructed prior to the current contration "
-                               f"{c_data}.")
+def format_libtensor_contraction(tensors: list[str], factors: list[str],
+                                 target: str, contracted: tuple[Index]) -> str:
+    """
+    Builds a contraction string for the given contraction using libtensor
+    C++ syntax.
+    """
+
+    components = [*factors]
+    if len(tensors) == 1:  # single tensor
+        assert not contracted  # trace
+        components.append(tensors[0])
+    elif len(tensors) > 1:  # multipe tensors
+        # hyper-contraction only implemented for 3 tensors i think
+        if contracted and target:  # contract
+            components.append(
+                f"contract({'|'.join(s.name for s in contracted)}, "
+                f"{', '.join(tensors)})"
+            )
+        elif not contracted and target:  # outer product
+            components.extend(tensors)
+        elif contracted and not target:  # inner product
+            components.append(f"dot_product({', '.join(tensors)})")
         else:
-            obj_strings.append(libtensor_object(name, indices))
-
-    contraction_str = ""
-    if factors:
-        contraction_str += " * ".join(factors)
-    if obj_strings:
-        if contraction_str:
-            contraction_str += " * "
-        contraction_str += start + separator.join(obj_strings) + end
-    return contraction_str
+            raise NotImplementedError("No target and contracted indices in "
+                                      f"contraction of {tensors} and "
+                                      f"{factors}.")
+    return " * ".join(components)
 
 
-def _einsum_prefactor(pref):
-    """Transforms the prefactor of a term to a string for python/einsum."""
-    from sympy import Rational, Pow
+def format_libtensor_tensor(name: str, indices: tuple[Index]):
+    """Formats a single tensor object using libtensor syntax."""
 
-    if pref == int(pref):  # natural numbers
-        return str(pref)
-    elif pref in [0.5, 0.25]:
-        return str(float(pref))
-    elif isinstance(pref, Rational):
-        return f"{pref.p} / {pref.q}"
-    elif isinstance(pref, Pow) and pref.args[1] == 0.5:  # sqrt -> import math
-        return f"sqrt({pref.args[0]})"
+    if any(n > 1 for n in Counter(indices).values()):
+        raise NotImplementedError("Libtensor can not handle a partial trace, "
+                                  "i.e., a trace with a tensor as result. "
+                                  f"Found {indices} on tensor {name}.")
+    return f"{name}({'|'.join(idx.name for idx in indices)})"
+
+
+def translate_adcc_names(name: str, indices: tuple[Index]) -> str:
+    """Translates tensor names specifically for adcc."""
+    if name.startswith(tensor_names.eri):
+        space = "".join(s.space[0] for s in indices)
+        return f"hf.{space}"
+    elif name.startswith(tensor_names.fock):
+        space = "".join(s.space[0] for s in indices)
+        return f"hf.f{space}"
+    return name
+
+
+def translate_libadc_names(name: str, indices: tuple[Index]) -> str:
+    if name.startswith(tensor_names.eri):
+        space = "".join(s.space[0] for s in indices)
+        return f"i_{space}"
+    return name
+
+
+def format_scaling_comment(term: Term, contractions: list[Contraction],
+                           backend: str) -> str:
+    """
+    Builds a backend specific comment describing the scaling of the
+    contraction scheme.
+    """
+    max_comp_scaling = max(contr.scaling.computational
+                           for contr in contractions)
+    max_mem_scaling = max(contr.scaling.memory for contr in contractions)
+    max_mem_scaling = max(max_mem_scaling, term_memory_requirements(term))
+    comp = [f"N^{max_comp_scaling.total}: "]
+    mem = [f"N^{max_mem_scaling.total}: "]
+    for space in ["general", "occ", "virt"]:
+        if (n := getattr(max_comp_scaling, space)):
+            comp.append(f"{space[0].capitalize()}^{n}")
+        if (n := getattr(max_mem_scaling, space)):
+            mem.append(f"{space[0].capitalize()}^{n}")
+    if backend == "einsum":
+        comment_token = "#"
+    elif backend == "libtensor":
+        comment_token = "//"
     else:
-        raise NotImplementedError(f"{pref}, {type(pref)}")
+        raise NotImplementedError("Comment token not implemented for backend "
+                                  f"{backend}.")
+    return f"{comment_token} {''.join(comp)} / {''.join(mem)}"
 
 
-def _libtensor_prefactor(pref):
-    """Transforms the prefactor to string for C++/libtensor."""
-    from sympy import Rational, S, Pow, Mul
-
-    if pref == int(pref) or pref in [S.Half, 0.25]:
-        return str(float(pref))
-    elif isinstance(pref, Rational):
-        num = float(pref.p)
-        denom = float(pref.q)
-        return f"{num} / {denom}"
-    elif isinstance(pref, Pow) and pref.args[1] == 0.5:
-        return f"constants::sq{pref.args[0]}"
-    elif isinstance(pref, Mul):
-        return " * ".join(_libtensor_prefactor(p) for p in pref.args)
+def format_prefactor(term: Term, backend: str) -> str:
+    """Formats the prefactor for Python (einsum) or C++ (libtensor)."""
+    # extract number and symbolic prefactor
+    number_pref = term.prefactor
+    symbol_pref = " * ".join(
+        [obj.name for obj in term.objects if isinstance(obj.base, Symbol)
+         for _ in range(obj.exponent)]
+    )
+    # extract the sign
+    if number_pref < 0:
+        sign = "-"
+        number_pref *= -1
     else:
-        raise NotImplementedError(f"{pref}, {type(pref)}")
+        sign = "+"
+    # format the number prefactor (depends on the backend)
+    if backend == "einsum":  # python
+        number_pref = _format_python_prefactor(number_pref)
+    elif backend == "libtensor":  # C++
+        number_pref = _format_cpp_prefactor(number_pref)
+    else:
+        raise NotImplementedError(f"Prefactor for backend {backend} not "
+                                  "implemented.")
+    # combine the contributions
+    if symbol_pref:
+        return f"{sign} {number_pref} * {symbol_pref}"
+    else:
+        return f"{sign} {number_pref}"
 
 
-def _pretty_perm_symmetry(perm_sym: tuple) -> str:
-    if not perm_sym:  # trivial case
+def _format_python_prefactor(prefactor) -> str:
+    """Formats a prefactor using Python syntax."""
+
+    if prefactor == int(prefactor):  # natural number
+        return str(prefactor)
+    elif prefactor in [Rational(1, 2), Rational(1, 4)]:  # simple Rational
+        return str(float(prefactor))
+    elif isinstance(prefactor, Rational):  # mor ecomplex rational
+        return f"{prefactor.p} / {prefactor.q}"
+    elif isinstance(prefactor, Pow) and prefactor.args[1] == 0.5:  # sqrt
+        return f"sqrt({prefactor.args[0]})"
+    elif isinstance(prefactor, Mul):
+        return " * ".join(
+            _format_python_prefactor(pref) for pref in prefactor.args
+        )
+    raise NotImplementedError(
+        f"Formatting of prefactor {prefactor}, {type(prefactor)} "
+        "not implemented."
+    )
+
+
+def _format_cpp_prefactor(prefactor) -> str:
+    """Formats a prefactor using C++ syntax."""
+
+    if prefactor == int(prefactor) or \
+            prefactor in [Rational(1, 2), Rational(1, 4)]:
+        return str(float(prefactor))
+    elif isinstance(prefactor, Rational):
+        return f"{float(prefactor.p)} / {float(prefactor.q)}"
+    elif isinstance(prefactor, Pow) and prefactor.args[1] == 0.5:
+        return f"constances::sq{prefactor.args[0]}"
+    elif isinstance(prefactor, Mul):
+        return " * ".join(
+            _format_cpp_prefactor(pref) for pref in prefactor.args
+        )
+    raise NotImplementedError(
+        f"Formatting of prefactor {prefactor}, {type(prefactor)} "
+        "not implemented."
+    )
+
+
+def format_perm_symmetry(perm_symmetry: tuple[Permutation]):
+    """Formats the permutational symmetry."""
+    perm_sym = ["1"]
+    for permutations, factor in perm_symmetry:
+        assert factor in [1, -1]
+        contrib = ["+ "] if factor == 1 else ["- "]
+        for perm in permutations:
+            contrib.append(str(perm))
+        perm_sym.append("".join(contrib))
+    if len(perm_sym) == 1:
         return "1"
-
-    perm_sym_str = "(1"
-    for perms, factor in perm_sym:
-        perm_str = " + " if factor == 1 else " - "
-        for perm in perms:
-            perm_str += f"P_{{{''.join(s.name for s in perm)}}}"
-        perm_sym_str += perm_str
-    return perm_sym_str + ")"
+    return f"({' '.join(perm_sym)})"
