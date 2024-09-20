@@ -49,9 +49,15 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
     relevant_obj_indices: list[tuple[Index]] = []
     for obj in term.objects:
         base, exp = obj.base_and_exponent
-        if obj.sympy.is_number or isinstance(base, Symbol):  # skip prefactor
+        if obj.sympy.is_number:  # skip number prefactor
             continue
-        if not isinstance(base, (SymbolicTensor, KroneckerDelta)):
+        elif exp < 0:
+            raise NotImplementedError(f"Found object {obj} with exponent "
+                                      f"{exp} < 0. Contractions not "
+                                      "implemented for divisions.")
+        elif isinstance(base, Symbol):  # skip symbolic prefactor
+            continue
+        elif not isinstance(base, (SymbolicTensor, KroneckerDelta)):
             raise NotImplementedError("Contractions can only be optimized for "
                                       "tensors and KroneckerDeltas.")
         name, indices = obj.longname(), obj.idx
@@ -262,9 +268,15 @@ def unoptimized_contraction(term: Term, target_indices: str | None = None,
     contracted = set()
     for obj in term.objects:
         base, exp = obj.base_and_exponent
-        if obj.sympy.is_number or isinstance(base, Symbol):  # skip prefactor
+        if obj.sympy.is_number:  # skip number prefactor
             continue
-        if not isinstance(base, (SymbolicTensor, KroneckerDelta)):
+        elif exp < 0:
+            raise NotImplementedError(f"Found object {obj} with exponent "
+                                      f"{exp} < 0. Contractions not "
+                                      "implemented for divisions.")
+        elif isinstance(base, Symbol):  # skip symbolic prefactor
+            continue
+        elif not isinstance(base, (SymbolicTensor, KroneckerDelta)):
             raise NotImplementedError("Contractions only implemented for "
                                       "tensors and KroneckerDeltas.")
         name, indices = obj.longname(), obj.idx
