@@ -106,16 +106,28 @@ def generate_code(expr: Expr, target_indices: str,
             scaling_comment = format_scaling_comment(
                 term=term, contractions=contractions, backend=backend
             )
-            # contractions are sorted in the way they need to be performed,
-            # i.e., inner contractions are listed first. Therefore,
-            # we need to cache the strings from the inner contractions
-            # using the unique contraction id.
+            # identify inner and outer contractions.
+            # They are sorted in the way they need to be executed
+            # -> contraction can only be used in a later contraction
+            inner: list[Contraction] = []
+            outer: list[Contraction] = []
+            for i, contr in enumerate(contractions):
+                if any(contr.contraction_name in other_contr.names
+                       for other_contr in contractions[i+1:]):
+                    inner.append(contr)
+                else:
+                    outer.append(contr)
+            # currently, there has to be only 1 outer contraction (the last
+            # contraction), because even if an inner contraction gives a
+            # number, the contraction is still kept in the pool of objects,
+            # i.e., contractions might contain objects without indices!
             contraction_cache = {}
-            for contr in contractions[:-1]:
+            for contr in inner:
                 contr_str = format_contraction(contr, contraction_cache,
                                                backend=backend)
-                contraction_cache[contr.id] = contr_str
-            contr_str = format_contraction(contractions[-1], contraction_cache,
+                contraction_cache[contr.contraction_name] = contr_str
+            assert len(outer) == 1
+            contr_str = format_contraction(outer[0], contraction_cache,
                                            backend=backend)
             contraction_code.append(
                 f"{prefactor} * {contr_str}  {scaling_comment}"
@@ -140,10 +152,9 @@ def format_contraction(contraction: Contraction,
     factors: list[str] = []
     idx_str: list[str] = []
     for name, indices in zip(contraction.names, contraction.indices):
-        # check the cache for the contraction string of the other contraction
-        if name.startswith("contraction"):
-            id = int(name.split("_")[-1])
-            name = contraction_cache.get(id, None)
+        # check the cache for the contraction string of the inner contraction
+        if Contraction.is_contraction(name):
+            name = contraction_cache.get(name, None)
             if name is None:
                 raise KeyError("Could not find contraction string for inner "
                                f"contraction {contraction}.")

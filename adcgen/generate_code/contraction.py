@@ -23,6 +23,7 @@ class Contraction:
     # been created
     # -> unique id for every instance
     # -> easy to differentiate and identify individual instances
+    _base_name = "contraction"
     _instance_counter = itertools.count(0, 1)
 
     def __init__(self, indices: tuple[tuple[Index]],
@@ -34,13 +35,15 @@ class Contraction:
         self.target: tuple[Index] = None
         self.scaling: Scaling = None
         self.id: int = next(self._instance_counter)
+        self.contraction_name = f"{self._base_name}_{self.id}"
         self._determine_contracted_and_target_indices(target_indices)
         self._determine_scaling()
 
     def __str__(self):
         return (f"Contraction(indices={self.indices}, names={self.names}, "
                 f"contracted={self.contracted}, target={self.target}, "
-                f"scaling={self.scaling}), id={self.id}")
+                f"scaling={self.scaling}), id={self.id}, "
+                f"contraction_name={self.contraction_name})")
 
     def __repr__(self):
         return self.__str__()
@@ -96,6 +99,10 @@ class Contraction:
                 self.names == other.names and
                 self.contracted == other.contracted and
                 self.target == other.target and self.scaling == other.scaling)
+
+    @staticmethod
+    def is_contraction(name: str):
+        return name.startswith(Contraction._base_name)
 
 
 def term_memory_requirements(term: Term) -> "ScalingComponent":

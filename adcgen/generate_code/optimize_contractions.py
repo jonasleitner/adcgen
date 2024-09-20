@@ -140,7 +140,7 @@ def _optimize_contractions(relevant_obj_names: tuple[str],
         # remove the contracted names and indices
         remaining_pos = [pos for pos in range(len(relevant_obj_names))
                          if pos not in group]
-        remaining_names = (f"contraction_{contraction.id}",
+        remaining_names = (contraction.contraction_name,
                            *(relevant_obj_names[pos] for pos in remaining_pos))
         remaining_indices = (contraction.target, *(relevant_obj_indices[pos]
                                                    for pos in remaining_pos))
