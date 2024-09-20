@@ -166,8 +166,8 @@ def by_tensor_target_indices(expr: e.Expr,
     return ret
 
 
-def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
-                     target_spin: str = None,
+def exploit_perm_sym(expr: e.Expr, target_indices: str | None = None,
+                     target_spin: str | None = None,
                      bra_ket_sym: int = 0,
                      antisymmetric_result_tensor: bool = True
                      ) -> dict[tuple, e.Expr]:
@@ -180,13 +180,17 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str = None,
     ----------
     expr : Expr
         The expression to probe for symmetry.
-    target_indices : str, optional
+    target_indices : str | None, optional
         The names of target indices of the expression. Bra and ket indices
         should be separated by a ',' to lower the amount of permutations the
         expression has to be probed for, e.g., to differentiate 'ia,jb'
         from 'ij,ab'. If not provided, the function will try to determine the
         target indices automatically and probe for the complete symmetry found
         for these indices.
+    target_spin : str | None , optional
+        The spin of the target indices, e.g., 'aabb' to indicate that the
+        first 2 target indices have alpha spin, while number 3 and 4 have
+        beta spin. If not given, target indices without spin will be used.
     bra_ket_sym : int, optional
         Defines the bra-ket symmetry of the result tensor of the expression.
         Only considered if the names of target indices are separated by a ','.

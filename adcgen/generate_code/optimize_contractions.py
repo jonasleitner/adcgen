@@ -11,6 +11,7 @@ import itertools
 
 
 def optimize_contractions(term: Term, target_indices: str | None = None,
+                          target_spin: str | None = None,
                           max_itmd_dim: int | None = None
                           ) -> list[Contraction]:
     """
@@ -22,12 +23,16 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
     ----------
     term: Term
         Find the optimal contraction scheme for this term.
-    target_indices: str, optional
+    target_indices: str | None, optional
         The target indices of the term. If not given, the canonical target
         indices of the term according to the Einstein sum convention
         will be used. For instance, 2 occupied and 2 virtual
         indices will always be in the order 'ijab'. Therefore, target indices
         have to be provided if the result tensor has indices 'iajb'.
+    target_spin: str | None, optional
+        The spin of the target indices, e.g., "aabb" for
+        alpha, alpha, beta, beta. If not given, target indices without spin
+        will be used.
     max_itmd_dim: int, optional
         Upper bound for the dimensionality of intermediates created by
         inner contractions if the contractions are nested, i.e.,
@@ -38,7 +43,7 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
     if target_indices is None:
         target_indices = term.target
     else:
-        target_indices = tuple(get_symbols(target_indices))
+        target_indices = tuple(get_symbols(target_indices, target_spin))
     # - extract the relevant part (tensors and deltas) of the term
     relevant_obj_names: list[str] = []
     relevant_obj_indices: list[tuple[Index]] = []
@@ -227,7 +232,8 @@ def _group_objects(obj_indices: tuple[tuple[Index]],
     return (*groups.keys(), *outer_products)
 
 
-def unoptimized_contraction(term: Term, target_indices: str | None = None):
+def unoptimized_contraction(term: Term, target_indices: str | None = None,
+                            target_spin: str | None = None):
     """
     Determines the unoptimized contraction for the given term, i.e.,
     a simultaneous hyper-contraction of all tensors and deltas.
@@ -236,16 +242,20 @@ def unoptimized_contraction(term: Term, target_indices: str | None = None):
     ----------
     term: Term
         Build an unoptimized contraction for the given term.
-    target_indices: str, optional
+    target_indices: str | None, optional
         The target indices of the term. If not given, the canonical target
         indices of the term according to the Einstein sum convention
+        will be used.
+    target_sin: str | None, optional
+        The spin of the target indices, e.g., "aabb" for
+        alpha, alpha, beta, beta. If not given, target indices without spin
         will be used.
     """
     # - import (or extract) the target indices
     if target_indices is None:
         target_indices = term.target
     else:
-        target_indices = tuple(get_symbols(target_indices))
+        target_indices = tuple(get_symbols(target_indices, target_spin))
     # extract the relevant part of the term
     relevant_obj_names: list[str] = []
     relevant_obj_indices: list[tuple[Index]] = []

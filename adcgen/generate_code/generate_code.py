@@ -15,9 +15,11 @@ from sympy import Symbol, Rational, Pow, Mul
 from collections import Counter
 
 
-def generate_code(expr: Expr, target_indices: str, bra_ket_sym: int = 0,
+def generate_code(expr: Expr, target_indices: str,
+                  target_spin: str | None = None,
+                  bra_ket_sym: int = 0,
                   antisymmetric_result_tensor: bool = True,
-                  backend: str = "einsum", max_itmd_dim: int = None,
+                  backend: str = "einsum", max_itmd_dim: int | None = None,
                   optimize_contraction_scheme: bool = True) -> str:
     """
     Generates contractions for a given expression using either 'einsum'
@@ -31,6 +33,10 @@ def generate_code(expr: Expr, target_indices: str, bra_ket_sym: int = 0,
         String of target indices. A ',' might be inserted to indicate where
         the indices are split in upper and lower indices of the result tensor,
         e.g., 'ia,jb' for 'r^{ia}_{jb}'.
+    target_spin: str | None, optional
+        The spin of the target indices, e.g., 'aabb' to indicate that the
+        first 2 target indices have alpha spin, while number 3 and 4 have
+        beta spin. If not given, target indices without spin will be used.
     bra_ket_sym: int, optional
         The bra-ket symmetry of the result tensor. (default: 0, i.e.,
         no bra-ket symmetry)
@@ -41,7 +47,7 @@ def generate_code(expr: Expr, target_indices: str, bra_ket_sym: int = 0,
         d_{ij}^{ab} = d_{ji}^{ab}. (default: True)
     backend: str, optional
         The backend for which to generate contractions. (default: einsum)
-    max_itmd_dim: int, optional
+    max_itmd_dim: int | None, optional
         Upper bound for the dimensionality of intermediate results, that
         may be generated if the contractions are optimized.
     optimize_contraction_scheme: bool, optional
@@ -54,10 +60,15 @@ def generate_code(expr: Expr, target_indices: str, bra_ket_sym: int = 0,
 
     # try to reduce the number of terms by exploiting permutational symmetry
     expr_with_perm_sym = exploit_perm_sym(
-        expr=expr, target_indices=target_indices, bra_ket_sym=bra_ket_sym,
-        antisymmetric_result_tensor=antisymmetric_result_tensor)
-    if ',' in target_indices:  # remove the bra-ket separator in target indices
+        expr=expr, target_indices=target_indices, target_spin=target_spin,
+        bra_ket_sym=bra_ket_sym,
+        antisymmetric_result_tensor=antisymmetric_result_tensor
+    )
+    # remove the bra-ket separator in target indices and target spin
+    if "," in target_indices:
         target_indices = target_indices.replace(",", "")
+    if target_spin is not None and "," in target_spin:
+        target_spin = target_spin.replace(",", "")
 
     code = []
     for perm_symmetry, sub_expr in expr_with_perm_sym.items():
@@ -82,11 +93,13 @@ def generate_code(expr: Expr, target_indices: str, bra_ket_sym: int = 0,
             if optimize_contraction_scheme:
                 contractions = optimize_contractions(
                     term=term, target_indices=target_indices,
+                    target_spin=target_spin,
                     max_itmd_dim=max_itmd_dim
                 )
             else:
                 contractions = unoptimized_contraction(
-                    term=term, target_indices=target_indices
+                    term=term, target_indices=target_indices,
+                    target_spin=target_spin
                 )
             # build a comment describing the scaling of the contraction
             # scheme
