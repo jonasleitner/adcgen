@@ -14,7 +14,8 @@ from .reduce_expr import reduce_expr
 from .factor_intermediates import factor_intermediates
 from . import sort_expr as sort
 from .spatial_orbitals import transform_to_spatial_orbitals
-from .generate_code import generate_code
+from .generate_code import (generate_code, optimize_contractions, Contraction,
+                            unoptimized_contraction)
 from .sympy_objects import (AntiSymmetricTensor, SymmetricTensor, Amplitude,
                             NonSymmetricTensor, KroneckerDelta, SymbolicTensor)
 from .logger import set_log_level, _config_logger
@@ -33,7 +34,8 @@ __all__ = ["AntiSymmetricTensor", "SymmetricTensor", "NonSymmetricTensor",
            "Intermediates", "reduce_expr", "factor_intermediates",
            "sort",
            "transform_to_spatial_orbitals",
-           "generate_code",
+           "generate_code", "optimize_contractions",
+           "unoptimized_contraction", "Contraction",
            "set_log_level",
            "tensor_names"]
 
