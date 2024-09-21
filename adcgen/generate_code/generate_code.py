@@ -158,12 +158,23 @@ def format_contraction(contraction: Contraction,
             if name is None:
                 raise KeyError("Could not find contraction string for inner "
                                f"contraction {contraction}.")
-        else:  # translate eri and fock matrix
-            if backend == "einsum":
-                name = translate_adcc_names(name, indices)
-            elif backend == "libtensor":
-                name = translate_libadc_names(name, indices)
-                name = format_libtensor_tensor(name, indices)
+        # we have a tensor that we need to treat depening on the backend
+        elif backend == "einsum":  # translate eri and fock matrix
+            name = translate_adcc_names(name, indices)
+        elif backend == "libtensor":
+            # we can not form a partial trace in libtensor
+            contracted_obj_indices = [
+                idx for idx in indices if idx in contraction.contracted
+            ]
+            if any(n > 1 for _, n in Counter(contracted_obj_indices).items()):
+                raise NotImplementedError(
+                    "Libtensor can not handle a partial trace, i.e., a trace "
+                    f"with a tensor as result. Found {indices} on tensor "
+                    f"{name} of contraction\n{contraction}"
+                )
+            # translate eri and t2eri
+            name = translate_libadc_names(name, indices)
+            name = f"{name}({'|'.join(idx.name for idx in indices)})"
 
         if indices:  # we have a tensor
             tensors.append(name)
@@ -233,16 +244,6 @@ def format_libtensor_contraction(tensors: list[str], factors: list[str],
                                       f"contraction of {tensors} and "
                                       f"{factors}.")
     return " * ".join(components)
-
-
-def format_libtensor_tensor(name: str, indices: tuple[Index]):
-    """Formats a single tensor object using libtensor syntax."""
-
-    if any(n > 1 for n in Counter(indices).values()):
-        raise NotImplementedError("Libtensor can not handle a partial trace, "
-                                  "i.e., a trace with a tensor as result. "
-                                  f"Found {indices} on tensor {name}.")
-    return f"{name}({'|'.join(idx.name for idx in indices)})"
 
 
 def translate_adcc_names(name: str, indices: tuple[Index]) -> str:
