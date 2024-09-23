@@ -54,9 +54,12 @@ class Contraction:
         """Determines the contracted and target indices of the contraction."""
         idx_counter = Counter(itertools.chain.from_iterable(self.indices))
         # determine the contracted and target indices
+        # takink into account that the einstein sum convention might not be
+        # valid
         contracted = [idx for idx, n in idx_counter.items()
                       if n > 1 and idx not in target_indices]
-        target = [idx for idx, n in idx_counter.items() if n == 1]
+        target = [idx for idx, n in idx_counter.items()
+                  if n == 1 or idx in target_indices]
         # sort the indices canonical
         contracted = sorted(contracted, key=sort_idx_canonical)
         target = sorted(target, key=sort_idx_canonical)
