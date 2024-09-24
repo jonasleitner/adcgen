@@ -16,7 +16,7 @@ class Contraction:
         The indices of the contracted tensors
     names: tuple[str]
         The names of the contracted tensors
-    target_indices: tuple[Index]
+    term_target_indices: tuple[Index]
         The target indices of the term the contraction belongs to
     """
     # use counter that essentially counts how many class instances have
@@ -28,7 +28,7 @@ class Contraction:
 
     def __init__(self, indices: tuple[tuple[Index]],
                  names: tuple[str],
-                 target_indices: tuple[Index]) -> None:
+                 term_target_indices: tuple[Index]) -> None:
         self.indices: tuple[tuple[Index]] = indices
         self.names: tuple[str] = names
         self.contracted: tuple[Index] = None
@@ -36,7 +36,7 @@ class Contraction:
         self.scaling: Scaling = None
         self.id: int = next(self._instance_counter)
         self.contraction_name = f"{self._base_name}_{self.id}"
-        self._determine_contracted_and_target_indices(target_indices)
+        self._determine_contracted_and_target(term_target_indices)
         self._determine_scaling()
 
     def __str__(self):
@@ -48,29 +48,48 @@ class Contraction:
     def __repr__(self):
         return self.__str__()
 
-    def _determine_contracted_and_target_indices(self,
-                                                 target_indices: tuple[Index]
-                                                 ) -> None:
-        """Determines the contracted and target indices of the contraction."""
-        idx_counter = Counter(itertools.chain.from_iterable(self.indices))
-        # determine the contracted and target indices
-        # takink into account that the einstein sum convention might not be
-        # valid
-        contracted = [idx for idx, n in idx_counter.items()
-                      if n > 1 and idx not in target_indices]
-        target = [idx for idx, n in idx_counter.items()
-                  if n == 1 or idx in target_indices]
+    def _determine_contracted_and_target(self,
+                                         term_target_indices: tuple[Index]
+                                         ) -> None:
+        """
+        Determines and sets the contracted and target indices on the
+        contraction using the provided target indices of the term
+        the contraction is a part of. In case the target indices of the
+        contraction contain the same indices as the target indices of the
+        term, the target indices of the term will be used instead.
+        """
+        contracted, target = self._split_contracted_and_target(
+            self.indices, term_target_indices
+        )
         # sort the indices canonical
         contracted = sorted(contracted, key=sort_idx_canonical)
         target = sorted(target, key=sort_idx_canonical)
         # if the contraction is an outer contraction, we have to use the
         # provided target indices as target indices since their order
         # might be different from the canonical order.
-        if sorted(target_indices, key=sort_idx_canonical) == target:
-            target = target_indices
-
+        if sorted(term_target_indices, key=sort_idx_canonical) == target:
+            target = term_target_indices
         self.contracted = tuple(contracted)
         self.target = tuple(target)
+
+    @staticmethod
+    def _split_contracted_and_target(indices: tuple[tuple[Index]],
+                                     term_target_indices: tuple[Index]
+                                     ) -> tuple[list[Index], list[Index]]:
+        """
+        Splits the given indices in contracted and target indices using
+        the provided target indices of the term the contraction is a
+        part of.
+        """
+        idx_counter = Counter(itertools.chain.from_iterable(indices))
+        contracted = []
+        target = []
+        for idx, count in idx_counter.items():
+            if count == 1 or idx in term_target_indices:
+                target.append(idx)
+            else:
+                contracted.append(idx)
+        return contracted, target
 
     def _determine_scaling(self) -> None:
         """Determine the computational and memory scaling of the contraction"""

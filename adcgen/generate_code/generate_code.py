@@ -20,6 +20,7 @@ def generate_code(expr: Expr, target_indices: str,
                   bra_ket_sym: int = 0,
                   antisymmetric_result_tensor: bool = True,
                   backend: str = "einsum", max_itmd_dim: int | None = None,
+                  max_n_simultaneous_contracted: int | None = None,
                   optimize_contraction_scheme: bool = True) -> str:
     """
     Generates contractions for a given expression using either 'einsum'
@@ -50,6 +51,9 @@ def generate_code(expr: Expr, target_indices: str,
     max_itmd_dim: int | None, optional
         Upper bound for the dimensionality of intermediate results, that
         may be generated if the contractions are optimized.
+    max_n_simultaneous_contracted: int | None, optional
+        The maximum number of objects allowed to be contracted
+        simultaneously in a single contraction. (default: None)
     optimize_contraction_scheme: bool, optional
         If set, we try to find the contractions with the lowest arithmetic
         and memory scaling, i.e., if possible only 2 tensors are contracted
@@ -93,8 +97,8 @@ def generate_code(expr: Expr, target_indices: str,
             if optimize_contraction_scheme:
                 contractions = optimize_contractions(
                     term=term, target_indices=target_indices,
-                    target_spin=target_spin,
-                    max_itmd_dim=max_itmd_dim
+                    target_spin=target_spin, max_itmd_dim=max_itmd_dim,
+                    max_n_simultaneous_contracted=max_n_simultaneous_contracted
                 )
             else:
                 contractions = unoptimized_contraction(

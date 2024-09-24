@@ -4,6 +4,9 @@ from adcgen.generate_code.optimize_contractions import (
     _group_objects, optimize_contractions
 )
 from adcgen.indices import get_symbols
+from adcgen.sympy_objects import SymmetricTensor
+
+import pytest
 
 
 class TestOptimizeContractions:
@@ -25,15 +28,43 @@ class TestOptimizeContractions:
 
     def test_nested_contraction(self):
         test = "{Y^{b}_{j}} {t1^{bc}_{jk}} {t2eri4_{ikac}}"
-        test = import_from_sympy_latex(test)
+        test = import_from_sympy_latex(test, convert_default_names=True)
         res = optimize_contractions(test.terms[0], "ia", None)
         assert len(res) == 2
         i, j, k, a, b, c = get_symbols("ijkabc")
         ref = Contraction(((j, b), (j, k, b, c)), ("ur1", "t2_1"), (i, a))
         assert res[0] == ref
         ref = Contraction(((k, c), (i, k, a, c)),
-                          (f"contraction_{res[0].id}", "t2eri_4"), (i, a))
+                          (res[0].contraction_name, "t2eri_4"), (i, a))
         assert res[1] == ref
+
+    def test_hypercontraction(self):
+        test = "{X^{a}_{i}} {V^{ib}_{ce}} {V^{ja}_{cd}} {Y^{b}_{j}}"
+        test = import_from_sympy_latex(test, convert_default_names=True)
+        # {D^{ij}_{ec}} {D^{ij}_{cd}}
+        i, j, c, d, e = get_symbols("ijcde")
+        test *= SymmetricTensor("D", (i, j), (e, c))
+        test *= SymmetricTensor("D", (i, j), (c, d))
+        test.make_real()
+
+        res = optimize_contractions(test.terms[0], target_indices="de",
+                                    max_itmd_dim=4,
+                                    max_n_simultaneous_contracted=None)
+        assert len(res) == 3
+        assert len(res[2].indices) == 4
+        assert len(res[1].indices) == 2 and len(res[0].indices) == 2
+        res2 = optimize_contractions(test.terms[0], target_indices="de",
+                                     max_itmd_dim=4,
+                                     max_n_simultaneous_contracted=4)
+        assert res[:2] == res2[:2]
+        assert (res[2].indices == res2[2].indices and
+                res[2].contracted == res2[2].contracted and
+                res[2].target == res2[2].target and
+                res[2].scaling == res2[2].scaling)
+        with pytest.raises(RuntimeError):
+            optimize_contractions(test.terms[0], target_indices="de",
+                                  max_itmd_dim=4,
+                                  max_n_simultaneous_contracted=3)
 
 
 class TestGroupObjects:
@@ -85,6 +116,6 @@ class TestGroupObjects:
         target_indices = (i, j, l)
         res = _group_objects(obj_indices=relevant_obj_indices,
                              target_indices=target_indices)
-        ref = ((0, 1, 2), (0, 4),
-               (0, 3), (1, 3), (1, 4), (2, 3), (2, 4), (3, 4))  # outer
+        ref = ((0, 1, 2), (0, 1, 2, 4),
+               (1, 3), (1, 4), (2, 3), (2, 4), (3, 4))  # outer
         assert res == ref
