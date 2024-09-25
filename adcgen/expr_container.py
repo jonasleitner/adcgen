@@ -436,14 +436,25 @@ class Expr(Container):
         self._expr = Mul(num, Add(*factored), evaluate=False)
         return self
 
-    def expand_intermediates(self):
-        """Expand all known intermediates in the expression."""
+    def expand_intermediates(self, fully_expand: bool = True):
+        """
+        Expand the known intermediates in the expression.
+
+        Parameters
+        ----------
+        fully_expand: bool, optional
+            True (default): The intermediates are recursively expanded
+              into orbital energies and ERI (if possible)
+            False: The intermediates are only expanded once, e.g., n'th
+              order MP t-amplitudes are expressed by means of (n-1)'th order
+              MP t-amplitudes and ERI.
+        """
         # TODO: only expand specific intermediates
         # need to adjust the target indices -> not necessarily possible to
         # determine them after expanding intermediates
         expanded: Expr = 0
         for t in self.terms:
-            expanded += t.expand_intermediates()
+            expanded += t.expand_intermediates(fully_expand=fully_expand)
         self._expr = expanded.sympy
         self.set_target_idx(expanded.provided_target_idx)
         return self
@@ -846,13 +857,34 @@ class Term(Container):
         from sympy import factor
         return Expr(factor(self.sympy), **self.assumptions)
 
-    def expand_intermediates(self, target: tuple = None,
-                             return_sympy: bool = False):
-        """Expand all known intermediates in the term."""
+    def expand_intermediates(self, target: tuple[Index] | None = None,
+                             return_sympy: bool = False,
+                             fully_expand: bool = True):
+        """
+        Expands all known intermediates in the term.
+
+        Parameters
+        ----------
+        target: tuple[Index] | None, optional
+            The target indices of the term. Determined automatically if not
+            given.
+        return_sympy: bool, optional
+            If set, the unwrapped sympy object (Pow/Mul/...) is returned.
+            (default: False)
+        fully_expand: bool, optional
+            True (default): The intermediates are recursively expanded
+              into orbital energies and ERI (if possible)
+            False: The intermediates are only expanded once, e.g., n'th
+              order MP t-amplitudes are expressed by means of (n-1)'th order
+              MP t-amplitudes and ERI.
+        """
         if target is None:
             target = self.target
-        expanded = Mul(*[o.expand_intermediates(target, return_sympy=True)
-                         for o in self.objects])
+        expanded = Mul(*[
+            o.expand_intermediates(target, return_sympy=True,
+                                   fully_expand=fully_expand)
+            for o in self.objects
+        ])
         if return_sympy:
             return expanded
         else:
@@ -1727,10 +1759,27 @@ class Obj(Container):
                 ret[s].append(description)
         return ret
 
-    def expand_intermediates(self, target: tuple = None,
-                             return_sympy: bool = False):
-        """Expand the object if it is a known intermediate."""
-        from .intermediates import Intermediates
+    def expand_intermediates(self, target: tuple[Index] | None = None,
+                             return_sympy: bool = False,
+                             fully_expand: bool = True):
+        """
+        Expand the object if it is a known intermediate.
+
+        Parameters
+        ----------
+        target: tuple[Index] | None, optional
+            The target indices of the term.
+        return_sympy: bool, optional
+            If set, the unwrapped sympy object (Pow/Mul/...) is returned.
+            (default: False)
+        fully_expand: bool, optional
+            True (default): The intermediate is recursively expanded
+              into orbital energies and ERI (if possible)
+            False: The intermediate is only expanded once, e.g., n'th
+              order MP t-amplitudes are expressed by means of (n-1)'th order
+              MP t-amplitudes and ERI.
+        """
+        from .intermediates import Intermediates, RegisteredIntermediate
 
         # intermediates only defined for tensors
         if not isinstance(self.base, SymbolicTensor):
@@ -1743,17 +1792,15 @@ class Obj(Container):
             target = self.term.target
 
         itmd = Intermediates()
-        itmd = itmd.available.get(self.longname(True), None)
+        itmd: RegisteredIntermediate = itmd.available.get(self.longname(True),
+                                                          None)
         if itmd is None:
             expanded = self.sympy
         else:
-            exp = self.exponent
-            idx = self.idx
-            expanded = 1
-            for _ in range(abs(exp)):
-                expanded *= itmd.expand_itmd(indices=idx, return_sympy=True)
-            if exp < 0:
-                expanded = Pow(expanded, -1)
+            expanded = itmd.expand_itmd(
+                indices=self.idx, return_sympy=True, fully_expand=fully_expand
+            )
+            expanded = Pow(expanded, self.exponent)
 
         if return_sympy:
             return expanded
@@ -2262,14 +2309,18 @@ class Polynom(Obj):
                                   f"not implemented for polynoms: {self} in "
                                   f"{self.term}")
 
-    def expand_intermediates(self, target: tuple = None,
-                             return_sympy: bool = False):
+    def expand_intermediates(self, target: tuple[Index] | None = None,
+                             return_sympy: bool = False,
+                             fully_expand: bool = True):
         """Expands all known intermediates in the polynom."""
         if target is None:
             target = self.term.target
 
-        expanded = Add(*[t.expand_intermediates(target, return_sympy=True)
-                         for t in self.terms])
+        expanded = Add(*[
+            t.expand_intermediates(target, return_sympy=True,
+                                   fully_expand=fully_expand)
+            for t in self.terms
+        ])
         expanded = Pow(expanded, self.exponent)
         if return_sympy:
             return expanded

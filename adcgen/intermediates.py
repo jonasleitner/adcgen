@@ -142,6 +142,15 @@ class RegisteredIntermediate:
         """
         # check that the provided indices are fine for the itmd
         indices = self.validate_indices(indices)
+        # currently all intermediates are only implemented for spin orbitals,
+        # because the intermediate definition depends on the spin, i.e.,
+        # we would need either multiple definitions per intermediate or
+        # incorporate the spin in the intermediate names.
+        if any(idx.spin for idx in indices):
+            raise NotImplementedError(
+                    "Intermediates not implemented for indices with spin "
+                    "(spatial orbitals)."
+            )
 
         # build a cached base version of the intermediate where we can just
         # substitute indices in
