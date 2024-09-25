@@ -114,7 +114,7 @@ class LazyTermMap:
         self._terms: tuple[e.Term] = expr.terms  # init all term objects
         self._term_map = {}  # {(perms, factor): {i: other_i}}
 
-    def evaluate(self):
+    def evaluate(self, antisymmetric_result_tensor: bool = True):
         """
         Fully evaluates the term map of the expression by probing all
         possible permutations of target indices.
@@ -123,11 +123,20 @@ class LazyTermMap:
         (ijk -> kij can be obtained by applying P_{ij}P_{ik} or P_{ik}P_{jk})
         it might still be possible to encounter unevaluated entries at a
         later point.
-        """
-        from .sympy_objects import AntiSymmetricTensor
 
-        # if we put all indices in lower no assumptions are important
-        tensor = AntiSymmetricTensor('x', tuple(), self.target_indices)
+        Parameters
+        ----------
+        antisymmetric_result_tensor: bool, optional
+            The result tensor is either represented by an AntiSymmetricTensor
+            (True) or by a SymmetricTensor (False). (default: True)
+        """
+        from .sympy_objects import AntiSymmetricTensor, SymmetricTensor
+
+        # if we put all indices in lower bra-ket sym is not important
+        if antisymmetric_result_tensor:
+            tensor = AntiSymmetricTensor("x", tuple(), self.target_indices)
+        else:
+            tensor = SymmetricTensor("x", tuple(), self.target_indices)
         tensor = e.Expr(tensor).terms[0]
         for sym in tensor.symmetry().items():
             self[sym]
