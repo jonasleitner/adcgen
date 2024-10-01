@@ -62,8 +62,7 @@ class GroundState:
         # option 2: simplify the energy expression and replace the indices with
         #           new, generic indices
         # guess option 2 is nicer, because energy is more readable and shorter
-        e = simplify(Expr(e))
-        e = self.indices.substitute_with_generic(e)
+        e = simplify(Expr(e)).substitute_with_generic()
         logger.debug(f"E^({order}) = {e}")
         return e.sympy
 

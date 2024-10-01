@@ -1,4 +1,4 @@
-from sympy import S, Dummy
+from sympy import Dummy
 from .misc import Inputerror, Singleton
 
 
@@ -235,53 +235,6 @@ class Indices(metaclass=Singleton):
             else:
                 raise ValueError(f"Invalid spin {spin}.")
         return Index(name, **assumptions)
-
-    def substitute_with_generic(self, expr):
-        """
-        Substitute all contracted indices with new, generic (unused) indices.
-        """
-        from . import expr_container as e
-
-        def substitute_contracted(term: e.Term) -> e.Expr:
-            # count how many indices need to be replaced and get new indices
-            old: dict[tuple[str, str], list[Index]] = {}
-            for s in term.contracted:
-                key = s.space_and_spin
-                if key not in old:
-                    old[key] = []
-                old[key].append(s)
-
-            if not old:
-                return term
-
-            kwargs = {f"{space}_{spin}" if spin else space: len(idx)
-                      for (space, spin), idx in old.items()}
-            new = self.get_generic_indices(**kwargs)
-
-            sub = {}
-            for idx_type, old_idx in old.items():
-                new_idx = new[idx_type]
-                if len(old_idx) != len(new_idx):
-                    raise RuntimeError(f"{len(old_idx)} {idx_type} indices "
-                                       "needed but generated only "
-                                       f"{len(new_idx)} indices.")
-                sub.update({s: new_s for s, new_s in zip(old_idx, new_idx)})
-
-            new_term = term.subs(order_substitutions(sub))
-
-            # ensure substitutions are valid
-            if new_term.sympy is S.Zero and term.sympy is not S.Zero:
-                raise ValueError(f"Substitutions {sub} are not valid for "
-                                 f"{term}.")
-            return new_term
-
-        expr = expr.expand()
-        if not isinstance(expr, e.Expr):
-            expr = e.Expr(expr)
-        substituted = e.Expr(0, **expr.assumptions)
-        for term in expr.terms:
-            substituted += substitute_contracted(term)
-        return substituted
 
 
 def index_space(idx: str) -> str:

@@ -1,5 +1,5 @@
 from .indices import (get_lowest_avail_indices, get_symbols,
-                      order_substitutions, Index, sort_idx_canonical)
+                      order_substitutions, Index, sort_idx_canonical, Indices)
 from .logger import logger
 from .misc import Inputerror, cached_property, cached_member
 from .sympy_objects import (
@@ -417,6 +417,15 @@ class Expr(Container):
                            for term in self.terms])
         return self
 
+    def substitute_with_generic(self):
+        """
+        Subsitutes all contracted indices with new, unused generic indices.
+        """
+        self.expand()
+        self._expr = Add(*[term.substitute_with_generic(return_sympy=True)
+                           for term in self.terms])
+        return self
+
     def factor(self, num=None):
         """
         Tries to factors the expression. Note: this only works for simple cases
@@ -810,6 +819,39 @@ class Term(Container):
         # ensure that the substitutions are valid
         if substituted is S.Zero and self.sympy is not S.Zero:
             raise ValueError(f"Invalid substitutions {sub} for {self}.")
+
+        if return_sympy:
+            return substituted
+        else:
+            return Expr(substituted, **self.assumptions)
+
+    def substitute_with_generic(self, return_sympy: bool = True):
+        """
+        Replace the contracted indices in the term with new, unused generic
+        indices.
+        """
+        # sort the contracted indices according to their space and spin
+        contracted: dict[tuple[str, str], list[Index]] = {}
+        for idx in self.contracted:
+            if (key := idx.space_and_spin) not in contracted:
+                contracted[key] = []
+            contracted[key].append(idx)
+        # generate new generic indices
+        kwargs = {f"{space}_{spin}" if spin else space: len(indices)
+                  for (space, spin), indices in contracted.items()}
+        generic = Indices().get_generic_indices(**kwargs)
+        # build the subs dict
+        subs: dict[Index, Index] = {}
+        for key, old_indices in contracted.items():
+            new_indices = generic[key]
+            subs.update({
+                idx: new_idx for idx, new_idx in zip(old_indices, new_indices)
+            })
+        # substitute the indices
+        substituted = self.sympy.subs(order_substitutions(subs))
+        # ensure that the substitutions are valid
+        if substituted is S.Zero and self.sympy is not S.Zero:
+            raise ValueError(f"Invalid substitutions {subs} for {self}.")
 
         if return_sympy:
             return substituted

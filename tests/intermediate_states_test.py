@@ -8,7 +8,7 @@ import pytest
 
 @pytest.mark.parametrize('variant', ['pp'])
 @pytest.mark.parametrize('order', [0, 1, 2])
-class TestIsr:
+class TestIntermediateStates:
     def test_precursor(self, variant, order, cls_instances,
                        reference_data):
         # load the reference_data
