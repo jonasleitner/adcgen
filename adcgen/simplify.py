@@ -232,14 +232,14 @@ def find_compatible_terms(terms: list[e.Term]) -> dict:
         tensor_idx_list = []
         length = 0
         for o in term.objects:
+            base = o.base
             if (descr := o.description()) == 'prefactor':
                 continue
-            elif 'antisymtensor' in descr:
-                tensor = o.base
+            elif isinstance(base, AntiSymmetricTensor):
                 tensor_idx_list.append(
-                    (descr, set(tensor.upper), set(tensor.lower))
+                    (descr, set(base.upper), set(base.lower))
                 )
-            elif 'delta' in descr or 'nonsymtensor' in descr:
+            elif isinstance(base, (KroneckerDelta, NonSymmetricTensor)):
                 tensor_idx_list.append((descr, set(o.idx), set()))
             length += 1
             descriptions.append(descr)

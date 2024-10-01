@@ -1430,8 +1430,13 @@ class Obj(Container):
             If this is set no Expr object will be returned but the raw
             unwrapped object.
         """
-        if self.name == tensor_names.fock and self.space in ['ov', 'vo']:
-            bl_diag = 0
+        if self.name == tensor_names.fock:
+            space = self.space
+            assert len(space) == 2
+            if space[0] == space[1]:  # diagonal block
+                bl_diag = self.sympy
+            else:  # off diagonal block
+                bl_diag = 0
         else:
             bl_diag = self.sympy
         if return_sympy:
@@ -1442,8 +1447,10 @@ class Obj(Container):
                          return_sympy: bool = False):
         sub = {}
         if self.name == tensor_names.fock:  # self contains a fock element
+            space = self.space
+            assert len(space) == 2
             # off diagonal fock matrix block -> return 0
-            if self.space in ['ov', 'vo']:
+            if space[0] != space[1]:
                 diag = 0
             else:  # diagonal fock block
                 if target is None:
@@ -1637,6 +1644,9 @@ class Obj(Container):
             name, since they are defined using the default names.
             (default: False)
         """
+        if any(s.spin for s in self.idx):
+            logger.warning("Longname only covers the space of indices. The "
+                           "spin is omitted.")
         name = None
         base = self.base
         if isinstance(base, SymbolicTensor):
@@ -1657,7 +1667,8 @@ class Obj(Container):
             elif is_adc_amplitude(name):  # adc amplitudes
                 # need to determine the excitation space as int
                 space = self.space
-                n_o, n_v = space.count('o'), space.count('v')
+                assert all(sp in ["o", "v"] for sp in space)
+                n_o, n_v = space.count("o"), space.count("v")
                 if n_o == n_v:  # pp-ADC
                     n = n_o  # p-h -> 1 // 2p-2h -> 2 etc.
                 else:  # ip-/ea-/dip-/dea-ADC
