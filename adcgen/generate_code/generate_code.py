@@ -1,5 +1,5 @@
 from ..expr_container import Expr, Term
-from ..indices import Index
+from ..indices import Index, Indices
 from ..logger import logger
 from ..misc import Inputerror
 from ..sort_expr import exploit_perm_sym
@@ -283,7 +283,7 @@ def format_scaling_comment(term: Term, contractions: list[Contraction],
     max_mem_scaling = max(max_mem_scaling, term_memory_requirements(term))
     comp = [f"N^{max_comp_scaling.total}: "]
     mem = [f"N^{max_mem_scaling.total}: "]
-    for space in ["general", "occ", "virt"]:
+    for space in Indices.base.keys():
         if (n := getattr(max_comp_scaling, space)):
             comp.append(f"{space[0].capitalize()}^{n}")
         if (n := getattr(max_mem_scaling, space)):

@@ -1,5 +1,5 @@
 from ..expr_container import Term
-from ..indices import Index, sort_idx_canonical
+from ..indices import Index, Indices, sort_idx_canonical
 
 from collections import Counter
 from dataclasses import dataclass, fields
@@ -93,21 +93,18 @@ class Contraction:
 
     def _determine_scaling(self) -> None:
         """Determine the computational and memory scaling of the contraction"""
-
-        all_spaces = ["general", "virt", "occ"]
-
         contracted_by_space = Counter(idx.space for idx in self.contracted)
         target_by_space = Counter(idx.space for idx in self.target)
         # computational scaling
         componentwise = {
             space: contracted_by_space[space] + target_by_space[space]
-            for space in all_spaces
+            for space in Indices.base.keys()
         }
         comp_scaling = ScalingComponent(total=sum(componentwise.values()),
                                         **componentwise)
         # memory scaling
         componentwise = {
-            space: target_by_space[space] for space in all_spaces
+            space: target_by_space[space] for space in Indices.base.keys()
         }
         mem_scaling = ScalingComponent(total=len(self.target),
                                        **componentwise)

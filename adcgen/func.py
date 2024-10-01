@@ -450,26 +450,26 @@ def _contraction(p, q):
     if p.state.spin or q.state.spin:
         raise NotImplementedError("Contraction not implemented for indices "
                                   "with spin.")
+    # get the space and ensure we have no unexpected space
+    p_idx, q_idx = p.args[0], q.args[0]
+    space_p, space_q = p_idx.space[0], q_idx.space[0]
+    assert space_p in ["o", "v", "g"] and space_q in ["o", "v", "g"]
 
     if isinstance(p, F) and isinstance(q, Fd):
-        if p.state.assumptions0.get("below_fermi") or \
-                q.state.assumptions0.get("below_fermi"):
+        if space_p == "o" or space_q == "o":
             return S.Zero
-        elif p.state.assumptions0.get("above_fermi") or \
-                q.state.assumptions0.get("above_fermi"):
-            return KroneckerDelta(p.state, q.state)
+        elif space_p == "v" or space_q == "v":
+            return KroneckerDelta(p_idx, q_idx)
         else:
-            return (KroneckerDelta(p.state, q.state) *
-                    KroneckerDelta(q.state, Index('a', above_fermi=True)))
+            return (KroneckerDelta(p_idx, q_idx) *
+                    KroneckerDelta(q_idx, Index('a', above_fermi=True)))
     elif isinstance(p, Fd) and isinstance(q, F):
-        if q.state.assumptions0.get("above_fermi") or \
-                p.state.assumptions0.get("above_fermi"):
+        if space_p == "v" or space_q == "v":
             return S.Zero
-        elif q.state.assumptions0.get("below_fermi") or \
-                p.state.assumptions0.get("below_fermi"):
-            return KroneckerDelta(p.state, q.state)
+        elif space_p == "o" or space_q == "o":
+            return KroneckerDelta(p_idx, q_idx)
         else:
-            return (KroneckerDelta(p.state, q.state) *
-                    KroneckerDelta(q.state, Index('i', below_fermi=True)))
+            return (KroneckerDelta(p_idx, q_idx) *
+                    KroneckerDelta(q_idx, Index('i', below_fermi=True)))
     else:  # vanish if 2xAnnihilator or 2xCreator
         return S.Zero

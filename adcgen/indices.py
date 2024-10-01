@@ -66,9 +66,11 @@ class Indices(metaclass=Singleton):
     This is necessary because the 'equality' operator is essentially replaced
     by the 'is' operator for the indices: Index("x") != Index("x").
     """
+    # the valid spaces with their corresponding associated index names
     base = {
         "occ": "ijklmno", "virt": "abcdefgh", "general": "pqrstuvw"
     }
+    # the valid spins
     spins = ("", "a", "b")
     # the generation of generic indices starts with e.g., "i3" for occupied
     # indices. Therefore, the indices "i", "i1" and "i2" are only available

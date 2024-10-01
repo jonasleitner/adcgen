@@ -289,9 +289,11 @@ class KroneckerDelta(Function):
             return S.One
 
         spi, spj = i.space[0], j.space[0]
+        assert spi in ["o", "v", "g"] and spj in ["o", "v", "g"]
         if spi != "g" and spj != "g" and spi != spj:  # delta_ov / delta_vo
             return S.Zero
         spi, spj = i.spin, j.spin
+        assert spi in ["", "a", "b"] and spj in ["", "a", "b"]
         if spi and spj and spi != spj:  # delta_ab / delta_ba
             return S.Zero
         # sort the indices of the delta
@@ -326,6 +328,9 @@ class KroneckerDelta(Function):
         i, j = self.args
         space1, spin1 = i.space[0], i.spin
         space2, spin2 = j.space[0], j.spin
+        # ensure we have no unexpected space and spin
+        assert space1 in ["o", "v", "g"] and space2 in ["o", "v", "g"]
+        assert spin1 in ["", "a", "b"] and spin2 in ["", "a", "b"]
 
         if spin1 == spin2:  # nn / aa / bb  -> equal information
             if space1 == space2 or space2 == "g":  # oo / vv / gg / og / vg
