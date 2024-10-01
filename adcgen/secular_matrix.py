@@ -2,7 +2,9 @@ from sympy import sqrt, S
 
 from math import factorial
 
-from .indices import repeated_indices, Indices
+from .indices import (
+    repeated_indices, Indices, generic_indices_from_space, n_ov_from_space
+)
 from .intermediate_states import IntermediateStates
 from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .func import gen_term_orders, wicks, evaluate_deltas
@@ -187,8 +189,6 @@ class SecularMatrix:
             Whether ground state contrubitions should be subtracted
             (default: True).
         """
-        from .indices import n_ov_from_space, extract_names
-
         space = transform_to_tuple(space)
         block = transform_to_tuple(block)
         indices = transform_to_tuple(indices)
@@ -204,9 +204,7 @@ class SecularMatrix:
                              f"{block}.")
 
         # generate additional indices for the ket state of the secular matrix
-        n_ov = n_ov_from_space(block[1])
-        idx = self.indices.get_generic_indices(**n_ov)
-        idx = "".join(extract_names(idx))
+        idx = "".join(s.name for s in generic_indices_from_space(block[1]))
 
         # contruct the secular matrix block
         m = self.isr_matrix_block(order=order, block=block,
@@ -228,7 +226,7 @@ class SecularMatrix:
         #   hand side of the equation with p if we multiply r with p
         n_ov = n_ov_from_space(space)
         prefactor_mvp = 1 / sqrt(
-            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+            factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
         # - lifting the sum restrictions leads to a prefactor of p ** 2.
@@ -236,7 +234,7 @@ class SecularMatrix:
         #   in the MVP equations
         n_ov = n_ov_from_space(block[1])
         prefactor_ampl = 1 / sqrt(
-            factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+            factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
         return evaluate_deltas(
@@ -317,14 +315,11 @@ class SecularMatrix:
         subtract_gs : bool, optional
             If set, ground state contributions are subtracted (default: True).
         """
-        from .indices import n_ov_from_space, extract_names
-
         block = transform_to_tuple(block)
         validate_input(order=order, block=block)
 
         # generate indices for the mvp
-        mvp_idx = self.indices.get_generic_indices(**n_ov_from_space(block[0]))
-        mvp_idx = "".join(extract_names(mvp_idx))
+        mvp_idx = "".join(s.name for s in generic_indices_from_space(block[0]))
         # compute the MVP
         mvp = self.mvp_block_order(order, space=block[0], block=block,
                                    indices=mvp_idx, subtract_gs=subtract_gs)

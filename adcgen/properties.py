@@ -1,5 +1,5 @@
 from .func import gen_term_orders, wicks
-from .indices import extract_names, Indices, n_ov_from_space
+from .indices import n_ov_from_space, generic_indices_from_space
 from .intermediate_states import IntermediateStates
 from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .simplify import simplify
@@ -46,7 +46,6 @@ class Properties:
             raise Inputerror("The Operator of left and right isr has to be "
                              "equal")
         self.h = l_isr.gs.h
-        self.indices = Indices()
 
     def operator(self, order: int, n_create: int, n_annihilate: int,
                  subtract_gs=True):
@@ -113,18 +112,20 @@ class Properties:
 
         # generate indices for the block and compute the prefactors for the
         # contraction over the block space
+        left_idx = "".join(
+            s.name for s in generic_indices_from_space(block[0])
+        )
         n_ov = n_ov_from_space(block[0])
-        left_idx = self.indices.get_generic_indices(**n_ov)
-        left_idx = "".join(extract_names(left_idx))
         left_pref = 1 / sqrt(
-                factorial(n_ov['n_occ']) * factorial(n_ov['n_virt'])
+                factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
+        right_idx = "".join(
+            s.name for s in generic_indices_from_space(block[1])
+        )
         n_ov = n_ov_from_space(block[1])
-        right_idx = self.indices.get_generic_indices(**n_ov)
-        right_idx = "".join(extract_names(right_idx))
         right_pref = 1 / sqrt(
-                factorial(n_ov['n_occ']) * factorial(n_ov['n_virt'])
+                factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
         # build the ADC amplitude vectors
@@ -282,8 +283,7 @@ class Properties:
 
         # - generate indices for the ISR state
         n_ov = n_ov_from_space(space)
-        idx = self.indices.get_generic_indices(**n_ov)
-        idx = "".join(extract_names(idx))
+        idx = "".join(s.name for s in generic_indices_from_space(space))
 
         # - map lr on the correct intermediate_states instance
         isr = {'left': self.l_isr, 'right': self.r_isr}
@@ -301,7 +301,7 @@ class Properties:
 
         # - generate amplitude vector and prefactor for the summation
         ampl = isr.amplitude_vector(indices=idx, lr='left')
-        pref = 1 / sqrt(factorial(n_ov['n_occ']) * factorial(n_ov['n_virt']))
+        pref = 1 / sqrt(factorial(n_ov["occ"]) * factorial(n_ov["virt"]))
 
         # - import the gs wavefunction (possible here)
         mp = {o: self.gs.psi(order=o, braket='ket') for o in range(order + 1)}

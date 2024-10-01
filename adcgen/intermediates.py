@@ -1,5 +1,5 @@
 from .indices import get_symbols, order_substitutions, sort_idx_canonical
-from .indices import Indices as idx_cls
+from .indices import Indices
 from .indices import Index
 from .logger import logger
 from .misc import Inputerror, Singleton, cached_property, cached_member
@@ -12,7 +12,7 @@ from .tensor_names import tensor_names
 
 from sympy import S, Rational, Pow
 
-from collections import namedtuple
+from collections import namedtuple, Counter
 from itertools import product, chain
 
 
@@ -163,13 +163,15 @@ class RegisteredIntermediate:
             subs.update({o: n for o, n in zip(base_target, indices)})
         # map contracted indices onto each other (replace them by generic idx)
         if (base_contracted := expanded_itmd.contracted) is not None:
-            spaces = [s.space for s in base_contracted]
-            contracted = idx_cls().get_generic_indices(
-                n_o=spaces.count('occ'), n_v=spaces.count('virt'),
-                n_g=spaces.count('general')
+            spaces = [s.space_and_spin for s in base_contracted]
+            kwargs = Counter(
+                f"{sp}_{spin}" if spin else sp for sp, spin in spaces
             )
+            contracted = Indices().get_generic_indices(**kwargs)
+            for new in contracted.values():
+                new.reverse()
             for old, sp in zip(base_contracted, spaces):
-                subs[old] = contracted[sp].pop(0)
+                subs[old] = contracted[sp].pop()
             if any(li for li in contracted.values()):
                 raise RuntimeError("Generated more contracted indices than "
                                    f"necessary. {contracted} are left.")

@@ -100,7 +100,9 @@ class GroundState:
         tensor_name = f"{tensor_names.gs_amplitude}{order}"
         if braket == "bra":
             tensor_name += "cc"
-        idx = self.indices.get_generic_indices(n_o=2*order, n_v=2*order)
+        idx = self.indices.get_generic_indices(occ=2*order, virt=2*order)
+        virtual = idx[("virt", "")]
+        occupied = idx[("occ", "")]
         psi = 0
         for excitation in range(1, order * 2 + 1):
             # skip singles for the first order wavefunction if
@@ -108,8 +110,8 @@ class GroundState:
             if order == 1 and not self.singles and excitation == 1:
                 continue
             # build tensor
-            virt: list = idx["virt"][:excitation]
-            occ: list = idx["occ"][:excitation]
+            virt: list = virtual[:excitation]
+            occ: list = occupied[:excitation]
             t = Amplitude(tensor_name, virt, occ)
             # build operators
             operators = self.h.excitation_operator(creation=virt,
@@ -174,21 +176,22 @@ class GroundState:
         validate_input(order=order, space=space, indices=indices)
 
         n_ov = n_ov_from_space(space)
-        if n_ov["n_occ"] != n_ov["n_virt"]:
+        if n_ov["occ"] != n_ov["virt"]:
             raise Inputerror("Invalid space string for a MP t-amplitude: "
                              f"{space}.")
         # if the space is not present at the requested order return 0
-        if n_ov["n_occ"] > 2 * order:
+        if n_ov["occ"] > 2 * order:
             return 0
 
         idx = self.indices.get_indices(indices)
-        if n_ov["n_occ"] != len(idx["occ"]) or \
-                n_ov["n_virt"] != len(idx["virt"]):
+        lower = idx.get(("occ", ""), [])
+        upper = idx.get(("virt", ""), [])
+        if n_ov["occ"] != len(lower) or n_ov["virt"] != len(upper):
             raise Inputerror(f"Provided indices {indices} are not adequate for"
                              f" space {space}.")
 
         # build the denominator
-        if len(idx['occ']) == 2:  # doubles amplitude: a+b-i-j
+        if len(lower) == 2:  # doubles amplitude: a+b-i-j
             occ_factor = -1
             virt_factor = +1
         else:  # any other amplitude: i-a // i+j+k-a-b-c // ...
@@ -196,14 +199,13 @@ class GroundState:
             virt_factor = -1
 
         denom = 0
-        for s in idx['occ']:
+        for s in lower:
             denom += occ_factor * orb_energy(s)
-        for s in idx['virt']:
+        for s in upper:
             denom += virt_factor * orb_energy(s)
 
         # build the bra state: <k|
-        bra = self.h.excitation_operator(creation=idx["occ"],
-                                         annihilation=idx["virt"],
+        bra = self.h.excitation_operator(creation=lower, annihilation=upper,
                                          reverse_annihilation=True)
 
         # construct <k|H1|psi^(n-1)>
@@ -215,14 +217,14 @@ class GroundState:
         for o1, o2 in terms:
             # check if a t-amplitude of order o2 exists with special
             # treatment of the first order singles amplitude
-            if (n_ov['n_occ'] > 2 * o2) or \
-                    (n_ov['n_occ'] == 1 and o2 == 1 and not self.singles):
+            if (n_ov["occ"] > 2 * o2) or \
+                    (n_ov["occ"] == 1 and o2 == 1 and not self.singles):
                 continue
             name = f"{tensor_names.gs_amplitude}{o2}"
             contrib = (
-                self.energy(o1) * Amplitude(name, idx["virt"], idx["occ"])
+                self.energy(o1) * Amplitude(name, upper, lower)
             ).expand()
-            if n_ov['n_occ'] == 2:  # doubles... special sign
+            if n_ov["occ"] == 2:  # doubles... special sign
                 ret += contrib
             else:
                 ret -= contrib
@@ -254,23 +256,22 @@ class GroundState:
         # validate the input
         validate_input(order=order, space=space, indices=indices)
         n_ov = n_ov_from_space(space)
-        if n_ov['n_occ'] != n_ov['n_virt']:
+        if n_ov["occ"] != n_ov["virt"]:
             raise Inputerror(f"Invalid space for a RE t-amplitude: {space}.")
-        if n_ov['n_occ'] > 2 * order:  # space not present at the order
+        if n_ov["occ"] > 2 * order:  # space not present at the order
             return 0
 
         # get the target indices and validate
         idx = self.indices.get_indices(indices)
-        if (n_ov['n_occ'] and 'occ' not in idx) or \
-                (n_ov['n_virt'] and 'virt' not in idx) or\
-                n_ov['n_occ'] != len(idx['occ']) or \
-                n_ov['n_virt'] != len(idx['virt']):
+        occupied = idx.get(("occ", ""), [])
+        virtual = idx.get(("virt", ""), [])
+        if n_ov["occ"] != len(occupied) or n_ov["virt"] != len(virtual):
             raise Inputerror(f"Indices {indices} are not valid for space "
                              f"{space}.")
 
         # - build <Phi_k|
-        bra = self.h.excitation_operator(creation=idx["occ"],
-                                         annihilation=idx["virt"],
+        bra = self.h.excitation_operator(creation=occupied,
+                                         annihilation=virtual,
                                          reverse_annihilation=True)
 
         # - compute (<Phi_k|0|n> + <Phi_k|1|n-1>)
@@ -286,15 +287,14 @@ class GroundState:
         for e_order, t_order in gen_term_orders(order, 2, 0):
             # check if a t amplitude of order t_order exists
             # special treatment of first order singles
-            if n_ov['n_occ'] > 2 * t_order or \
-                    (n_ov['n_occ'] == 1 and t_order == 1 and not self.singles):
+            if n_ov["occ"] > 2 * t_order or \
+                    (n_ov["occ"] == 1 and t_order == 1 and not self.singles):
                 continue
             name = f"{tensor_names.gs_amplitude}{t_order}"
             contrib = (
-                self.energy(e_order) *
-                Amplitude(name, idx['virt'], idx['occ'])
+                self.energy(e_order) * Amplitude(name, virtual, occupied)
             ).expand()
-            if n_ov['n_occ'] == 2:  # doubles -> different sign!
+            if n_ov["occ"] == 2:  # doubles -> different sign!
                 res += contrib
             else:
                 res -= contrib

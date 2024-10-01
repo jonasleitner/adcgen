@@ -34,18 +34,17 @@ def by_delta_types(expr: e.Expr) -> dict[tuple[str], e.Expr]:
 
 def by_delta_indices(expr: e.Expr) -> dict[tuple[str], e.Expr]:
     """
-    Sort the terms in an expression according to the names of indices on the
-    KroneckerDeltas in each term.
+    Sort the terms in an expression according to the names and spin of indices
+    on the KroneckerDeltas in each term.
     """
-    from .indices import extract_names
     expr = expr.expand()
     if not isinstance(expr, e.Expr):
         expr = e.Expr(expr)
     ret = {}
     for term in expr.terms:
         d_idx = tuple(sorted(
-            ["".join(extract_names(o.idx)) for o in term.deltas
-             for _ in range(o.exponent)]
+            "".join(str(s) for s in o.idx) for o in term.deltas
+            for _ in range(o.exponent)
         ))
         if not d_idx:
             d_idx = ('none',)

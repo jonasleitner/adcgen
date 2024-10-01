@@ -68,8 +68,11 @@ class Operators:
             The number of annihilation operators. Placed right of the creation
             operators.
         """
-        idx = self._indices.get_generic_indices(n_g=n_create + n_annihilate)
-        idx = idx["general"]
+        # generate general indices for the operator
+        idx = self._indices.get_generic_indices(
+            general=n_create + n_annihilate
+        )
+        idx = idx[("general", "")]
         create = idx[:n_create]
         annihilate = idx[n_create:]
         name = tensor_names.operator
@@ -117,7 +120,7 @@ class Operators:
     def mp_h0():
         """Constructs the zeroth order MP-Hamiltonian."""
         idx_cls = Indices()
-        p, q = idx_cls.get_indices('pq')['general']
+        p, q = idx_cls.get_indices("pq")[("general", "")]
         f = AntiSymmetricTensor(tensor_names.fock, (p,), (q,))
         pq = Fd(p) * F(q)
         h0 = f * pq
@@ -128,9 +131,9 @@ class Operators:
     def mp_h1():
         """Constructs the first order MP-Hamiltonian."""
         idx_cls = Indices()
-        p, q, r, s = idx_cls.get_indices('pqrs')['general']
+        p, q, r, s = idx_cls.get_indices("pqrs")[("general", "")]
         # get an occ index for 1 particle part of H1
-        occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
+        occ = idx_cls.get_generic_indices(occ=1)[("occ", "")][0]
         v1 = AntiSymmetricTensor(tensor_names.eri, (p, occ), (q, occ))
         pq = Fd(p) * F(q)
         v2 = AntiSymmetricTensor(tensor_names.eri, (p, q), (r, s))
@@ -143,9 +146,9 @@ class Operators:
     def re_h0():
         """Constructs the zeroth order RE-Hamiltonian."""
         idx_cls = Indices()
-        p, q, r, s = idx_cls.get_indices('pqrs')['general']
+        p, q, r, s = idx_cls.get_indices('pqrs')[("general", "")]
         # get an occ index for 1 particle part of H0
-        occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
+        occ = idx_cls.get_generic_indices(occ=1)[("occ", "")][0]
 
         f = AntiSymmetricTensor(tensor_names.fock, (p,), (q,))
         piqi = AntiSymmetricTensor(tensor_names.eri, (p, occ), (q, occ))
@@ -167,9 +170,9 @@ class Operators:
     def re_h1():
         """Constructs the first order RE-Hamiltonian."""
         idx_cls = Indices()
-        p, q, r, s = idx_cls.get_indices('pqrs')['general']
+        p, q, r, s = idx_cls.get_indices('pqrs')[("general", "")]
         # get an occ index for 1 particle part of H0
-        occ = idx_cls.get_generic_indices(n_o=1)['occ'][0]
+        occ = idx_cls.get_generic_indices(occ=1)[("occ", "")][0]
 
         f = AntiSymmetricTensor(tensor_names.fock, (p,), (q,))
         piqi = AntiSymmetricTensor(tensor_names.eri, (p, occ), (q, occ))

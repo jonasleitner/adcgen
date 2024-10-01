@@ -4,7 +4,7 @@ from sympy.physics.secondquant import NO, Dagger
 from math import factorial
 
 from .indices import (
-    n_ov_from_space, repeated_indices, Indices, extract_names
+    n_ov_from_space, repeated_indices, Indices, generic_indices_from_space
 )
 from .misc import cached_member, Inputerror, transform_to_tuple, validate_input
 from .simplify import simplify
@@ -84,20 +84,21 @@ class IntermediateStates:
         # get the target symbols of the precursor state
         idx = self.indices.get_indices(indices)
         # check compatibility of indices and space
-        if idx.get('general'):
+        if idx.get(("general", "")):
             raise Inputerror(f"The provided indices {indices} include a "
                              "general index.")
         n_ov = n_ov_from_space(space)
-        if len(idx.get('occ', [])) != n_ov.get('n_occ', 0) or \
-                len(idx.get('virt', [])) != n_ov.get('n_virt', 0):
+        occupied = idx.get(("occ", ""), [])
+        virtual = idx.get(("virt", ""), [])
+        if len(occupied) != n_ov["occ"] or len(virtual) != n_ov["virt"]:
             raise Inputerror(f"The indices {indices} and the space {space} "
                              "are not compatible.")
 
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
         # ADC literature.
-        operators = self.gs.h.excitation_operator(creation=idx["virt"],
-                                                  annihilation=idx["occ"],
+        operators = self.gs.h.excitation_operator(creation=virtual,
+                                                  annihilation=occupied,
                                                   reverse_annihilation=False)
         if braket == "bra":
             operators = Dagger(operators)
@@ -161,13 +162,13 @@ class IntermediateStates:
         lower_spaces = self._generate_lower_spaces(space)
         for lower_space in lower_spaces:
             # get generic unique indices to generate the lower_isr_states.
-            n_ov = n_ov_from_space(lower_space)
-            idx_isr = self.indices.get_generic_indices(**n_ov)
-            idx_isr = "".join(extract_names(idx_isr))
+            idx_isr = "".join(
+                s.name for s in generic_indices_from_space(lower_space)
+            )
 
             # prefactor due to the sum - sum_J |J><J|I>
             prefactor = Rational(
-                1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+                1, factorial(n_ov["occ"]) * factorial(n_ov["virt"])
             )
 
             # orthogonalise with respsect to the lower excited ISR state
@@ -313,8 +314,6 @@ class IntermediateStates:
                                       "index generation needed in this case.")
 
         taylor_expansion = self.expand_S_taylor(order, min_order=2)
-        # assume in the following that both spaces are equal!!
-        n_ov = n_ov_from_space(block[0])
         # create an index list: first and last element are the two provided
         # idx strings
         idx = list(indices)
@@ -322,8 +321,10 @@ class IntermediateStates:
         #  - x*x 1 additional index 'pair' is required: I,I' = I,I'' * I'',I'
         #  - x^3: I,I' = I,I'' * I'',I''' * I''',I'
         for _ in range(len(taylor_expansion) - 1):
-            new_idx = self.indices.get_generic_indices(**n_ov)
-            idx.insert(-1, "".join(extract_names(new_idx)))
+            new_idx = "".join(
+                s.name for s in generic_indices_from_space(block[0])
+            )
+            idx.insert(-1, new_idx)
         # iterate over exponents and terms, starting with the lowest exponent
         res = sympify(0)
         for pref, termlist in taylor_expansion:
@@ -373,12 +374,11 @@ class IntermediateStates:
         indices = indices[0]
 
         # generate additional indices for the precursor state
-        n_ov = n_ov_from_space(space)
-        idx_pre = self.indices.get_generic_indices(**n_ov)
-        idx_pre = "".join(extract_names(idx_pre))
+        idx_pre = "".join(s.name for s in generic_indices_from_space(space))
 
+        n_ov = n_ov_from_space(space)
         prefactor = Rational(
-            1, factorial(n_ov["n_occ"]) * factorial(n_ov["n_virt"])
+            1, factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
         # sandwich the IS and precursor indices together
@@ -467,8 +467,8 @@ class IntermediateStates:
         validate_input(indices=indices, lr=lr)
 
         idx = self.indices.get_indices(indices)
-        occ = idx["occ"] if "occ" in idx else []
-        virt = idx["virt"] if "virt" in idx else []
+        occ = idx.get(("occ", ""), [])
+        virt = idx.get(("virt", ""), [])
 
         name = getattr(tensor_names, f"{lr}_adc_amplitude")
         return Amplitude(name, virt, occ)

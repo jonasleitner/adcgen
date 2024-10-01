@@ -2,10 +2,6 @@ from sympy import S, Dummy
 from .misc import Inputerror, Singleton
 
 
-# base names for all used indices
-idx_base = {'occ': 'ijklmno', 'virt': 'abcdefgh', 'general': 'pqrstuvw'}
-
-
 class Index(Dummy):
     """
     Represents an Index. Wrapper implementation around the 'sympy.Dummy'
@@ -45,6 +41,16 @@ class Index(Dummy):
         """Returns space and spin of the Index."""
         return self.space, self.spin
 
+    def __str__(self):
+        spin = self.spin
+        return f"{self.name}_{spin}" if spin else self.name
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def _sympystr(self, printer):
+        return self.__str__()
+
     def _latex(self, printer) -> str:
         ret = self.name
         if (spin := self.spin):
@@ -60,188 +66,175 @@ class Indices(metaclass=Singleton):
     This is necessary because the 'equality' operator is essentially replaced
     by the 'is' operator for the indices: Index("x") != Index("x").
     """
-    def __init__(self):
+    base = {
+        "occ": "ijklmno", "virt": "abcdefgh", "general": "pqrstuvw"
+    }
+    spins = ("", "a", "b")
+    # the generation of generic indices starts with e.g., "i3" for occupied
+    # indices. Therefore, the indices "i", "i1" and "i2" are only available
+    # through a specific request to get_indices
+    _initial_counter = 3
+
+    def __init__(self) -> None:
         # dict that holds all symbols that have been created previously.
-        self._symbols = {'occ': {}, 'virt': {}, 'general': {},
-                         'occ_a': {}, 'occ_b': {},
-                         'virt_a': {}, 'virt_b': {},
-                         'general_a': {}, 'general_b': {}}
-        # dict that holds the generic indices. Automatically filled by
-        # generated index strings.
-        self._generic_indices = {'occ': [], 'occ_a': [], 'occ_b': [],
-                                 'virt': [], 'virt_a': [], 'virt_b': [],
-                                 'general': [], 'general_a': [],
-                                 'general_b': []}
-        # o/v indices that are exclusively available for direct request via
-        # get_indices, i.e. they can't be generic indices.
-        self._occ = ('i', 'j', 'k', 'l', 'm', 'n', 'o',
-                     'i1', 'j1', 'k1', 'l1', 'm1', 'n1', 'o1',
-                     'i2', 'j2', 'k2', 'l2', 'm2', 'n2', 'o2')
-        self._virt = ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h',
-                      'a1', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1',
-                      'a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2')
-        self._general = ('p', 'q', 'r', 's', 't', 'u', 'v', 'w')
+        # structure: {space: {spin: {name: symbol}}}
+        self._symbols: dict[str, dict[str, dict[str, Index]]] = {}
+        # dict that holds the automatically generated generic index names
+        # (strings) that have not been used yet.
+        # structure: {space: {spin: [names]}}
+        self._generic_indices: dict[str, dict[str, list[str]]] = {}
+        # dict holding the counter (the number appended to the index names)
+        # for the generation of generic indices.
+        self._counter: dict[str, dict[str, int]] = {}
+        # initialize the data structures
+        for space in self.base.keys():
+            self._symbols[space] = {}
+            self._generic_indices[space] = {}
+            self._counter[space] = {}
+            for spin in self.spins:
+                self._symbols[space][spin] = {}
+                self._generic_indices[space][spin] = []
+                self._counter[space][spin] = self._initial_counter
 
     def is_cached_index(self, index: Index) -> bool:
         """
         Whether an index was generated with the 'Indices' class and is thus
         cached in the class.
         """
-        space, spin = index.space_and_spin
-        key = f"{space}_{spin}" if spin else space
-        return self._symbols[key].get(index.name, None) is index
+        cached_symbol = (
+            self._symbols[index.space][index.spin].get(index.name, None)
+        )
+        return cached_symbol is index
 
-    def _gen_generic_idx(self, space: str, spin: str):
+    def _gen_generic_idx(self, space: str, spin: str = ""):
         """
         Generated the next 'generation' of generic indices, i.e. extends
-        _generic_indices list by incrementing the integer attached to the index
-        base. The first generic indices will increment the highest integer
-        found in the _occ/_virt tuples by one.
+        _generic_indices by incrementing the _counter attached to the index
+        base.
         """
-        # first call -> counter has not been initialized yet.
-        key = space if spin is None else f"{space}_{spin}"
-        if not hasattr(self, f'counter_{key}'):
-            idx_list = sorted(
-                getattr(self, f'_{space}'), key=lambda idx:
-                (int(idx[1:]) if idx[1:].isdigit() else 0, idx[0])
-            )
-            n = int(idx_list[-1][1:]) if idx_list[-1][1:].isdigit() else 0
-            setattr(self, f'counter_{key}', n + 1)
+        # generate the not used indices of the new generation
+        counter = str(self._counter[space][spin])
+        used_names = self._symbols[space][spin]
+        new_idx = [idx + counter for idx in self.base[space]
+                   if idx + counter not in used_names]
+        # extend the available generic indices and increment the counter
+        self._generic_indices[space][spin].extend(new_idx)
+        self._counter[space][spin] += 1
 
-        # generate the new index strings
-        counter = getattr(self, f'counter_{key}')
-        used = self._symbols[key]
-        new_idx = [idx + str(counter) for idx in idx_base[space]
-                   if idx + str(counter) not in used]
-
-        # extend the generic list and increment the counter
-        self._generic_indices[key].extend(new_idx)
-        setattr(self, f'counter_{key}', counter + 1)
-
-    def get_indices(self, indices: str, spins: str = None) -> dict:
+    def get_indices(self, indices: str | list[str],
+                    spins: str | list[str] | None = None
+                    ) -> dict[tuple[str, str], list[Index]]:
         """
-        Obtain the Indices for the provided string.
+        Obtain the Indices for the provided string of names.
 
         Parameters
         ----------
-        indices : str
+        indices : str | list[str]
             The names of the indices as a single string that is split
             automatically as "ij21kl3" -> i, j21, k, l3.
-        spins : str, optional
+            They can also provided as list/tuple of index names.
+        spins : str | list[str] | None, optional
             The spins of the indices as a single string, e.g., "aaba"
-            for obtaining four indices with spin: alpha, alpha, beta, alpha.
+            to obtain four indices with spin: alpha, alpha, beta, alpha.
+            Since no spin is represented by the empty string, it is only
+            possible to obtain indices with and without spin when the spins
+            are provided as list/tuple.
 
         Returns
         -------
         dict
-            key: the space and spin of the indices as string.
+            key: tuple containing the space and spin of the indices.
             value: list containing the indices in the order the indices are
-                   provided in the indices input.
+                   provided in the input.
         """
-        if not isinstance(indices, str):
-            raise Inputerror(f"Indices {indices} need to be of type string.")
-        indices = split_idx_string(indices)
-        if spins is not None and len(indices) != len(spins):
-            raise Inputerror(f"Indices {indices} and spin {spins} do not "
+        # split the string of indices
+        if isinstance(indices, str):
+            indices = split_idx_string(indices)
+        if spins is None:
+            spins = ["" for _ in range(len(indices))]
+        if len(indices) != len(spins):
+            raise Inputerror(f"Indices {indices} and spins {spins} do not "
                              "match.")
 
-        ret = {}
-        for i, idx in enumerate(indices):
+        ret: dict[tuple[str, str], list[Index]] = {}
+        for idx, spin in zip(indices, spins):
             space = index_space(idx)
-            if spins is None:
-                spin = None
-                key = space
-            else:
-                spin = spins[i]
-                key = space + "_" + spin
+            key = (space, spin)
             if key not in ret:
                 ret[key] = []
-            # check whether the symbol is already available
-            s = self._symbols[key].get(idx, None)
-            if s is not None:
-                ret[key].append(s)
+            # check the cache for the index
+            symbol = self._symbols[space][spin].get(idx, None)
+            if symbol is not None:
+                ret[key].append(symbol)
                 continue
-            # did not find -> create a new symbol + add it to self._symbols
-            # and if it is a generic index -> remove it from the current
-            # generic index list.
-            s = self._new_symbol(idx, space, spin)
-            ret[key].append(s)
-            self._symbols[key][idx] = s
+            # not found in cache
+            # -> create new symbol and cache it
+            symbol = self._new_symbol(idx, space, spin)
+            self._symbols[space][spin][idx] = symbol
+            ret[key].append(symbol)
+            # -> also remove it from the available generic indices
             try:
-                self._generic_indices[key].remove(idx)
+                self._generic_indices[space][spin].remove(idx)
             except ValueError:
-                pass
+                continue
         return ret
 
-    def get_generic_indices(self, **kwargs) -> dict:
+    def get_generic_indices(self, **kwargs
+                            ) -> dict[tuple[str, str], list[Index]]:
         """
         Request indices with unique names that have not been used in the
         current run of the program. Easy way to ensure that contracted indices
         do not appear anywhere else in a term.
-        Indices can be requested with the keywords
-        n_occ, n_virt, n_general (or n_o, n_v, n_g)
-        to obtain indices without spin. Spin can be defined by appending
-        '_a' or '_b' to the keyword.
+        Indices can be requested using the syntax "{space}_{spin}",
+        where spin is optional. For instance, occupied indices without
+        spin can be obtained with "occ=5", or "occ_a=5" for occupied indices
+        with alpha spin.
 
         Returns
         -------
         dict
-            key: the space and spin of the indices as string.
-            value: list containing the indices in the order they are
-                   provided in the indices input.
+            key: tuple of space and spin of the indices.
+            value: list containing the indices.
         """
 
         ret = {}
         for key, n in kwargs.items():
             if n == 0:
                 continue
-            # n_space(_spin)   where spin is optional
-            key = key.split("_")[1:]
-            if not key:
-                raise Inputerror(f"{key} is not a valid input for requesting "
-                                 "generic indices. Use e.g. 'n_occ=2'.")
-            space = key[0]  # expand o/v/g
-            if space == 'o':
-                space = 'occ'
-            elif space == 'v':
-                space = 'virt'
-            elif space == 'g':
-                space = 'general'
-
-            if len(key) == 1:
-                spin = None
-                spins = None
-                key = space
-            elif len(key) == 2:
-                spin = key[1]
-                spins = "".join(spin for _ in range(n))
-                key = f"{space}_{spin}"
+            key = key.split("_")
+            if len(key) == 2:
+                space, spin = key
+            elif len(key) == 1:
+                space, spin = key[0], ""
             else:
-                raise ValueError(f"Invalid input argument {key}. Use e.g. "
-                                 "'n_occ=2'.")
-            while n > len(self._generic_indices[key]):
+                raise Inputerror(f"{'_'.join(key)} is not valid for "
+                                 "requesting generic indices.")
+            # generate generic index names until we have enough
+            while n > len(self._generic_indices[space][spin]):
                 self._gen_generic_idx(space, spin)
-            idx = "".join(self._generic_indices[key][:n])
+            # get the indices
+            idx = self._generic_indices[space][spin][:n]
+            spins = tuple(spin for _ in range(n))
             ret.update(self.get_indices(idx, spins))
         return ret
 
-    def _new_symbol(self, idx: str, ov: str, spin: str | None) -> Index:
+    def _new_symbol(self, name: str, space: str, spin: str) -> Index:
         """Creates a new symbol with the defined name, space and spin."""
         assumptions = {}
-        if ov == "occ":
+        if space == "occ":
             assumptions["below_fermi"] = True
-        elif ov == "virt":
+        elif space == "virt":
             assumptions["above_fermi"] = True
-        elif ov != "general":
-            raise ValueError(f"Invalid space {ov}")
-        if spin is not None:
+        elif space != "general":
+            raise ValueError(f"Invalid space {space}")
+        if spin:
             if spin == "a":
                 assumptions["alpha"] = True
             elif spin == "b":
                 assumptions["beta"] = True
             else:
                 raise ValueError(f"Invalid spin {spin}.")
-        return Index(idx, **assumptions)
+        return Index(name, **assumptions)
 
     def substitute_with_generic(self, expr):
         """
@@ -251,11 +244,9 @@ class Indices(metaclass=Singleton):
 
         def substitute_contracted(term: e.Term) -> e.Expr:
             # count how many indices need to be replaced and get new indices
-            old = {}
+            old: dict[tuple[str, str], list[Index]] = {}
             for s in term.contracted:
-                key = s.space
-                if s.spin:
-                    key += "_" + s.spin
+                key = s.space_and_spin
                 if key not in old:
                     old[key] = []
                 old[key].append(s)
@@ -263,7 +254,8 @@ class Indices(metaclass=Singleton):
             if not old:
                 return term
 
-            kwargs = {"n_" + key: len(idx) for key, idx in old.items()}
+            kwargs = {f"{space}_{spin}" if spin else space: len(idx)
+                      for (space, spin), idx in old.items()}
             new = self.get_generic_indices(**kwargs)
 
             sub = {}
@@ -294,7 +286,7 @@ class Indices(metaclass=Singleton):
 
 def index_space(idx: str) -> str:
     """Returns the space an index belongs to (occ/virt/general)."""
-    for sp, idx_string in idx_base.items():
+    for sp, idx_string in Indices.base.items():
         if idx[0] in idx_string:
             return sp
     raise Inputerror(f"Could not assign the index {idx} to a space.")
@@ -313,7 +305,7 @@ def sort_idx_canonical(idx: Index):
         return ('', 0, str(idx), hash(idx))
 
 
-def split_idx_string(str_tosplit: str) -> list:
+def split_idx_string(str_tosplit: str) -> list[str]:
     """
     Splits an index string of the form 'ij12a3b' in a list ['i','j12','a3','b']
     """
@@ -337,7 +329,19 @@ def n_ov_from_space(space_str: str):
     Number of required occupied and virtual indices required for the given
     exictation space, e.g., "pph" -> 2 virtual and 1 occupied index.
     """
-    return {'n_occ': space_str.count('h'), 'n_virt': space_str.count('p')}
+    return {'occ': space_str.count('h'), 'virt': space_str.count('p')}
+
+
+def generic_indices_from_space(space_str: str) -> list[Index]:
+    """
+    Constructs generic indices from a given space string (e.g. 'pphh').
+    Thereby, occupied indices are listed before virtual indices!
+    """
+    generic_idx = Indices().get_generic_indices(**n_ov_from_space(space_str))
+    assert len(generic_idx.keys()) == 2  # only occ and virt
+    occ = generic_idx.get(("occ", ""), [])
+    occ.extend(generic_idx.get(("virt", ""), []))
+    return occ
 
 
 def repeated_indices(idx_a: str, idx_b: str) -> bool:
@@ -362,7 +366,7 @@ def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
         The space (occ/virt/general) to which the indices belong.
     """
     # generate idx pool to pick the lowest indices from
-    base = idx_base[space]
+    base = Indices.base[space]
     idx = list(base)
     required = len(used) + n  # the number of indices present in the term
     suffix = 1
@@ -374,55 +378,44 @@ def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
     return [s for s in idx if s not in used][:n]
 
 
-def extract_names(syms: list[Index] | dict):
-    """
-    Extracts the names of the provided indices and returns them in a list.
-    """
-    from itertools import chain
-    if isinstance(syms, dict):
-        syms = chain.from_iterable(syms.values())
-    return [s.name for s in syms]
-
-
-def get_symbols(idx: str | Index | list[str] | list[Index],
-                spins: str = None) -> list[Index]:
+def get_symbols(indices: str | Index | list[str] | list[Index],
+                spins: str | None = None) -> list[Index]:
     """
     Uses the Indices class to initialize 'Index' instances with the
     provided names and spin.
 
     Parameters
     ----------
-    idx : str | Index | list[str] | list[Index]
+    indices : str | Index | list[str] | list[Index]
         The names of the indices to generate. If they are already instances
         of the 'Index' class we do nothing.
-    spins : str, optional
-        The spin of the indices.
+    spins : str | None, optional
+        The spin of the indices, e.g., "aab" to obtain 3 indices with
+        alpha, alpha and beta spin.
     """
 
-    if not idx:  # empty string/list
+    if not indices:  # empty string/list
         return []
-    elif isinstance(idx, Index):  # a single symbol is not iterable
-        return [idx]
-    elif all(isinstance(i, Index) for i in idx):
-        return idx
-    elif all(isinstance(i, str) for i in idx):
-        symbols = Indices().get_indices("".join(idx), spins)
-        for val in symbols.values():
-            val.reverse()
-        # idx and spins have to be compatible at this point
-        idx = split_idx_string(idx)
-        if spins is None:
-            return [
-                symbols[index_space(i)].pop() for i in idx
-            ]
-        else:
-            return [
-                symbols[f"{index_space(i)}_{spin}"].pop()
-                for i, spin in zip(idx, spins)
-            ]
-    else:
-        raise Inputerror("Indices need to be provided as string or a list "
-                         f"of {Index} objects.")
+    elif isinstance(indices, Index):  # a single symbol is not iterable
+        return [indices]
+    elif all(isinstance(i, Index) for i in indices):
+        return indices
+    # we actually have to do something
+    # -> prepare indices and spin
+    if isinstance(indices, str):
+        indices = split_idx_string(indices)
+    if spins is None:
+        spins = ["" for _ in range(len(indices))]
+    # at this point we should have a list/tuple of strings
+    # construct the indices
+    symbols = Indices().get_indices(indices, spins)
+    # and return them in the order they were provided in the input
+    for val in symbols.values():
+        val.reverse()
+    ret = [symbols[(index_space(idx), spin)].pop()
+           for idx, spin in zip(indices, spins)]
+    assert not any(symbols.values())  # ensure we consumed all indices
+    return ret
 
 
 def order_substitutions(subsdict: dict[Index, Index]) -> list:
@@ -431,7 +424,7 @@ def order_substitutions(subsdict: dict[Index, Index]) -> list:
     indices is required when the substitutions are executed one after another
     and the usage of the 'simultaneous=True' option of sympys 'subs' method.
     Adapted from the 'substitute_dummies' function defined in
-    'sympy.physics.seconquant'.
+    'sympy.physics.secondquant'.
     """
     from .sympy_objects import Index
 
@@ -461,7 +454,7 @@ def order_substitutions(subsdict: dict[Index, Index]) -> list:
 
 
 def minimize_tensor_indices(tensor_indices: tuple[Index],
-                            target_idx: dict[tuple, list[str]]):
+                            target_idx_names: dict[tuple, list[str]]):
     """
     Minimizes the indices on a tensor using the lowest available indices that
     are no target indices.
@@ -469,7 +462,7 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
     Parameters
     ----------
     tensor_indices : tuple[Index]
-        List containing the indices of the tensor.
+        The indices of the tensor.
     target_idx : dict[tuple, list[str]]
         The names of target indices sorted by their space and spin with
         key = (space, spin).
@@ -482,13 +475,13 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
     """
     from .symmetry import Permutation, PermutationProduct
 
-    for target in target_idx.values():
+    for target in target_idx_names.values():
         if not all(isinstance(s, str) for s in target):
             raise TypeError("Target indices need to be provided as string.")
 
     tensor_indices: list[Index] = list(tensor_indices)
     n_unique_indices: int = len(set(tensor_indices))
-    minimal_indices: dict[str, list] = {}
+    minimal_indices: dict[str, list[Index]] = {}
     permutations = []  # list for collecting the applied permutations
     minimized = set()
     for s in tensor_indices:
@@ -496,7 +489,7 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
             continue
         idx_key = s.space_and_spin
         # target indices of the corresponding space
-        space_target = target_idx.get(idx_key, [])
+        space_target = target_idx_names.get(idx_key, [])
         # index is a target idx -> keep as is
         if s.name in space_target:
             minimized.add(s)
@@ -510,10 +503,12 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
                 spins = spin * n_unique_indices
             else:
                 spins = None
-            minimal_indices[idx_key] = get_symbols(min_names, spins)
+            min_symbols = get_symbols(min_names, spins)
+            min_symbols.reverse()
+            minimal_indices[idx_key] = min_symbols
 
         # get the lowest available index for the corresponding space
-        min_s = minimal_indices[idx_key].pop(0)
+        min_s = minimal_indices[idx_key].pop()
         minimized.add(min_s)
         if s is min_s:  # s is already the lowest available index
             continue
