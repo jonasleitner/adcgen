@@ -1445,51 +1445,50 @@ class Obj(Container):
 
     def diagonalize_fock(self, target: tuple[Index] = None,
                          return_sympy: bool = False):
-        sub = {}
-        if self.name == tensor_names.fock:  # self contains a fock element
-            space = self.space
-            assert len(space) == 2
-            # off diagonal fock matrix block -> return 0
-            if space[0] != space[1]:
-                diag = 0
-            else:  # diagonal fock block
-                if target is None:
-                    target = self.term.target
-                idx = self.idx  # 0 is preferred, 1 is killable
-                if len(idx) != 2:
-                    raise RuntimeError(f"found fock matrix element {self} that"
-                                       " does not hold exactly 2 indices.")
-                # don't touch:
-                #  - diagonal fock elements (for not loosing
-                #    a contracted index by accident)
-                #  - fock elements with both indices being target indices
-                #    (for not loosing a target index in the term)
-                if idx[0] is idx[1] or all(s in target for s in idx):
-                    diag = self.sympy
-                else:  # we can diagonalize the fock matrix element safely
-                    # killable is contracted -> kill
-                    if idx[1] not in target:
-                        sub[idx[1]] = idx[0]
-                        preferred = idx[0]
-                    # preferred is contracted (and not killable) -> kill
-                    elif idx[0] not in target:
-                        sub[idx[0]] = idx[1]
-                        preferred = idx[1]
-                    # construct a orbital energy e with the preferred idx
-                    diag = Pow(
-                        NonSymmetricTensor(tensor_names.orb_energy,
-                                           (preferred,)),
-                        self.exponent
-                    )
-        else:  # no fock matrix element
-            diag = self.sympy
+        from .func import evaluate_deltas
 
-        if return_sympy:
-            return diag, sub
-        else:
-            assumptions = self.assumptions
-            assumptions['target_idx'] = target
-            return Expr(diag, **assumptions), sub
+        def pack_result(diag, sub, target):
+            if return_sympy:
+                return diag, sub
+            else:
+                assumptions = self.assumptions
+                assumptions['target_idx'] = target
+                return Expr(diag, **assumptions), sub
+
+        if target is None:  # get the target indices if not given
+            target = self.term.target
+
+        if self.name != tensor_names.fock:  # no fock matrix
+            return pack_result(self.sympy, {}, target)
+        p, q = self.idx
+        # build a delta with the indices
+        delta = KroneckerDelta(p, q)
+        if delta is S.Zero:  # off diagonal block
+            return pack_result(delta, {}, target)
+        elif delta is S.One:
+            # diagonal fock element: if we evaluate it, we might loose a
+            # contracted index.
+            return pack_result(self.sympy, {}, target)
+        # try to evaluate the delta
+        result = evaluate_deltas(self.sympy * delta, target_idx=target)
+        if isinstance(result, Mul):  # could not evaluate
+            return pack_result(self.sympy, {}, target)
+        # check which of the indices survived
+        remaining_idx = result.atoms(Index)
+        assert len(remaining_idx) == 1  # only one of the indices can survive
+        remaining_idx = remaining_idx.pop()
+        # dict holding the necessary index substitution
+        sub = {}
+        if p is remaining_idx:  # p survived
+            sub[q] = p
+        else:  # q surived
+            assert q is remaining_idx
+            sub[p] = q
+        diag = Pow(
+            NonSymmetricTensor(tensor_names.orb_energy, (remaining_idx,)),
+            self.exponent
+        )
+        return pack_result(diag, sub, target)
 
     def rename_tensor(self, current: str, new: str,
                       return_sympy: bool = False):
