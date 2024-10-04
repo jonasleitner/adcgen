@@ -1,7 +1,7 @@
 from .expr_container import Expr
 from .misc import Inputerror
 from .rules import Rules
-from .indices import Index, get_symbols, split_idx_string
+from .indices import Index, Indices, get_symbols, split_idx_string
 from .sympy_objects import (
     KroneckerDelta, NonSymmetricTensor, AntiSymmetricTensor, SymmetricTensor,
     Amplitude
@@ -420,6 +420,10 @@ def _contract_operator_string(op_string: list) -> Add:
     contritbutions.
     Adapted from 'sympy.physics.secondquant'.
     """
+    # check that we can get a fully contracted contribution
+    if not _has_fully_contracted_contribution(op_string):
+        return S.Zero
+
     result = []
     for i in range(1, len(op_string)):
         c = _contraction(op_string[0], op_string[i])
@@ -473,3 +477,31 @@ def _contraction(p, q):
                     KroneckerDelta(q_idx, Index('i', below_fermi=True)))
     else:  # vanish if 2xAnnihilator or 2xCreator
         return S.Zero
+
+
+def _has_fully_contracted_contribution(op_string: list[FermionicOperator]
+                                       ) -> bool:
+    """
+    Takes a list of second quantized operators and checks whether a
+    non-vanishing fully contribution can exist.
+    """
+    if len(op_string) % 2:  # odd number of operators
+        return False
+    # count the number of creation and annihilation operators per space
+    create = {space: 0 for space in Indices.base.keys()}
+    annihilate = {space: 0 for space in Indices.base.keys()}
+    for op in op_string:
+        if isinstance(op, Fd):
+            counter = create
+        else:
+            counter = annihilate
+        counter[op.args[0].space] += 1
+    # check that we have a matching amount of creation and annihilation
+    # operators
+    for space, n_create in create.items():
+        if space == "general":
+            continue
+        n_annihilate = annihilate[space] + annihilate["general"]
+        if n_create - n_annihilate > 0:
+            return False
+    return True
