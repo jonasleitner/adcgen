@@ -293,7 +293,7 @@ def generic_indices_from_space(space_str: str) -> list[Index]:
     Thereby, occupied indices are listed before virtual indices!
     """
     generic_idx = Indices().get_generic_indices(**n_ov_from_space(space_str))
-    assert len(generic_idx.keys()) == 2  # only occ and virt
+    assert len(generic_idx.keys()) <= 2  # only occ and virt
     occ = generic_idx.get(("occ", ""), [])
     occ.extend(generic_idx.get(("virt", ""), []))
     return occ
