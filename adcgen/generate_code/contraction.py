@@ -98,13 +98,13 @@ class Contraction:
         # computational scaling
         componentwise = {
             space: contracted_by_space[space] + target_by_space[space]
-            for space in Indices.base.keys()
+            for space in Indices.base
         }
         comp_scaling = ScalingComponent(total=sum(componentwise.values()),
                                         **componentwise)
         # memory scaling
         componentwise = {
-            space: target_by_space[space] for space in Indices.base.keys()
+            space: target_by_space[space] for space in Indices.base
         }
         mem_scaling = ScalingComponent(total=len(self.target),
                                        **componentwise)
@@ -150,3 +150,4 @@ class ScalingComponent:
     general: int
     virt: int
     occ: int
+    core: int

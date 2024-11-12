@@ -21,10 +21,13 @@ class TestAntiSymmetricTensor:
         ab = Index("a", above_fermi=True, beta=True)
         pa = Index("p", alpha=True)
         pb = Index("p", beta=True)
-        ref = AntiSymmetricTensor("V", tuple(),
-                                  (p, pa, pb, i, ia, ib, a, aa, ab))
-        res = AntiSymmetricTensor("V", tuple(),
-                                  (ia, ib, ab, aa, pb, a, p, pa, i))
+        I = Index("I", core=True)  # noqa E741
+        Ia = Index("I", core=True, alpha=True)
+        Ib = Index("I", core=True, beta=True)
+        ref = AntiSymmetricTensor(
+            "V", tuple(), (p, pa, pb, i, ia, ib, I, Ia, Ib, a, aa, ab))
+        res = AntiSymmetricTensor(
+            "V", tuple(), (Ib, ia, I, ib, ab, aa, pb, a, p, Ia, pa, i))
         assert ref - res is S.Zero
 
     def test_bra_ket_symmetry(self):

@@ -1666,8 +1666,9 @@ class Obj(Container):
             elif is_adc_amplitude(name):  # adc amplitudes
                 # need to determine the excitation space as int
                 space = self.space
-                assert all(sp in ["o", "v"] for sp in space)
-                n_o, n_v = space.count("o"), space.count("v")
+                assert all(sp in ["o", "v", "c"] for sp in space)
+                n_o = space.count("o") + space.count("c")
+                n_v = space.count("v")
                 if n_o == n_v:  # pp-ADC
                     n = n_o  # p-h -> 1 // 2p-2h -> 2 etc.
                 else:  # ip-/ea-/dip-/dea-ADC

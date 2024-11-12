@@ -40,8 +40,8 @@ class TestContraction:
         target_indices = (i, j)
         contr = Contraction(indices, names, target_indices)
         scaling = contr.scaling
-        comp = ScalingComponent(3, 0, 0, 3)
-        mem = ScalingComponent(2, 0, 0, 2)
+        comp = ScalingComponent(3, 0, 0, 3, 0)
+        mem = ScalingComponent(2, 0, 0, 2, 0)
         assert scaling.computational == comp
         assert scaling.memory == mem
         assert scaling == Scaling(comp, mem)

@@ -283,7 +283,7 @@ def format_scaling_comment(term: Term, contractions: list[Contraction],
     max_mem_scaling = max(max_mem_scaling, term_memory_requirements(term))
     comp = [f"N^{max_comp_scaling.total}: "]
     mem = [f"N^{max_mem_scaling.total}: "]
-    for space in Indices.base.keys():
+    for space in Indices.base:
         if (n := getattr(max_comp_scaling, space)):
             comp.append(f"{space[0].capitalize()}^{n}")
         if (n := getattr(max_mem_scaling, space)):

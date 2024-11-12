@@ -289,7 +289,8 @@ class KroneckerDelta(Function):
             return S.One
 
         spi, spj = i.space[0], j.space[0]
-        assert spi in ["o", "v", "g"] and spj in ["o", "v", "g"]
+        valid_spaces = ["o", "v", "g", "c"]
+        assert spi in valid_spaces and spj in valid_spaces
         if spi != "g" and spj != "g" and spi != spj:  # delta_ov / delta_vo
             return S.Zero
         spi, spj = i.spin, j.spin
@@ -329,23 +330,28 @@ class KroneckerDelta(Function):
         space1, spin1 = i.space[0], i.spin
         space2, spin2 = j.space[0], j.spin
         # ensure we have no unexpected space and spin
-        assert space1 in ["o", "v", "g"] and space2 in ["o", "v", "g"]
+        assert (
+            space1 in ["o", "v", "g", "c"] and space2 in ["o", "v", "g", "c"]
+        )
         assert spin1 in ["", "a", "b"] and spin2 in ["", "a", "b"]
 
-        if spin1 == spin2:  # nn / aa / bb  -> equal information
-            if space1 == space2 or space2 == "g":  # oo / vv / gg / og / vg
+        if spin1 == spin2:  # nn / aa / bb  -> equal spin information
+            # oo / vv / cc / gg / og / vg / cg
+            if space1 == space2 or space2 == "g":
                 return (i, j)
-            else:  # go / gv
+            else:  # go / gv / gc
                 return (j, i)
-        elif spin2:  # na / nb  -> 2 holds more information
-            if space1 == space2 or space1 == "g":  # oo / vv / gg / go / gv
+        elif spin2:  # na / nb  -> 2 holds more spin information
+            # oo / vv / cc / gg / go / gv / gc
+            if space1 == space2 or space1 == "g":
                 return (j, i)
-            else:  # og / vg  -> 1 holds more space information
+            else:  # og / vg / cg -> 1 holds more space information
                 return None
-        else:  # an / bn  -> 1 holds more information
-            if space1 == space2 or space2 == "g":  # oo / vv / gg / og / vg
+        else:  # an / bn  -> 1 holds more spin information
+            # oo / vv / cc / gg / og / vg / cg
+            if space1 == space2 or space2 == "g":
                 return (i, j)
-            else:  # go / gv  -> 2 holds more space information
+            else:  # go / gv / gc -> 2 holds more space information
                 return None
 
     @property

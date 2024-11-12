@@ -1,4 +1,4 @@
-from adcgen.indices import Indices
+from adcgen.indices import Indices, get_symbols
 
 
 class TestIndices:
@@ -8,47 +8,47 @@ class TestIndices:
         assert idx.get_indices("ijk") == idx.get_indices("ijk")
         assert idx.get_indices("ijk", "aba") == idx.get_indices("ijk", "aba")
         assert idx.get_indices("a", "a") != idx.get_indices("a", "b")
+        res = idx.get_indices("Ij", "ba")
+        I, j = res[("core", "b")].pop(), res[("occ", "a")].pop()
+        assert I.space == "core" and I.spin == "b"
+        assert j.space == "occ" and j.spin == "a"
 
     def test_get_generic_indices(self):
         # ensure that generic indices don't overlap
         # can't explicitly test for names since the class is a singleton
         # and therefore the result would depend on the previous tests
         idx = Indices()
-        occ = len(idx._symbols["occ"][""])
-        occ_a = len(idx._symbols["occ"]["a"])
-        occ_b = len(idx._symbols["occ"]["b"])
+        for space in idx.base:
+            n_wo_spin = len(idx._symbols[space][""])
+            n_alpha = len(idx._symbols[space]["a"])
+            n_beta = len(idx._symbols[space]["b"])
+            kwargs = {space: 2}
+            assert (idx.get_generic_indices(**kwargs) !=
+                    idx.get_generic_indices(**kwargs))
+            assert n_wo_spin + 4 == len(idx._symbols[space][""])
+            kwargs = {f"{space}_a": 2}
+            assert (idx.get_generic_indices(**kwargs) !=
+                    idx.get_generic_indices(**kwargs))
+            assert n_alpha + 4 == len(idx._symbols[space]["a"])
+            kwargs = {f"{space}_b": 2}
+            assert (idx.get_generic_indices(**kwargs) !=
+                    idx.get_generic_indices(**kwargs))
+            assert n_beta + 4 == len(idx._symbols[space]["b"])
 
-        assert idx.get_generic_indices(occ=2) != idx.get_generic_indices(occ=2)
-        assert occ + 4 == len(idx._symbols["occ"][""])
-        assert idx.get_generic_indices(occ_a=2) != \
-            idx.get_generic_indices(occ_a=2)
-        assert occ_a + 4 == len(idx._symbols["occ"]["a"])
-        assert idx.get_generic_indices(occ_b=2) != \
-            idx.get_generic_indices(occ_b=2)
-        assert occ_b + 4 == len(idx._symbols["occ"]["b"])
-
-        virt = len(idx._symbols["virt"][""])
-        virt_a = len(idx._symbols["virt"]["a"])
-        virt_b = len(idx._symbols["virt"]["b"])
-        assert idx.get_generic_indices(virt=2) != \
-            idx.get_generic_indices(virt=2)
-        assert idx.get_generic_indices(virt_a=2) != \
-            idx.get_generic_indices(virt_a=2)
-        assert idx.get_generic_indices(virt_b=2) != \
-            idx.get_generic_indices(virt_b=2)
-        assert virt + 4 == len(idx._symbols["virt"][""])
-        assert virt_a + 4 == len(idx._symbols["virt"]["a"])
-        assert virt_b + 4 == len(idx._symbols["virt"]["b"])
-
-        g = len(idx._symbols["general"][""])
-        g_a = len(idx._symbols["general"]["a"])
-        g_b = len(idx._symbols["general"]["b"])
-        assert idx.get_generic_indices(general=2) != \
-            idx.get_generic_indices(general=2)
-        assert idx.get_generic_indices(general_a=2) != \
-            idx.get_generic_indices(general_a=2)
-        assert idx.get_generic_indices(general_b=2) != \
-            idx.get_generic_indices(general_b=2)
-        assert g + 4 == len(idx._symbols["general"][""])
-        assert g_a + 4 == len(idx._symbols["general"]["a"])
-        assert g_b + 4 == len(idx._symbols["general"]["b"])
+    def test_get_symbols(self):
+        # without spin
+        idx = Indices().get_indices("iIa")
+        i = idx[("occ", "")].pop()
+        I = idx[("core", "")].pop()  # noqa E741
+        a = idx[("virt", "")].pop()
+        assert i is get_symbols("i").pop()
+        assert [i, I, a] == get_symbols("iIa")
+        assert [a, i, I] == get_symbols("aiI")
+        # with spin
+        idx = Indices().get_indices("iIa", "abb")
+        i = idx[("occ", "a")].pop()
+        I = idx[("core", "b")].pop()  # noqa E741
+        a = idx[("virt", "b")].pop()
+        assert i is get_symbols("i", "a").pop()
+        assert [i, I, a] == get_symbols("iIa", "abb")
+        assert [a, i, I] == get_symbols("aiI", "bab")

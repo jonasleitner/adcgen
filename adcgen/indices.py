@@ -9,6 +9,7 @@ class Index(Dummy):
     Important assumptions:
     - below_fermi: The index represents an occupied orbital.
     - above_fermi: The index represents a virtual orbital.
+    - core: The index represents a core orbital.
     - alpha: The index represents an alpha (spatial) orbital.
     - beta: The index represents a beta (spatial) orbital.
     """
@@ -28,11 +29,15 @@ class Index(Dummy):
 
     @property
     def space(self) -> str:
-        """The space to which the index belongs (occupied/virtual/general)."""
+        """
+        The space to which the index belongs (core/occupied/virtual/general).
+        """
         if self.assumptions0.get("below_fermi"):
             return "occ"
         elif self.assumptions0.get("above_fermi"):
             return "virt"
+        elif self.assumptions0.get("core"):
+            return "core"
         else:
             return "general"
 
@@ -68,7 +73,8 @@ class Indices(metaclass=Singleton):
     """
     # the valid spaces with their corresponding associated index names
     base = {
-        "occ": "ijklmno", "virt": "abcdefgh", "general": "pqrstuvw"
+        "occ": "ijklmno", "virt": "abcdefgh", "general": "pqrstuvw",
+        "core": "IJKLMNO"
     }
     # the valid spins
     spins = ("", "a", "b")
@@ -89,7 +95,7 @@ class Indices(metaclass=Singleton):
         # for the generation of generic indices.
         self._counter: dict[str, dict[str, int]] = {}
         # initialize the data structures
-        for space in self.base.keys():
+        for space in self.base:
             self._symbols[space] = {}
             self._generic_indices[space] = {}
             self._counter[space] = {}
@@ -227,6 +233,8 @@ class Indices(metaclass=Singleton):
             assumptions["below_fermi"] = True
         elif space == "virt":
             assumptions["above_fermi"] = True
+        elif space == "core":
+            assumptions["core"] = True
         elif space != "general":
             raise ValueError(f"Invalid space {space}")
         if spin:
@@ -250,14 +258,17 @@ def index_space(idx: str) -> str:
 def sort_idx_canonical(idx: Index):
     """Use as sort key to to bring indices in canonical order."""
     if isinstance(idx, Index):
-        # also add the hash here for wicks, where multiple i are around
-        return (idx.space[0],
+        # - also add the hash here for wicks, where multiple i are around
+        # - we have to map the spaces onto numbers, since in adcman and adcc
+        # the ordering o < c < v is used for the definition of canonical blocks
+        space_keys = {"g": 0, "o": 1, "c": 2, "v": 3}
+        return (space_keys[idx.space[0]],
                 idx.spin,
                 int(idx.name[1:]) if idx.name[1:] else 0,
                 idx.name[0],
                 hash(idx))
     else:  # necessary for subs to work correctly with simultaneous=True
-        return ('', 0, str(idx), hash(idx))
+        return (-1, "", 0, str(idx), hash(idx))
 
 
 def split_idx_string(str_tosplit: str) -> list[str]:
@@ -284,7 +295,7 @@ def n_ov_from_space(space_str: str):
     Number of required occupied and virtual indices required for the given
     exictation space, e.g., "pph" -> 2 virtual and 1 occupied index.
     """
-    return {'occ': space_str.count('h'), 'virt': space_str.count('p')}
+    return {"occ": space_str.count("h"), "virt": space_str.count("p")}
 
 
 def generic_indices_from_space(space_str: str) -> list[Index]:
@@ -293,7 +304,7 @@ def generic_indices_from_space(space_str: str) -> list[Index]:
     Thereby, occupied indices are listed before virtual indices!
     """
     generic_idx = Indices().get_generic_indices(**n_ov_from_space(space_str))
-    assert len(generic_idx.keys()) <= 2  # only occ and virt
+    assert len(generic_idx) <= 2  # only occ and virt
     occ = generic_idx.get(("occ", ""), [])
     occ.extend(generic_idx.get(("virt", ""), []))
     return occ
@@ -336,7 +347,7 @@ def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
 def get_symbols(indices: str | Index | list[str] | list[Index],
                 spins: str | None = None) -> list[Index]:
     """
-    Uses the Indices class to initialize 'Index' instances with the
+    Wrapper around the Indices class to initialize 'Index' instances with the
     provided names and spin.
 
     Parameters

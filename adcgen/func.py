@@ -488,8 +488,8 @@ def _has_fully_contracted_contribution(op_string: list[FermionicOperator]
     if len(op_string) % 2:  # odd number of operators
         return False
     # count the number of creation and annihilation operators per space
-    create = {space: 0 for space in Indices.base.keys()}
-    annihilate = {space: 0 for space in Indices.base.keys()}
+    create = {space: 0 for space in Indices.base}
+    annihilate = {space: 0 for space in Indices.base}
     for op in op_string:
         if isinstance(op, Fd):
             counter = create

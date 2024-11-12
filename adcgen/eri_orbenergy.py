@@ -352,7 +352,7 @@ class EriOrbenergy:
                 signs[ov].append(term.sign)
 
             # map that connects sign and space
-            desired_sign = {'o': 'plus', 'v': 'minus'}
+            desired_sign = {"o": "plus", "v": "minus"}
 
             # adjust sign if necessary
             change_sign = []
