@@ -384,7 +384,8 @@ def get_symbols(indices: str | Index | list[str] | list[Index],
     return ret
 
 
-def order_substitutions(subsdict: dict[Index, Index]) -> list:
+def order_substitutions(subsdict: dict[Index, Index]
+                        ) -> list[tuple[Index, Index]]:
     """
     Order substitutions such that only a minial amount of intermediate
     indices is required when the substitutions are executed one after another
@@ -392,7 +393,6 @@ def order_substitutions(subsdict: dict[Index, Index]) -> list:
     Adapted from the 'substitute_dummies' function defined in
     'sympy.physics.secondquant'.
     """
-    from .sympy_objects import Index
 
     subs = []
     final_subs = []
