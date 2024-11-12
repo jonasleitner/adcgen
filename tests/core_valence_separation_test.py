@@ -1,5 +1,5 @@
 from adcgen.core_valence_separation import (
-    introduce_core_target_indices
+    introduce_core_target_indices, expand_occupied_indices
 )
 from adcgen.expr_container import Expr
 from adcgen.indices import get_symbols
@@ -51,3 +51,18 @@ class TestCoreValenceSeparation:
             introduce_core_target_indices(Expr(tensor), "i")
         with pytest.raises(Inputerror):  # invalid core index
             introduce_core_target_indices(Expr(tensor), "p")
+
+    def test_expand_occupied_indices(self):
+        # trivial case: allow all blocks (no CVS approximation)
+        i, j, a, b = get_symbols("ijab")
+        I, J = get_symbols("IJ")
+        tensor = AntiSymmetricTensor("V", (i, j), (a, b))
+        res = expand_occupied_indices(Expr(tensor, target_idx=""))
+        ref = (AntiSymmetricTensor("V", (i, j), (a, b)) +
+               AntiSymmetricTensor("V", (I, j), (a, b)) +
+               AntiSymmetricTensor("V", (i, J), (a, b)) +
+               AntiSymmetricTensor("V", (I, J), (a, b)))
+        assert res.sympy - ref is S.Zero
+        # even more trivial: no occupied contracted indices
+        res = expand_occupied_indices(Expr(tensor, target_idx="ij"))
+        assert res.sympy - tensor is S.Zero

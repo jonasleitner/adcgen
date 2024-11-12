@@ -5,6 +5,9 @@ from .sympy_objects import SymbolicTensor, KroneckerDelta
 from .tensor_names import tensor_names
 
 from sympy.physics.secondquant import FermionicOperator
+from sympy import S
+
+import itertools
 
 
 def apply_cvs_approximation(expr: Expr, core_indices: str,
@@ -16,9 +19,9 @@ def apply_cvs_approximation(expr: Expr, core_indices: str,
 
     Parameters
     ----------
-    expr : Expr
+    expr: Expr
         Expression the CVS approximation should be applied to.
-    core_indices : str
+    core_indices: str
         The names of the core target indices to introduce assuming we currently
         have occupied target indices with matching names in the expression,
         e.g., "IJ" will transform the occupied target indices "ij" to the core
@@ -32,6 +35,7 @@ def apply_cvs_approximation(expr: Expr, core_indices: str,
     expr = introduce_core_target_indices(
         expr, core_target_indices=core_indices, spin=spin
     )
+    return expand_occupied_indices(expr, is_allowed_cvs_block)
 
 
 def introduce_core_target_indices(expr: Expr, core_target_indices: str,
@@ -92,6 +96,82 @@ def introduce_core_target_indices(expr: Expr, core_target_indices: str,
     return expr
 
 
+def expand_occupied_indices(expr: Expr,
+                            is_allowed_cvs_block: callable = None
+                            ) -> Expr:
+    """
+    Expands the contracted occupied indices into a core and valence index,
+    where the valence index will be denoted as occupied index in the result.
+
+    Parameters
+    ----------
+    expr : Expr
+        The expression in which to expand the contracted occupied indices.
+    is_allowed_cvs_block : callable | None, optional
+        Callable that takes an expr_container.Obj instance and returns a bool
+        indicating whether the object is valid within the CVS approximation,
+        i.e., whether the tensor block does vanish or not.
+        If no callable is provided no blocks are assumed to vanish.
+    """
+    if is_allowed_cvs_block is None:
+        is_allowed_cvs_block = allow_all_cvs_blocks
+
+    result = Expr(0, **expr.assumptions)
+    for term in expr.terms:
+        # - we have a number -> no indices -> nothing to do
+        if not term.idx:
+            result += term
+        # get the contracted indices and
+        # ensure that we have no contracted core indices
+        contracted = term.contracted
+        if any(idx.space == "core" for idx in contracted):
+            raise ValueError(f"Found a contracted core index in term {term}. "
+                             "Can not safely expand the occupied contracted "
+                             "indices.")
+        # get the occupied contracted indices
+        occupied_indices = tuple(
+            idx for idx in contracted if idx.space == "occ"
+        )
+        # and build core indices for all occupied indices
+        core_indices = tuple(
+            get_symbols([idx.name.upper()], [idx.spin])[0]
+            for idx in occupied_indices
+        )
+        # build all combinations of the core and valence (occ) space
+        expansion_variants = itertools.product(
+            ["occ", "core"], repeat=len(occupied_indices)
+        )
+        for variant in expansion_variants:
+            # for ech combination/variant build a substitution dict
+            constracted_subs: dict[Index, Index] = {}
+            for space, occ_idx, core_idx in \
+                    zip(variant, occupied_indices, core_indices):
+                if space != "core":
+                    continue
+                constracted_subs[occ_idx] = core_idx
+            # apply the substituions to the term
+            if constracted_subs:
+                sub_term = term.subs(
+                    order_substitutions(constracted_subs)
+                ).terms[0]
+                assert sub_term.sympy is not S.Zero  # invalid subsitutions
+            else:
+                sub_term = term
+            # go through the objects and check whether they are valid within
+            # the CVS approximation
+            if all(is_allowed_cvs_block(obj) for obj in sub_term.objects):
+                result += sub_term
+    return result
+
+
+def allow_all_cvs_blocks(obj: Obj) -> bool:
+    return True
+
+
+def is_allowed_cvs_block(obj: Obj) -> bool:
+    raise NotImplementedError
+
+
 def allowed_cvs_blocks(object: Obj) -> tuple[str] | None:
     # prefactor or symbol have no indices -> no allowed cvs blocks
     if not object.idx:
@@ -116,11 +196,10 @@ def allowed_cvs_eri_blocks(eri: Obj) -> tuple[str] | None:
     # NOTE: according to 10.1063/1.1418437
     # the ERI blocks: ccoo, oocc, ccvv, vvcc
     # only vanish if they occur in a block that couples configurations with
-    # different core level occupations (DCO), which should be neglected
+    # different core-level occupations (DCO), which should be neglected
     # automatically by only considering non-DCO blocks. Therefore, the 4
     # ERI blocks in principle have to be considered.
     # However, in an earlier paper (10.1063/1.453424) those blocks were also
     # neglected and in the current CVS implementation in adcman/adcc those
     # blocks are neglected.
-    # For now those blocks will be neglected!
     pass
