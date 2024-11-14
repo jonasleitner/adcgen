@@ -5,7 +5,7 @@ from .indices import (
 from .logger import logger
 from .misc import Inputerror
 from .sympy_objects import SymbolicTensor
-from .tensor_names import tensor_names
+from .tensor_names import tensor_names, is_t_amplitude
 
 from sympy.physics.secondquant import FermionicOperator
 from sympy import S
@@ -190,9 +190,8 @@ def is_allowed_cvs_block(obj: Obj) -> bool:
             return is_allowed_cvs_eri_block(obj)
         elif name == tensor_names.coulomb:
             return is_allowed_cvs_coulomb_block(obj)
-        # TODO: For t-amplitudes we seem to only have the ov/oovv/ooovvv/...
-        # blocks as allowed blocks.
-        # -> all core orbitals can be ignored
+        elif is_t_amplitude(name):
+            return is_allowed_cvs_t_amplitude_block(obj)
     elif isinstance(sympy_obj, FermionicOperator):
         return True
     # deltas should be handled automatically within the class
@@ -258,6 +257,24 @@ def is_allowed_cvs_eri_block(eri: Obj) -> bool:
     return True
 
 
+def is_allowed_cvs_t_amplitude_block(amplitude: Obj) -> bool:
+    """
+    Whether the given block of a ground state t-amplitude is valid within
+    the CVS approximation
+    """
+    # t-amplitudes seem to follow the rule that only the valence space
+    # has to be considered, i.e., all core orbitals can simply
+    # be neglected.
+    # t2_1: oovv   t1_2: ov   t2_2: oovv   t3_2: ooovvv   t4_2: oooovvvv
+    space = amplitude.space
+    assert not len(space) % 2
+    assert all(sp == "v" for sp in space[len(space)//2:])
+    if space.count("c"):
+        return False
+    assert all(sp == "o" for sp in space[:len(space)//2])
+    return True
+
+
 def allowed_cvs_blocks(expr: Expr, target_idx: str, spin: str | None = None,
                        is_allowed_cvs_block: callable = None) -> tuple[str]:
     """
@@ -312,7 +329,6 @@ def allowed_cvs_blocks(expr: Expr, target_idx: str, spin: str | None = None,
             # invalid substitutions -> invalid variant
             if sub_term.sympy is S.Zero:
                 continue
-            # update the asusmptions if necessary
             # expand the occupied contracted indices and check if we
             # get some contribution
             sub_term = expand_occupied_indices(

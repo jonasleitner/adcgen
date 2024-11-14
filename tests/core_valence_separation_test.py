@@ -4,10 +4,9 @@ from adcgen.core_valence_separation import (
 )
 from adcgen.expr_container import Expr
 from adcgen.indices import get_symbols
+from adcgen.intermediates import Intermediates, RegisteredIntermediate
 from adcgen.misc import Inputerror
-from adcgen.sympy_objects import (
-    AntiSymmetricTensor, SymmetricTensor, Amplitude
-)
+from adcgen.sympy_objects import AntiSymmetricTensor, SymmetricTensor
 from adcgen.tensor_names import tensor_names
 
 from sympy import S
@@ -103,7 +102,7 @@ class TestCoreValenceSeparation:
         assert is_allowed_cvs_block(Expr(eri).terms[0].objects[0])
 
     def test_allowed_cvs_blocks(self):
-        i, j, k, l, a, b = get_symbols("ijklab")  # noqa E741
+        i, j, k, l = get_symbols("ijkl")  # noqa E741
         # Coulomb
         coulomb = SymmetricTensor(tensor_names.coulomb, (i, j), (k, l))
         res = allowed_cvs_blocks(Expr(coulomb), "ijkl",
@@ -114,16 +113,23 @@ class TestCoreValenceSeparation:
         res = allowed_cvs_blocks(Expr(eri), "ijkl",
                                  is_allowed_cvs_block=is_allowed_cvs_block)
         assert res == ("oooo", "ococ", "occo", "cooc", "coco", "cccc")
-        # MP amplitudes
-        t2_1 = Amplitude("t1", (a, b), (i, j))
-        res = allowed_cvs_blocks(Expr(t2_1), "ijab",
+        # MP amplitudes: check that we get the same result as for the
+        # expanded version
+        t2_1: RegisteredIntermediate = Intermediates().available["t2_1"]
+        res = allowed_cvs_blocks(Expr(t2_1.tensor()), "ijab",
                                  is_allowed_cvs_block=is_allowed_cvs_block)
         assert res == ("oovv",)
-        t1_2 = Amplitude("t2", (a,), (i,))
-        res = allowed_cvs_blocks(Expr(t1_2), "ia",
+        res = t2_1.allowed_cvs_blocks(is_allowed_cvs_block)
+        assert res == ("oovv",)
+        t1_2: RegisteredIntermediate = Intermediates().available["t1_2"]
+        res = allowed_cvs_blocks(Expr(t1_2.tensor()), "ia",
                                  is_allowed_cvs_block=is_allowed_cvs_block)
         assert res == ("ov",)
-        t2_2 = Amplitude("t2", (a, b), (i, j))
-        res = allowed_cvs_blocks(Expr(t2_2), "ijab",
+        res = t1_2.allowed_cvs_blocks(is_allowed_cvs_block)
+        assert res == ("ov",)
+        t2_2: RegisteredIntermediate = Intermediates().available["t2_2"]
+        res = allowed_cvs_blocks(Expr(t2_2.tensor()), "ijab",
                                  is_allowed_cvs_block=is_allowed_cvs_block)
+        assert res == ("oovv",)
+        res = t2_2.allowed_cvs_blocks(is_allowed_cvs_block)
         assert res == ("oovv",)
