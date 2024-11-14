@@ -286,8 +286,8 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
     for term in expr.terms:
         # - ensure that the term has matching target indices
         if term.target != sorted_target:
-            raise ValueError(f"Target indices of {term} {term.target} dont "
-                             f"match the desired target indices {target_idx}")
+            raise ValueError(f"Target indices {term.target} of {term} dont "
+                             f"match the provided target indices {target_idx}")
         # - extract the allowed blocks for all tensors and initialize
         #   index maps to relate indices to a spin
         term_idx_maps = []

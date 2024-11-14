@@ -1,3 +1,4 @@
+from .core_valence_separation import allowed_cvs_blocks
 from .indices import get_symbols, order_substitutions, sort_idx_canonical
 from .indices import Indices
 from .indices import Index
@@ -231,6 +232,26 @@ class RegisteredIntermediate:
         target_idx = self.default_idx
         itmd = self.expand_itmd(indices=target_idx, fully_expand=False)
         return allowed_spin_blocks(itmd.expand(), target_idx)
+
+    @cached_member
+    def allowed_cvs_blocks(self, is_allowed_cvs_block: callable = None
+                           ) -> tuple[str]:
+        """
+        Splits the occupied orbitals in core and valence orbitals and
+        determines the valid blocks if the CVS approximation is applied.
+
+        Parameters
+        ----------
+        is_allowed_cvs_block: callable, optional
+            Callable that takes an expr_container.Obj instance and returns a
+            bool indicating whether the object is valid within the CVS
+            approximation, i.e., whether the tensor block does vanish or not.
+            If no callable is provided no blocks are assumed to vanish.
+        """
+        target_idx = self.default_idx
+        itmd = self.expand_itmd(indices=target_idx, fully_expand=False)
+        return allowed_cvs_blocks(itmd.expand(), target_idx,
+                                  is_allowed_cvs_block=is_allowed_cvs_block)
 
     @cached_member
     def itmd_term_map(self,

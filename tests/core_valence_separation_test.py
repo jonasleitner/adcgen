@@ -1,10 +1,14 @@
 from adcgen.core_valence_separation import (
-    introduce_core_target_indices, expand_occupied_indices
+    introduce_core_target_indices, expand_occupied_indices,
+    is_allowed_cvs_block, allowed_cvs_blocks
 )
 from adcgen.expr_container import Expr
 from adcgen.indices import get_symbols
 from adcgen.misc import Inputerror
-from adcgen.sympy_objects import AntiSymmetricTensor
+from adcgen.sympy_objects import (
+    AntiSymmetricTensor, SymmetricTensor, Amplitude
+)
+from adcgen.tensor_names import tensor_names
 
 from sympy import S
 
@@ -16,6 +20,9 @@ class TestCoreValenceSeparation:
         # without spin
         i, j, a, b = get_symbols("ijab")
         tensor = AntiSymmetricTensor("t", (i, j), (a, b))
+        # no core indices to introduce -> leave input unchanged
+        res = introduce_core_target_indices(Expr(tensor), "").sympy
+        assert res - tensor is S.Zero
         res = introduce_core_target_indices(Expr(tensor), "I").sympy
         I, J = get_symbols("IJ")
         ref = AntiSymmetricTensor("t", (I, j), (a, b))
@@ -66,3 +73,57 @@ class TestCoreValenceSeparation:
         # even more trivial: no occupied contracted indices
         res = expand_occupied_indices(Expr(tensor, target_idx="ij"))
         assert res.sympy - tensor is S.Zero
+
+    def test_is_allowed_cvs_block(self):
+        i, j, k, l, I, J, K, L = get_symbols("ijklIJKL")
+        coulomb = SymmetricTensor(tensor_names.coulomb, (i, j), (k, l))
+        assert is_allowed_cvs_block(Expr(coulomb).terms[0].objects[0])
+        coulomb = SymmetricTensor(tensor_names.coulomb, (I, j), (k, l))
+        assert not is_allowed_cvs_block(Expr(coulomb).terms[0].objects[0])
+        coulomb = SymmetricTensor(tensor_names.coulomb, (I, J), (k, l))
+        assert is_allowed_cvs_block(Expr(coulomb).terms[0].objects[0])
+        coulomb = SymmetricTensor(tensor_names.coulomb, (I, j), (K, l))
+        assert not is_allowed_cvs_block(Expr(coulomb).terms[0].objects[0])
+        coulomb = SymmetricTensor(tensor_names.coulomb, (I, J), (K, l))
+        assert not is_allowed_cvs_block(Expr(coulomb).terms[0].objects[0])
+        coulomb = SymmetricTensor(tensor_names.coulomb, (I, J), (K, L))
+        assert is_allowed_cvs_block(Expr(coulomb).terms[0].objects[0])
+
+        eri = AntiSymmetricTensor(tensor_names.eri, (i, j), (k, l))
+        assert is_allowed_cvs_block(Expr(eri).terms[0].objects[0])
+        eri = AntiSymmetricTensor(tensor_names.eri, (i, J), (k, l))
+        assert not is_allowed_cvs_block(Expr(eri).terms[0].objects[0])
+        eri = AntiSymmetricTensor(tensor_names.eri, (I, J), (k, l))
+        assert not is_allowed_cvs_block(Expr(eri).terms[0].objects[0])
+        eri = AntiSymmetricTensor(tensor_names.eri, (i, J), (k, L))
+        assert is_allowed_cvs_block(Expr(eri).terms[0].objects[0])
+        eri = AntiSymmetricTensor(tensor_names.eri, (I, J), (k, L))
+        assert not is_allowed_cvs_block(Expr(eri).terms[0].objects[0])
+        eri = AntiSymmetricTensor(tensor_names.eri, (I, J), (K, L))
+        assert is_allowed_cvs_block(Expr(eri).terms[0].objects[0])
+
+    def test_allowed_cvs_blocks(self):
+        i, j, k, l, a, b = get_symbols("ijklab")  # noqa E741
+        # Coulomb
+        coulomb = SymmetricTensor(tensor_names.coulomb, (i, j), (k, l))
+        res = allowed_cvs_blocks(Expr(coulomb), "ijkl",
+                                 is_allowed_cvs_block=is_allowed_cvs_block)
+        assert res == ("oooo", "oocc", "ccoo", "cccc")
+        # ERI
+        eri = AntiSymmetricTensor(tensor_names.eri, (i, j), (k, l))
+        res = allowed_cvs_blocks(Expr(eri), "ijkl",
+                                 is_allowed_cvs_block=is_allowed_cvs_block)
+        assert res == ("oooo", "ococ", "occo", "cooc", "coco", "cccc")
+        # MP amplitudes
+        t2_1 = Amplitude("t1", (a, b), (i, j))
+        res = allowed_cvs_blocks(Expr(t2_1), "ijab",
+                                 is_allowed_cvs_block=is_allowed_cvs_block)
+        assert res == ("oovv",)
+        t1_2 = Amplitude("t2", (a,), (i,))
+        res = allowed_cvs_blocks(Expr(t1_2), "ia",
+                                 is_allowed_cvs_block=is_allowed_cvs_block)
+        assert res == ("ov",)
+        t2_2 = Amplitude("t2", (a, b), (i, j))
+        res = allowed_cvs_blocks(Expr(t2_2), "ijab",
+                                 is_allowed_cvs_block=is_allowed_cvs_block)
+        assert res == ("oovv",)
