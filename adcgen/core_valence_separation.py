@@ -1,10 +1,8 @@
-from .expr_container import Expr, Obj, Polynom, NormalOrdered
-from .indices import (
-    Index, get_symbols, order_substitutions, sort_idx_canonical
-)
+from .expr_container import Expr, Term, Obj, Polynom, NormalOrdered
+from .indices import Index, get_symbols, sort_idx_canonical
 from .logger import logger
 from .misc import Inputerror
-from .sympy_objects import SymbolicTensor
+from .sympy_objects import SymbolicTensor, KroneckerDelta
 from .tensor_names import tensor_names, is_t_amplitude
 
 from sympy.physics.secondquant import FermionicOperator
@@ -18,7 +16,7 @@ def apply_cvs_approximation(expr: Expr, core_indices: str,
     """
     Apply the core-valence approximation to the given expression by
     splitting the occupied space into core and valence space.
-    Furthermore certain ERI blocks are assumed to vanish.
+    Furthermore certain ERI/Coulomb blocks are assumed to vanish.
 
     Parameters
     ----------
@@ -33,143 +31,121 @@ def apply_cvs_approximation(expr: Expr, core_indices: str,
         The spin of the core indices, e.g., "aa" for two core indices with
         alpha spin.
     """
+    # NOTE: Index substitutions have to be performed for all indices
+    # simultaneously, to avoid creating an intermediate delta_cx that is then
+    # further substituted to a delta_cc for instance. However, the delta_cx
+    # will be evalauted to zero upon creation and therefore some terms might
+    # vanish by accident.
     if not isinstance(expr, Expr):
         raise Inputerror("Expression needs to be provided as Expr instance.")
-    expr = introduce_core_target_indices(
-        expr, core_target_indices=core_indices, spin=spin
-    )
-    return expand_occupied_indices(expr, is_allowed_cvs_block)
-
-
-def introduce_core_target_indices(expr: Expr, core_target_indices: str,
-                                  spin: str | None = None):
-    """
-    Replaces certain occupied target indices in the expression by the
-    corresponding core indices.
-
-    Parameters
-    ----------
-    Expr : Expr
-        The expression where to introduce the core indices
-    core_target_indices : str
-        The names of the core target indices to introduce assuming we currently
-        have occupied target indices with matching names in the expression,
-        e.g., "IJ" will transform the occupied target indices "ij" to the core
-        target indices "IJ".
-    spin: str | None, optional
-        The spin of the core indices, e.g., "aa" for two core indices with
-        alpha spin.
-    """
-    if not isinstance(expr, Expr):
-        raise Inputerror("Expression needs to be provided as Expr instance.")
-    if not core_target_indices:  # nothing to do
-        return expr
-    # ensure that the provided core indices are valid core indices
-    core_indices: list[Index] = get_symbols(core_target_indices, spin)
+    core_indices = get_symbols(core_indices, spin)
+    # ensure that the provided core indices are valid
     if not all(idx.space == "core" for idx in core_indices):
         raise Inputerror(f"The provided core indices {core_indices} are no "
                          "valid core indices, i.e., they do not belong to the"
                          " core space.")
-    # for each core index build the corresponding occupied index
-    occ_indices = get_occ_indices(core_indices)
     # get the target indices of the expression
     terms = expr.terms
     target_indices = terms[0].target
     assert all(term.target == target_indices for term in terms)
-    # try to find the occupied target index for each provided core index
-    subs: dict[Index, Index] = {}
-    for core_idx, occ_idx in zip(core_indices, occ_indices):
-        found = False
-        for target_idx in target_indices:
-            if occ_idx is target_idx:
-                found = True
-                subs[target_idx] = core_idx
-                break
-        if not found:
-            raise ValueError("Could not find a matching occupied target index "
-                             f"for the core index {core_idx}. Looked for "
-                             f"{occ_idx} in {target_indices}.")
-    # apply the target index substitutions
-    expr = expr.subs(order_substitutions(subs))
-    # and update the provided target indices
-    if expr.provided_target_idx is not None:
-        provided_target = [
-            subs.get(idx, idx) for idx in expr.provided_target_idx
-        ]
-        expr.set_target_idx(provided_target)
-    return expr
-
-
-def expand_occupied_indices(expr: Expr,
-                            is_allowed_cvs_block: callable = None
-                            ) -> Expr:
-    """
-    Expands the contracted occupied indices into a core and valence index,
-    where the valence index will be denoted as occupied index in the result.
-
-    Parameters
-    ----------
-    expr : Expr
-        The expression in which to expand the contracted occupied indices.
-    is_allowed_cvs_block : callable | None, optional
-        Callable that takes an expr_container.Obj instance and returns a bool
-        indicating whether the object is valid within the CVS approximation,
-        i.e., whether the tensor block does vanish or not.
-        If no callable is provided no blocks are assumed to vanish.
-    """
-    if is_allowed_cvs_block is None:
-        is_allowed_cvs_block = allow_all_cvs_blocks
+    # for each occupied target index build the corresponding core index
+    occupied_target_indices = tuple(
+        idx for idx in target_indices if idx.space == "occ"
+    )
+    occ_target_as_core = get_core_indices(occupied_target_indices)
+    # build the substitution dict for the occupied target indices
+    target_subs = {occ: core for occ, core in
+                   zip(occupied_target_indices, occ_target_as_core)
+                   if core in core_indices}
 
     result = Expr(0, **expr.assumptions)
-    for term in expr.terms:
-        # - we have a number -> no indices -> nothing to do
-        if not term.idx:
-            result += term
-        # get the contracted indices and
-        # ensure that we have no contracted core indices
-        contracted = term.contracted
-        if any(idx.space == "core" for idx in contracted):
-            raise ValueError(f"Found a contracted core index in term {term}. "
-                             "Can not safely expand the occupied contracted "
-                             "indices.")
-        # get the occupied contracted indices
-        # and build core indices for all occupied indices
-        occupied_indices = [idx for idx in contracted if idx.space == "occ"]
-        core_indices = get_core_indices(occupied_indices)
-        # build all combinations of the core and valence (occ) space
-        expansion_variants = itertools.product(
-            ["occ", "core"], repeat=len(occupied_indices)
+    for term in terms:
+        result += expand_contracted_indices(
+            term, target_subs=target_subs,
+            is_allowed_cvs_block=is_allowed_cvs_block
         )
-        for variant in expansion_variants:
-            # for ech combination/variant build a substitution dict
-            constracted_subs: dict[Index, Index] = {}
-            for space, occ_idx, core_idx in \
-                    zip(variant, occupied_indices, core_indices):
-                if space != "core":
-                    continue
-                constracted_subs[occ_idx] = core_idx
-            # apply the substituions to the term
-            if constracted_subs:
-                sub_term = term.subs(
-                    order_substitutions(constracted_subs)
-                ).terms[0]
-                # maybe we created delta_co -> invalid variant
-                if sub_term.sympy is S.Zero:
-                    continue
-            else:
-                sub_term = term
-            # go through the objects and check whether they are valid within
-            # the CVS approximation
-            if all(is_allowed_cvs_block(obj) for obj in sub_term.objects):
-                result += sub_term
+    # update the set target indices if necessary
+    if result.provided_target_idx is not None:
+        result_target = tuple(target_subs.get(s, s) for s in target_indices)
+        result.set_target_idx(result_target)
     return result
 
 
-def allow_all_cvs_blocks(obj: Obj) -> bool:
+def expand_contracted_indices(term: Term, target_subs: dict[Index, Index],
+                              is_allowed_cvs_block: callable = None) -> Expr:
+    """
+    Expands the contracted occupied indices in the given term into core
+    and valence indices. Note that valence indices are denoted as occupied
+    in the result.
+
+    Parameters
+    ----------
+    term: Term
+        Term in which to expand the occupied contracted indices
+    target_subs: dict[Index, Index]
+        The substitution dict containing the necessary occ -> core
+        substitutions for the target indices. Will not be modified in this
+        function!
+    is_allowed_cvs_block : callable | None, optional
+        Callable that takes an expr_container.Obj instance and a space string
+        (e.g. 'covv'). It returns a bool indicating whether the block of the
+        object described by the space string is valid within the CVS
+        approximation, i.e., whether the block is neglected or not.
+        If no callable is provided no blocks are neglected.
+    """
+    if not term.idx:  # term is a number -> nothing to do
+        return Expr(term.sympy, **term.assumptions)
+
+    if is_allowed_cvs_block is None:
+        is_allowed_cvs_block = allow_all_cvs_blocks
+    # get the contracted occupied indices
+    # and build the corresponding core indices
+    contracted = term.contracted
+    occupied_contracted = tuple(
+        idx for idx in contracted if idx.space == "occ"
+    )
+    core_contracted = get_core_indices(occupied_contracted)
+    result = Expr(0, **term.assumptions)
+    # go through all variants of valence and core indices
+    for variant in itertools.product("oc", repeat=len(occupied_contracted)):
+        # finish the substitution dict
+        subs = target_subs.copy()
+        for space, occ, core in \
+                zip(variant, occupied_contracted, core_contracted):
+            if space != "c":
+                continue
+            # check for contradictions in the full substitutions dict
+            if occ in subs and subs[occ] is not core:
+                raise RuntimeError("Found contradiction in substitution dict. "
+                                   f"The occ index {occ} can not be mapped "
+                                   f"onto {subs[occ]} and {core} at the "
+                                   "same time.")
+            subs[occ] = core
+        # go through the objects and check if there is a block that is
+        # neglected within the CVS approximation
+        is_valid_variant = True
+        for obj in term.objects:
+            cvs_block = "".join(
+                subs.get(idx, idx).space[0] for idx in obj.idx
+            )
+            if not is_allowed_cvs_block(obj, cvs_block):
+                is_valid_variant = False
+                break
+        if not is_valid_variant:  # variant generates a neglected block
+            continue
+        # apply the substitutions to the term. This has to happen
+        # simultaneously in order to avoid intermediates delta_cx which
+        # evaluate to zero.
+        sub_term = term.subs(subs, simultaneous=True)
+        result += sub_term
+    return result
+
+
+def allow_all_cvs_blocks(obj: Obj, cvs_block: str) -> bool:
     return True
 
 
-def is_allowed_cvs_block(obj: Obj) -> bool:
+def is_allowed_cvs_block(obj: Obj, cvs_block: str) -> bool:
     """
     Whether the object is allowed within the CVS approximation.
     """
@@ -187,14 +163,16 @@ def is_allowed_cvs_block(obj: Obj) -> bool:
     if isinstance(sympy_obj, SymbolicTensor):
         name = sympy_obj.name
         if name == tensor_names.eri:
-            return is_allowed_cvs_eri_block(obj)
+            return is_allowed_cvs_eri_block(cvs_block)
         elif name == tensor_names.coulomb:
-            return is_allowed_cvs_coulomb_block(obj)
+            return is_allowed_cvs_coulomb_block(cvs_block)
         elif is_t_amplitude(name):
-            return is_allowed_cvs_t_amplitude_block(obj)
-    elif isinstance(sympy_obj, FermionicOperator):
+            return is_allowed_cvs_t_amplitude_block(cvs_block)
+        elif name == tensor_names.fock:
+            return is_allowed_cvs_fock_block(cvs_block)
+    # deltas are handled within the class, so we can just return True here
+    elif isinstance(sympy_obj, (FermionicOperator, KroneckerDelta)):
         return True
-    # deltas should be handled automatically within the class
 
     # check if the obj is a known intermediate
     itmd: RegisteredIntermediate = (
@@ -213,9 +191,9 @@ def is_allowed_cvs_block(obj: Obj) -> bool:
     return obj.space in itmd.allowed_cvs_blocks(is_allowed_cvs_block)
 
 
-def is_allowed_cvs_coulomb_block(coulomb: Obj) -> bool:
+def is_allowed_cvs_coulomb_block(coulomb_block: str) -> bool:
     """
-    Whether the given Coulomb integral (in chemist notation)
+    Whether the given Coulomb integral (in chemist notation) block
     is allowed within the CVS approximation
     """
     # NOTE: according to 10.1063/1.453424 (from 1987) coulomb integrals with
@@ -230,34 +208,44 @@ def is_allowed_cvs_coulomb_block(coulomb: Obj) -> bool:
     # In the current implementation in adcman/adcc those blocks are assumed
     # to vanish following the earlier paper.
     # The current implementation follows the implementation in adcman/adcc.
-    block = coulomb.space
-    assert len(block) == 4
-    assert not block.count("g")  # no general indices
-    if "c" in block and \
-            (block[:2].count("c") == 1 or block[2:].count("c") == 1):
+    assert len(coulomb_block) == 4
+    assert "g" not in coulomb_block  # no general indices
+    if "c" in coulomb_block and (coulomb_block[:2].count("c") == 1 or
+                                 coulomb_block[2:].count("c") == 1):
         return False
     return True
 
 
-def is_allowed_cvs_eri_block(eri: Obj) -> bool:
+def is_allowed_cvs_eri_block(eri_block: str) -> bool:
     """
     Whether the given anti-symmetric ERI block (in physicist notation)
     is allowed within the CVS approximation.
     """
-    block = eri.space
-    assert len(block) == 4
-    assert not block.count("g")  # no general indices
-    n_core = block.count("c")
+    assert len(eri_block) == 4
+    assert "g" not in eri_block  # no general indices
+    n_core = eri_block.count("c")
     if n_core == 1 or n_core == 3:
         return False
     # additionally, the blocks ccxx and xxcc are not allowed
     # (see comment in is_allowed_cvs_coulomb_block)
-    elif n_core == 2 and (block[:2] == "cc" or block[2:] == "cc"):
+    elif n_core == 2 and (eri_block[:2] == "cc" or eri_block[2:] == "cc"):
         return False
     return True
 
 
-def is_allowed_cvs_t_amplitude_block(amplitude: Obj) -> bool:
+def is_allowed_cvs_fock_block(fock_block: str) -> bool:
+    """
+    Whether the given Fock matrix block is allowed within the CVS
+    approximation.
+    """
+    assert len(fock_block) == 2
+    assert "g" not in fock_block  # no general indices
+    if fock_block.count("c") == 1:  # f_cx / f_xc
+        return False
+    return True  # f_cc / f_xx
+
+
+def is_allowed_cvs_t_amplitude_block(amplitude_block: str) -> bool:
     """
     Whether the given block of a ground state t-amplitude is valid within
     the CVS approximation
@@ -266,12 +254,11 @@ def is_allowed_cvs_t_amplitude_block(amplitude: Obj) -> bool:
     # has to be considered, i.e., all core orbitals can simply
     # be neglected.
     # t2_1: oovv   t1_2: ov   t2_2: oovv   t3_2: ooovvv   t4_2: oooovvvv
-    space = amplitude.space
-    assert not len(space) % 2
-    assert all(sp == "v" for sp in space[len(space)//2:])
-    if space.count("c"):
+    assert not len(amplitude_block) % 2
+    assert all(sp == "v" for sp in amplitude_block[len(amplitude_block)//2:])
+    if amplitude_block.count("c"):
         return False
-    assert all(sp == "o" for sp in space[:len(space)//2])
+    assert all(sp == "o" for sp in amplitude_block[:len(amplitude_block)//2])
     return True
 
 
@@ -289,10 +276,11 @@ def allowed_cvs_blocks(expr: Expr, target_idx: str, spin: str | None = None,
     target_idx: str
         The target indices of the expression.
     is_allowed_cvs_block : callable | None, optional
-        Callable that takes an expr_container.Obj instance and returns a bool
-        indicating whether the object is valid within the CVS approximation,
-        i.e., whether the tensor block does vanish or not.
-        If no callable is provided no blocks are assumed to vanish.
+        Callable that takes an expr_container.Obj instance and a space string
+        (e.g. 'covv'). It returns a bool indicating whether the block of the
+        object described by the space string is valid within the CVS
+        approximation, i.e., whether the block is neglected or not.
+        If no callable is provided no blocks are neglected.
     """
     if is_allowed_cvs_block is None:
         is_allowed_cvs_block = allow_all_cvs_blocks
@@ -316,25 +304,17 @@ def allowed_cvs_blocks(expr: Expr, target_idx: str, spin: str | None = None,
         variants_to_remove = set()
         for variant_i in cvs_variants_to_check:
             variant = cvs_variants[variant_i]
-            # get the core indices for the current variant
-            # and substitute the target indices in the term
-            variant_core_indices = [
-                core for core, sp in zip(core_target, variant)
-                if sp == "c"
-            ]
-            sub_term = Expr(term.sympy, **term.assumptions)
-            sub_term = introduce_core_target_indices(
-                sub_term, variant_core_indices
+            # build the target index occ -> core substitution dict
+            target_subs = {occ: core for space, occ, core in
+                           zip(variant, occupied_target, core_target)
+                           if space == "c"}
+            # expand the occupied contracted indices
+            sub_term = expand_contracted_indices(
+                term, target_subs=target_subs,
+                is_allowed_cvs_block=is_allowed_cvs_block
             )
             # invalid substitutions -> invalid variant
             if sub_term.sympy is S.Zero:
-                continue
-            # expand the occupied contracted indices and check if we
-            # get some contribution
-            sub_term = expand_occupied_indices(
-                sub_term, is_allowed_cvs_block=is_allowed_cvs_block
-            )
-            if sub_term.sympy is S.Zero:  # no valid contribution
                 continue
             # build the full block string
             variant = list(reversed(variant))

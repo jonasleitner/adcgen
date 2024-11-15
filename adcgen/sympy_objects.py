@@ -283,6 +283,9 @@ class KroneckerDelta(Function):
         """
         Evaluates the KroneckerDelta. Adapted from sympy to also cover Spin.
         """
+        # This is needed for subs with simultaneous=True
+        if not isinstance(i, Index) or not isinstance(j, Index):
+            return None
 
         diff = i - j
         if diff.is_zero or fuzzy_not(diff.is_zero):  # same index

@@ -1,3 +1,4 @@
+from adcgen.core_valence_separation import apply_cvs_approximation
 from adcgen.expr_container import Expr
 from adcgen.factor_intermediates import factor_intermediates
 from adcgen.groundstate import GroundState
@@ -232,12 +233,12 @@ class Generator:
     def gen_adc_secular_matrix(self):
         outfile = "secular_matrix.json"
 
-        to_generate = {"pp": {("ph,ph", "ia,jb"): [0, 1, 2, 3]}}
+        to_generate = {"pp": {("ph,ph", "ia,jb", "IJ"): [0, 1, 2, 3]}}
         results = {}
         for adc_variant, blocks in to_generate.items():
             results[adc_variant] = {}
             sec_mat: SecularMatrix = self.sec_mat[adc_variant]
-            for (block, indices), orders in blocks.items():
+            for (block, indices, core_indices), orders in blocks.items():
                 results[adc_variant][block] = {}
                 for order in orders:
                     results[adc_variant][block][order] = {}
@@ -253,17 +254,24 @@ class Generator:
                     res.make_real()
                     res = simplify(res)
                     dump["real"] = str(res)
-                    dump["real_factored"] = {}
+                    # diagonalize the fock matrix,
+                    # expand intermediates, cancel orbital energy fracs
+                    # and collect terms
+                    res = reduce_expr(res.diagonalize_fock())
+                    # factor intermediates
+                    res = factor_intermediates(res, max_order=order-1)
                     # sort according to the spaces of the deltas
+                    dump["real_factored"] = {}
                     for delta_sp, sub_expr in sort.by_delta_types(res).items():
-                        # diagonalize the fock matrix,
-                        # expand intermediates, cancel orbital energy fracs
-                        # and collect terms
-                        sub_expr = reduce_expr(sub_expr.diagonalize_fock())
-                        # factor intermediates
-                        sub_expr = factor_intermediates(sub_expr,
-                                                        max_order=order-1)
                         dump["real_factored"]["-".join(delta_sp)] = (
+                            str(sub_expr)
+                        )
+                    # apply the CVS approximation
+                    res = apply_cvs_approximation(res,
+                                                  core_indices=core_indices)
+                    dump["real_factored_cvs"] = {}
+                    for delta_sp, sub_expr in sort.by_delta_types(res).items():
+                        dump["real_factored_cvs"]["-".join(delta_sp)] = (
                             str(sub_expr)
                         )
         write_json(results, outfile)
