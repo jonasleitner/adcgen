@@ -45,14 +45,22 @@ class TestCoreValenceSeparation:
         i, j, k, l = get_symbols("ijkl")  # noqa E741
         # Coulomb
         coulomb = SymmetricTensor(tensor_names.coulomb, (i, j), (k, l))
-        res = allowed_cvs_blocks(Expr(coulomb), "ijkl",
-                                 is_allowed_cvs_block=is_allowed_cvs_block)
+        res = allowed_cvs_blocks(
+            Expr(coulomb), "ijkl", is_allowed_cvs_block=is_allowed_cvs_block
+        )
         assert res == ("oooo", "oocc", "ccoo", "cccc")
         # ERI
         eri = AntiSymmetricTensor(tensor_names.eri, (i, j), (k, l))
-        res = allowed_cvs_blocks(Expr(eri), "ijkl",
-                                 is_allowed_cvs_block=is_allowed_cvs_block)
+        res = allowed_cvs_blocks(
+            Expr(eri), "ijkl", is_allowed_cvs_block=is_allowed_cvs_block
+        )
         assert res == ("oooo", "ococ", "occo", "cooc", "coco", "cccc")
+        # MP2 Density
+        p2_oo: Expr = Intermediates().available["p0_2_oo"].tensor()
+        res = allowed_cvs_blocks(
+            p2_oo, "ij", is_allowed_cvs_block=is_allowed_cvs_block
+        )
+        assert res == ("oo",)
 
     @pytest.mark.parametrize("amplitude", ["t2_1", "t1_2", "t2_2", "t3_2",
                                            "t4_2", "t1_3", "t2_3"])
@@ -100,7 +108,7 @@ class TestCoreValenceSeparation:
         res = apply_cvs_approximation(p2_oo, "IJ")
         assert res.sympy is S.Zero
 
-    @pytest.mark.parametrize("order", [0])
+    @pytest.mark.parametrize("order", [0, 1, 2, 3])
     def test_apply_cvs_approximation_ph_ph(self, order, reference_data):
         # load the simplified and factorized equations secular matrix
         # equations from the reference data.
@@ -109,10 +117,8 @@ class TestCoreValenceSeparation:
         m_expr: Expr = sum(m_contribs.values())
         m_expr.make_real()
         m_expr.set_sym_tensors(("p2", "t2sq"))  # fine through 3rd order
-        print(m_expr)
         # build the valence-valence block (no core orbitals)
         res = apply_cvs_approximation(m_expr.copy(), "")
-        print(res)
         assert simplify(res - m_expr).sympy is S.Zero
         # build the valence-core block
         res = apply_cvs_approximation(m_expr.copy(), "J")

@@ -157,7 +157,8 @@ def is_allowed_cvs_block(obj: Obj, cvs_block: str) -> bool:
     if isinstance(obj, Polynom):
         return True
     elif isinstance(obj, NormalOrdered):
-        return all(is_allowed_cvs_block(o) for o in obj.objects)
+        return all(is_allowed_cvs_block(o, b)
+                   for o, b in zip(obj.objects, cvs_block))
 
     sympy_obj = obj.base
     if isinstance(sympy_obj, SymbolicTensor):
@@ -170,8 +171,9 @@ def is_allowed_cvs_block(obj: Obj, cvs_block: str) -> bool:
             return is_allowed_cvs_t_amplitude_block(cvs_block)
         elif name == tensor_names.fock:
             return is_allowed_cvs_fock_block(cvs_block)
-    # deltas are handled within the class, so we can just return True here
-    elif isinstance(sympy_obj, (FermionicOperator, KroneckerDelta)):
+    elif isinstance(sympy_obj, KroneckerDelta):
+        return is_allowed_cvs_delta_block(cvs_block)
+    elif isinstance(sympy_obj, FermionicOperator):
         return True
 
     # check if the obj is a known intermediate
@@ -188,7 +190,7 @@ def is_allowed_cvs_block(obj: Obj, cvs_block: str) -> bool:
         return True
     # the object is a known intermediate:
     # expand the intermediate, and determine the allowed spin blocks
-    return obj.space in itmd.allowed_cvs_blocks(is_allowed_cvs_block)
+    return cvs_block in itmd.allowed_cvs_blocks(is_allowed_cvs_block)
 
 
 def is_allowed_cvs_coulomb_block(coulomb_block: str) -> bool:
@@ -260,6 +262,15 @@ def is_allowed_cvs_t_amplitude_block(amplitude_block: str) -> bool:
         return False
     assert all(sp == "o" for sp in amplitude_block[:len(amplitude_block)//2])
     return True
+
+
+def is_allowed_cvs_delta_block(delta_block: str) -> bool:
+    """
+    Whether the given delta block is allowed within the CVS approximation.
+    """
+    assert len(delta_block) == 2
+    assert "g" not in delta_block
+    return delta_block[0] == delta_block[1]
 
 
 def allowed_cvs_blocks(expr: Expr, target_idx: str, spin: str | None = None,
