@@ -17,18 +17,17 @@ class TestSecularMatrix():
     def test_isr_matrix_block(self, order, block, indices, cls_instances,
                               reference_data):
         # load reference data
-        block_key = "-".join(block.split(','))
-        ref = reference_data[f"m_{block_key}_isr"][order]
+        ref = reference_data["secular_matrix"]["pp"][block][order]
 
         # compute the raw matrix block
         m = cls_instances['mp']['m'].isr_matrix_block(order, block, indices)
         m = Expr(m)
-        ref_m = ref['m']
+        ref_m = ref["complex"]
         assert simplify(m - ref_m).sympy is S.Zero
 
         # assume a real orbital basis
         m = Expr(m.sympy, real=True).substitute_contracted()
-        ref_m = ref['real_m'].make_real()
+        ref_m = ref['real'].make_real()
         assert simplify(m - ref_m).sympy is S.Zero
 
         # determine the bra ket symmetry of the tensor block (1 for diagonal
@@ -52,7 +51,7 @@ class TestSecularMatrix():
                 term = EriOrbenergy(term)
                 assert term.denom.sympy is S.One
             # compare to reference
-            ref_block_expr = ref["real_factored_m"]["_".join(delta_sp)]
+            ref_block_expr = ref["real_factored"]["-".join(delta_sp)]
             ref_block_expr = Expr(ref_block_expr.sympy,
                                   **block_expr.assumptions)
             assert simplify(block_expr - ref_block_expr).sympy is S.Zero

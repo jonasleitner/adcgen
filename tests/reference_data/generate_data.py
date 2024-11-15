@@ -1,13 +1,15 @@
-from adcgen.operators import Operators
+from adcgen.expr_container import Expr
+from adcgen.factor_intermediates import factor_intermediates
 from adcgen.groundstate import GroundState
 from adcgen.intermediate_states import IntermediateStates
-from adcgen.expr_container import Expr
-from adcgen.properties import Properties
-from adcgen.reduce_expr import factor_eri_parts, factor_denom
-from adcgen.simplify import simplify, remove_tensor
-from adcgen.factor_intermediates import factor_intermediates
 from adcgen.logger import logger
+from adcgen.operators import Operators
+from adcgen.properties import Properties
+from adcgen.reduce_expr import factor_eri_parts, factor_denom, reduce_expr
+from adcgen.secular_matrix import SecularMatrix
+from adcgen.simplify import simplify, remove_tensor
 from adcgen.tensor_names import tensor_names
+from adcgen import sort_expr as sort
 
 import itertools
 import json
@@ -22,6 +24,7 @@ class Generator:
         mp_with_singles = GroundState(mp_op, first_order_singles=True)
         re = GroundState(re_op, first_order_singles=False)
         isr_pp = IntermediateStates(mp, variant='pp')
+        secmat_pp = SecularMatrix(isr_pp)
         prop_pp = Properties(isr_pp)
         self.op = {'mp': mp_op,
                    're': re_op}
@@ -29,6 +32,7 @@ class Generator:
                    're': re,
                    'mp_with_singles': mp_with_singles}
         self.isr = {'pp': isr_pp}
+        self.sec_mat = {'pp': secmat_pp}
         self.prop = {'pp': prop_pp}
 
         self.names = names
@@ -223,6 +227,45 @@ class Generator:
                 for o in orders:
                     res = Expr(isr.overlap_precursor(o, b, indices))
                     results[variant][b][o] = str(res)
+        write_json(results, outfile)
+
+    def gen_adc_secular_matrix(self):
+        outfile = "secular_matrix.json"
+
+        to_generate = {"pp": {("ph,ph", "ia,jb"): [0, 1, 2, 3]}}
+        results = {}
+        for adc_variant, blocks in to_generate.items():
+            results[adc_variant] = {}
+            sec_mat: SecularMatrix = self.sec_mat[adc_variant]
+            for (block, indices), orders in blocks.items():
+                results[adc_variant][block] = {}
+                for order in orders:
+                    results[adc_variant][block][order] = {}
+                    dump = results[adc_variant][block][order]
+                    # dump the complex result
+                    res = Expr(sec_mat.isr_matrix_block(
+                        order, block=block, indices=indices, subtract_gs=True
+                    ))
+                    res.substitute_contracted()
+                    res = simplify(res)
+                    dump["complex"] = str(res)
+                    # dump the real result
+                    res.make_real()
+                    res = simplify(res)
+                    dump["real"] = str(res)
+                    dump["real_factored"] = {}
+                    # sort according to the spaces of the deltas
+                    for delta_sp, sub_expr in sort.by_delta_types(res).items():
+                        # diagonalize the fock matrix,
+                        # expand intermediates, cancel orbital energy fracs
+                        # and collect terms
+                        sub_expr = reduce_expr(sub_expr.diagonalize_fock())
+                        # factor intermediates
+                        sub_expr = factor_intermediates(sub_expr,
+                                                        max_order=order-1)
+                        dump["real_factored"]["-".join(delta_sp)] = (
+                            str(sub_expr)
+                        )
         write_json(results, outfile)
 
     def gen_adc_properties_expectation_value(self):
