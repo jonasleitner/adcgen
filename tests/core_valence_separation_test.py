@@ -1,6 +1,6 @@
 from adcgen.core_valence_separation import (
     expand_contracted_indices, is_allowed_cvs_block, allowed_cvs_blocks,
-    apply_cvs_approximation
+    apply_cvs_approximation, build_target_substitutions, allow_all_cvs_blocks
 )
 from adcgen.expr_container import Expr, Obj
 from adcgen.indices import get_symbols
@@ -18,13 +18,24 @@ import pytest
 
 
 class TestCoreValenceSeparation:
+    def test_build_target_substitutions(self):
+        target = get_symbols("ijab")
+        I, J = get_symbols("IJ")
+        res = build_target_substitutions(target, "")
+        assert res == {}
+        res = build_target_substitutions(target, "I")
+        assert res == {target[0]: I}
+        res = build_target_substitutions(target, "IJ")
+        assert res == {target[0]: I, target[1]: J}
+
     def test_expand_contracted_indices(self):
         # trivial case: allow all blocks (no CVS approximation)
         i, j, a, b = get_symbols("ijab")
         I, J = get_symbols("IJ")
         tensor = AntiSymmetricTensor("V", (i, j), (a, b))
         term = Expr(tensor, target_idx="").terms[0]
-        res = expand_contracted_indices(term, target_subs={})
+        res = expand_contracted_indices(term, target_subs={},
+                                        cvs_approximation=allow_all_cvs_blocks)
         ref = (AntiSymmetricTensor("V", (i, j), (a, b)) +
                AntiSymmetricTensor("V", (I, j), (a, b)) +
                AntiSymmetricTensor("V", (i, J), (a, b)) +
@@ -32,12 +43,15 @@ class TestCoreValenceSeparation:
         assert res.sympy - ref is S.Zero
         # even more trivial: no occupied contracted indices
         term = Expr(tensor, target_idx="ij").terms[0]
-        res = expand_contracted_indices(term, target_subs={})
+        res = expand_contracted_indices(term, target_subs={},
+                                        cvs_approximation=allow_all_cvs_blocks)
         assert res.sympy - tensor is S.Zero
-        res = expand_contracted_indices(term, target_subs={i: I})
+        res = expand_contracted_indices(term, target_subs={i: I},
+                                        cvs_approximation=allow_all_cvs_blocks)
         ref = AntiSymmetricTensor("V", (I, j), (a, b))
         assert res.sympy - ref is S.Zero
-        res = expand_contracted_indices(term, target_subs={i: I, j: J})
+        res = expand_contracted_indices(term, target_subs={i: I, j: J},
+                                        cvs_approximation=allow_all_cvs_blocks)
         ref = AntiSymmetricTensor("V", (I, J), (a, b))
         assert res.sympy - ref is S.Zero
 
@@ -46,19 +60,19 @@ class TestCoreValenceSeparation:
         # Coulomb
         coulomb = SymmetricTensor(tensor_names.coulomb, (i, j), (k, l))
         res = allowed_cvs_blocks(
-            Expr(coulomb), "ijkl", is_allowed_cvs_block=is_allowed_cvs_block
+            Expr(coulomb), "ijkl", cvs_approximation=is_allowed_cvs_block
         )
         assert res == ("oooo", "oocc", "ccoo", "cccc")
         # ERI
         eri = AntiSymmetricTensor(tensor_names.eri, (i, j), (k, l))
         res = allowed_cvs_blocks(
-            Expr(eri), "ijkl", is_allowed_cvs_block=is_allowed_cvs_block
+            Expr(eri), "ijkl", cvs_approximation=is_allowed_cvs_block
         )
         assert res == ("oooo", "ococ", "occo", "cooc", "coco", "cccc")
         # MP2 Density
         p2_oo: Expr = Intermediates().available["p0_2_oo"].tensor()
         res = allowed_cvs_blocks(
-            p2_oo, "ij", is_allowed_cvs_block=is_allowed_cvs_block
+            p2_oo, "ij", cvs_approximation=is_allowed_cvs_block
         )
         assert res == ("oo",)
 
@@ -73,7 +87,7 @@ class TestCoreValenceSeparation:
         # ov/oovv/... is the only valid block
         target: Amplitude = expr.sympy.idx
         res = allowed_cvs_blocks(expr, target,
-                                 is_allowed_cvs_block=is_allowed_cvs_block)
+                                 cvs_approximation=is_allowed_cvs_block)
         assert res == (tensor_obj.space,)
         # ensure that we get the same result if we expand the amplitude
         res = ampl.allowed_cvs_blocks(is_allowed_cvs_block)

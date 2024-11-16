@@ -234,7 +234,7 @@ class RegisteredIntermediate:
         return allowed_spin_blocks(itmd.expand(), target_idx)
 
     @cached_member
-    def allowed_cvs_blocks(self, is_allowed_cvs_block: callable = None
+    def allowed_cvs_blocks(self, cvs_approximation: callable = None
                            ) -> tuple[str]:
         """
         Splits the occupied orbitals in core and valence orbitals and
@@ -251,7 +251,7 @@ class RegisteredIntermediate:
         target_idx = self.default_idx
         itmd = self.expand_itmd(indices=target_idx, fully_expand=False)
         return allowed_cvs_blocks(itmd.expand(), target_idx,
-                                  is_allowed_cvs_block=is_allowed_cvs_block)
+                                  cvs_approximation=cvs_approximation)
 
     @cached_member
     def itmd_term_map(self,
