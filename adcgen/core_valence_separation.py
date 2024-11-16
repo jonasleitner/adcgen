@@ -11,138 +11,6 @@ from sympy import S
 import itertools
 
 
-def allow_all_cvs_blocks(obj: Obj, cvs_block: str) -> bool:
-    return True
-
-
-def is_allowed_cvs_block(obj: Obj, cvs_block: str) -> bool:
-    """
-    Whether the object is allowed within the CVS approximation.
-    """
-    from .intermediates import Intermediates, RegisteredIntermediate
-    if not obj.idx:  # prefactor or symbol
-        return True
-    # skip Polynoms for now.
-    # The MP orbital energy denoms should not be important
-    if isinstance(obj, Polynom):
-        return True
-    elif isinstance(obj, NormalOrdered):
-        return all(is_allowed_cvs_block(o, b)
-                   for o, b in zip(obj.objects, cvs_block))
-
-    sympy_obj = obj.base
-    if isinstance(sympy_obj, SymbolicTensor):
-        name = sympy_obj.name
-        if name == tensor_names.eri:
-            return is_allowed_cvs_eri_block(cvs_block)
-        elif name == tensor_names.coulomb:
-            return is_allowed_cvs_coulomb_block(cvs_block)
-        elif is_t_amplitude(name):
-            return is_allowed_cvs_t_amplitude_block(cvs_block)
-        elif name == tensor_names.fock:
-            return is_allowed_cvs_fock_block(cvs_block)
-    elif isinstance(sympy_obj, KroneckerDelta):
-        return is_allowed_cvs_delta_block(cvs_block)
-    elif isinstance(sympy_obj, FermionicOperator):
-        return True
-
-    # check if the obj is a known intermediate
-    itmd: RegisteredIntermediate = (
-        Intermediates().available.get(obj.longname(True), None)
-    )
-    if itmd is None:
-        # the object is no intermediate
-        # assume that all blocks are valid in this case
-        logger.warning(
-            f"Could not determine whether {obj} is valid within the CVS "
-            "approximation."
-        )
-        return True
-    # the object is a known intermediate:
-    # expand the intermediate, and determine the allowed spin blocks
-    return cvs_block in itmd.allowed_cvs_blocks(is_allowed_cvs_block)
-
-
-def is_allowed_cvs_coulomb_block(coulomb_block: str) -> bool:
-    """
-    Whether the given Coulomb integral (in chemist notation) block
-    is allowed within the CVS approximation
-    """
-    # NOTE: according to 10.1063/1.453424 (from 1987) coulomb integrals with
-    # 1 and 3 core indices vanish. Furthermore, the Coulomb integrals
-    # <cc|oo>, <cc|vv>, <oo|cc>, <vv|cc>
-    # vanish, i.e., all integrals co/cv vanish.
-    # However, in a later paper 10.1063/1.1418437 (from 2001) the integrals
-    # <cc|oo>, <cc|vv>, <oo|cc>, <vv|cc>
-    # = (co|co), (cv|cv), (oc|oc), (vc|vc)
-    # only vanish when arising from different core-level occupations (DCO),
-    # i.e., when they appear in matrix blocks that we are neglecting anyway.
-    # In the current implementation in adcman/adcc those blocks are assumed
-    # to vanish following the earlier paper.
-    # The current implementation follows the implementation in adcman/adcc.
-    assert len(coulomb_block) == 4
-    assert "g" not in coulomb_block  # no general indices
-    if "c" in coulomb_block and (coulomb_block[:2].count("c") == 1 or
-                                 coulomb_block[2:].count("c") == 1):
-        return False
-    return True
-
-
-def is_allowed_cvs_eri_block(eri_block: str) -> bool:
-    """
-    Whether the given anti-symmetric ERI block (in physicist notation)
-    is allowed within the CVS approximation.
-    """
-    assert len(eri_block) == 4
-    assert "g" not in eri_block  # no general indices
-    n_core = eri_block.count("c")
-    if n_core == 1 or n_core == 3:
-        return False
-    # additionally, the blocks ccxx and xxcc are not allowed
-    # (see comment in is_allowed_cvs_coulomb_block)
-    elif n_core == 2 and (eri_block[:2] == "cc" or eri_block[2:] == "cc"):
-        return False
-    return True
-
-
-def is_allowed_cvs_fock_block(fock_block: str) -> bool:
-    """
-    Whether the given Fock matrix block is allowed within the CVS
-    approximation.
-    """
-    assert len(fock_block) == 2
-    assert "g" not in fock_block  # no general indices
-    if fock_block.count("c") == 1:  # f_cx / f_xc
-        return False
-    return True  # f_cc / f_xx
-
-
-def is_allowed_cvs_t_amplitude_block(amplitude_block: str) -> bool:
-    """
-    Whether the given block of a ground state t-amplitude is valid within
-    the CVS approximation
-    """
-    # t-amplitudes seem to follow the rule that only the valence space
-    # has to be considered, i.e., all core orbitals can simply
-    # be neglected.
-    # t2_1: oovv   t1_2: ov   t2_2: oovv   t3_2: ooovvv   t4_2: oooovvvv
-    assert not len(amplitude_block) % 2
-    assert all(sp == "v" for sp in amplitude_block[len(amplitude_block)//2:])
-    if amplitude_block.count("c"):
-        return False
-    assert all(sp == "o" for sp in amplitude_block[:len(amplitude_block)//2])
-    return True
-
-
-def is_allowed_cvs_delta_block(delta_block: str) -> bool:
-    """
-    Whether the given delta block is allowed within the CVS approximation.
-    """
-    assert len(delta_block) == 2
-    assert "g" not in delta_block
-    return delta_block[0] == delta_block[1]
-
-
 def apply_cvs_approximation(expr: Expr, core_indices: str,
                             spin: str | None = None,
                             cvs_approximation: callable = None) -> Expr:
@@ -179,8 +47,6 @@ def apply_cvs_approximation(expr: Expr, core_indices: str,
     # vanish by accident.
     if not isinstance(expr, Expr):
         raise Inputerror("Expression needs to be provided as Expr instance.")
-    if cvs_approximation is None:
-        cvs_approximation = is_allowed_cvs_block
 
     # get the target indices of the expression
     terms = expr.terms
@@ -332,9 +198,6 @@ def allowed_cvs_blocks(expr: Expr, target_idx: str, spin: str | None = None,
         the CVS approximation as described in 10.1063/1.453424 and as
         implemented in adcman/adcc.
     """
-    if cvs_approximation is None:
-        cvs_approximation = is_allowed_cvs_block
-
     target_idx: list[Index] = get_symbols(target_idx, spin)
     sorted_target = tuple(sorted(target_idx, key=sort_idx_canonical))
     # identify all occupied target indices
@@ -378,6 +241,138 @@ def allowed_cvs_blocks(expr: Expr, target_idx: str, spin: str | None = None,
         cvs_variants_to_check = [i for i in cvs_variants_to_check
                                  if i not in variants_to_remove]
     return tuple(allowed_blocks)
+
+
+def allow_all_cvs_blocks(obj: Obj, cvs_block: str) -> bool:
+    return True
+
+
+def is_allowed_cvs_block(obj: Obj, cvs_block: str) -> bool:
+    """
+    Whether the object is allowed within the CVS approximation.
+    """
+    from .intermediates import Intermediates, RegisteredIntermediate
+    if not obj.idx:  # prefactor or symbol
+        return True
+    # skip Polynoms for now.
+    # The MP orbital energy denoms should not be important
+    if isinstance(obj, Polynom):
+        return True
+    elif isinstance(obj, NormalOrdered):
+        return all(is_allowed_cvs_block(o, b)
+                   for o, b in zip(obj.objects, cvs_block))
+
+    sympy_obj = obj.base
+    if isinstance(sympy_obj, SymbolicTensor):
+        name = sympy_obj.name
+        if name == tensor_names.eri:
+            return is_allowed_cvs_eri_block(cvs_block)
+        elif name == tensor_names.coulomb:
+            return is_allowed_cvs_coulomb_block(cvs_block)
+        elif is_t_amplitude(name):
+            return is_allowed_cvs_t_amplitude_block(cvs_block)
+        elif name == tensor_names.fock:
+            return is_allowed_cvs_fock_block(cvs_block)
+    elif isinstance(sympy_obj, KroneckerDelta):
+        return is_allowed_cvs_delta_block(cvs_block)
+    elif isinstance(sympy_obj, FermionicOperator):
+        return True
+
+    # check if the obj is a known intermediate
+    itmd: RegisteredIntermediate = (
+        Intermediates().available.get(obj.longname(True), None)
+    )
+    if itmd is None:
+        # the object is no intermediate
+        # assume that all blocks are valid in this case
+        logger.warning(
+            f"Could not determine whether {obj} is valid within the CVS "
+            "approximation."
+        )
+        return True
+    # the object is a known intermediate:
+    # expand the intermediate, and determine the allowed spin blocks
+    return cvs_block in itmd.allowed_cvs_blocks(is_allowed_cvs_block)
+
+
+def is_allowed_cvs_coulomb_block(coulomb_block: str) -> bool:
+    """
+    Whether the given Coulomb integral (in chemist notation) block
+    is allowed within the CVS approximation
+    """
+    # NOTE: according to 10.1063/1.453424 (from 1987) coulomb integrals with
+    # 1 and 3 core indices vanish. Furthermore, the Coulomb integrals
+    # <cc|oo>, <cc|vv>, <oo|cc>, <vv|cc>
+    # vanish, i.e., all integrals co/cv vanish.
+    # However, in a later paper 10.1063/1.1418437 (from 2001) the integrals
+    # <cc|oo>, <cc|vv>, <oo|cc>, <vv|cc>
+    # = (co|co), (cv|cv), (oc|oc), (vc|vc)
+    # only vanish when arising from different core-level occupations (DCO),
+    # i.e., when they appear in matrix blocks that we are neglecting anyway.
+    # In the current implementation in adcman/adcc those blocks are assumed
+    # to vanish following the earlier paper.
+    # The current implementation follows the implementation in adcman/adcc.
+    assert len(coulomb_block) == 4
+    assert "g" not in coulomb_block  # no general indices
+    if "c" in coulomb_block and (coulomb_block[:2].count("c") == 1 or
+                                 coulomb_block[2:].count("c") == 1):
+        return False
+    return True
+
+
+def is_allowed_cvs_eri_block(eri_block: str) -> bool:
+    """
+    Whether the given anti-symmetric ERI block (in physicist notation)
+    is allowed within the CVS approximation.
+    """
+    assert len(eri_block) == 4
+    assert "g" not in eri_block  # no general indices
+    n_core = eri_block.count("c")
+    if n_core == 1 or n_core == 3:
+        return False
+    # additionally, the blocks ccxx and xxcc are not allowed
+    # (see comment in is_allowed_cvs_coulomb_block)
+    elif n_core == 2 and (eri_block[:2] == "cc" or eri_block[2:] == "cc"):
+        return False
+    return True
+
+
+def is_allowed_cvs_fock_block(fock_block: str) -> bool:
+    """
+    Whether the given Fock matrix block is allowed within the CVS
+    approximation.
+    """
+    assert len(fock_block) == 2
+    assert "g" not in fock_block  # no general indices
+    if fock_block.count("c") == 1:  # f_cx / f_xc
+        return False
+    return True  # f_cc / f_xx
+
+
+def is_allowed_cvs_t_amplitude_block(amplitude_block: str) -> bool:
+    """
+    Whether the given block of a ground state t-amplitude is valid within
+    the CVS approximation
+    """
+    # t-amplitudes seem to follow the rule that only the valence space
+    # has to be considered, i.e., all core orbitals can simply
+    # be neglected.
+    # t2_1: oovv   t1_2: ov   t2_2: oovv   t3_2: ooovvv   t4_2: oooovvvv
+    assert not len(amplitude_block) % 2
+    assert all(sp == "v" for sp in amplitude_block[len(amplitude_block)//2:])
+    if amplitude_block.count("c"):
+        return False
+    assert all(sp == "o" for sp in amplitude_block[:len(amplitude_block)//2])
+    return True
+
+
+def is_allowed_cvs_delta_block(delta_block: str) -> bool:
+    """
+    Whether the given delta block is allowed within the CVS approximation.
+    """
+    assert len(delta_block) == 2
+    assert "g" not in delta_block  # no general indices
+    return delta_block[0] == delta_block[1]
 
 
 def get_core_indices(occupied_indices: list[Index]) -> list[Index]:

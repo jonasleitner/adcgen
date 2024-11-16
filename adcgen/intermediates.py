@@ -242,11 +242,14 @@ class RegisteredIntermediate:
 
         Parameters
         ----------
-        is_allowed_cvs_block: callable, optional
-            Callable that takes an expr_container.Obj instance and returns a
-            bool indicating whether the object is valid within the CVS
-            approximation, i.e., whether the tensor block does vanish or not.
-            If no callable is provided no blocks are assumed to vanish.
+        cvs_approximation : callable, optional
+            Callable that takes an expr_container.Obj instance and a space
+            string (e.g. 'covv'). It returns a bool indicating whether the
+            block of the object described by the space string is valid within
+            the CVS approximation, i.e., whether the block is neglected or not.
+            By default, the "is_allowed_cvs_block" function is used,
+            which applies the CVS approximation as described in
+            10.1063/1.453424 and as implemented in adcman/adcc.
         """
         target_idx = self.default_idx
         itmd = self.expand_itmd(indices=target_idx, fully_expand=False)
