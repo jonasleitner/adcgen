@@ -10,10 +10,13 @@ import pytest
 
 
 class TestOptimizeContractions:
+    sizes = {"core": 5, "occ": 20, "virt": 200}
+
     def test_factor(self):
         test = "{d^{i}_{a}} {d^{i}_{a}} {d^{j}_{b}} {d^{j}_{b}}"
         test = import_from_sympy_latex(test)
-        res = optimize_contractions(test.terms[0], "", None)
+        res = optimize_contractions(test.terms[0], "", None,
+                                    space_dims=self.sizes)
         assert len(res) == 3
         i, j, a, b = get_symbols("ijab")
         ref = Contraction(((i, a), (i, a)), ("d_ov", "d_ov"), tuple())
@@ -29,7 +32,8 @@ class TestOptimizeContractions:
     def test_nested_contraction(self):
         test = "{Y^{b}_{j}} {t1^{bc}_{jk}} {t2eri4_{ikac}}"
         test = import_from_sympy_latex(test, convert_default_names=True)
-        res = optimize_contractions(test.terms[0], "ia", None)
+        res = optimize_contractions(test.terms[0], "ia", None,
+                                    space_dims=self.sizes)
         assert len(res) == 2
         i, j, k, a, b, c = get_symbols("ijkabc")
         ref = Contraction(((j, b), (j, k, b, c)), ("ur1", "t2_1"), (i, a))
@@ -49,13 +53,15 @@ class TestOptimizeContractions:
 
         res = optimize_contractions(test.terms[0], target_indices="de",
                                     max_itmd_dim=4,
-                                    max_n_simultaneous_contracted=None)
+                                    max_n_simultaneous_contracted=None,
+                                    space_dims=self.sizes)
         assert len(res) == 3
         assert len(res[2].indices) == 4
         assert len(res[1].indices) == 2 and len(res[0].indices) == 2
         res2 = optimize_contractions(test.terms[0], target_indices="de",
                                      max_itmd_dim=4,
-                                     max_n_simultaneous_contracted=4)
+                                     max_n_simultaneous_contracted=4,
+                                     space_dims=self.sizes)
         assert res[:2] == res2[:2]
         assert (res[2].indices == res2[2].indices and
                 res[2].contracted == res2[2].contracted and
@@ -64,7 +70,8 @@ class TestOptimizeContractions:
         with pytest.raises(RuntimeError):
             optimize_contractions(test.terms[0], target_indices="de",
                                   max_itmd_dim=4,
-                                  max_n_simultaneous_contracted=3)
+                                  max_n_simultaneous_contracted=3,
+                                  space_dims=self.sizes)
 
 
 class TestGroupObjects:

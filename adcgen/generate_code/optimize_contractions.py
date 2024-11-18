@@ -2,11 +2,10 @@ from ..expr_container import Term
 from ..indices import get_symbols, Index
 from ..sympy_objects import SymbolicTensor, KroneckerDelta
 
-from .contraction import Contraction, ScalingComponent
+from .contraction import Contraction, Sizes
 
 from sympy import Symbol
 from typing import Generator
-import dataclasses
 import itertools
 
 
@@ -14,6 +13,7 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
                           target_spin: str | None = None,
                           max_itmd_dim: int | None = None,
                           max_n_simultaneous_contracted: int | None = None,
+                          space_dims: dict[str, int] | None = None
                           ) -> list[Contraction]:
     """
     Find the optimal contraction scheme with the lowest computational
@@ -42,12 +42,20 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
     max_n_simultaneous_contracted: int | None, optional
         The maximum number of objects allowed to be contracted
         simultaneously in a single contraction. (default: None)
+    space_dims: dict[str, int] | None, optional
+        The sizes of the spaces (occ, virt, ...) used to estimate the cost of
+        contractions. If not provided, the sizes from "config.json" will be
+        used.
     """
     # - import (or extract) the target indices
     if target_indices is None:
         target_indices = term.target
     else:
         target_indices = tuple(get_symbols(target_indices, target_spin))
+    # - import the space sizes/dims
+    if isinstance(space_dims, dict):
+        space_dims = Sizes.from_dict(space_dims)
+    assert space_dims is None or isinstance(space_dims, Sizes)
     # - extract the relevant part (tensors and deltas) of the term
     relevant_obj_names: list[str] = []
     relevant_obj_indices: list[tuple[Index]] = []
@@ -95,22 +103,14 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
     optimal_scaling = None
     optimal_scheme = None
     for scheme in contraction_schemes:
-        # build the scaling for current variant
-        scaling = []
-        mem = []
-        for field in dataclasses.fields(ScalingComponent):
-            comp_values = [getattr(contr.scaling.computational, field.name)
-                           for contr in scheme]
-            mem_values = [getattr(contr.scaling.memory, field.name)
-                          for contr in scheme]
-            scaling.extend(
-                [max(comp_values), comp_values.count(max(comp_values))]
-            )
-            mem.extend(
-                [max(mem_values), mem_values.count(max(mem_values))]
-            )
-        scaling.extend(mem)
-        # compare the scaling
+        # determine the costs for the current contraction scheme
+        arithmetic = 0
+        memory = 0
+        for contr in scheme:
+            nflops, mem = contr.evaluate_costs(space_dims)
+            arithmetic += nflops
+            memory += mem
+        scaling = (arithmetic, memory)
         if optimal_scaling is None or scaling < optimal_scaling:
             optimal_scheme = scheme
             optimal_scaling = scaling

@@ -1,7 +1,9 @@
 from adcgen.generate_code.contraction import (
-    Contraction, ScalingComponent, Scaling
+    Contraction, ScalingComponent, Scaling, Sizes
 )
 from adcgen.indices import get_symbols
+
+from dataclasses import asdict
 
 
 class TestContraction:
@@ -45,3 +47,29 @@ class TestContraction:
         assert scaling.computational == comp
         assert scaling.memory == mem
         assert scaling == Scaling(comp, mem)
+
+    def test_sizes(self):
+        # test the automatic evaluation of the size of the general space
+        sizes = {"occ": 1, "virt": 2, "core": 3}
+        res = Sizes.from_dict(sizes)
+        sizes["general"] = 6
+        assert sizes == asdict(res)
+        sizes["general"] = 10
+        res = Sizes.from_dict(sizes)
+        assert sizes == asdict(res)
+
+    def test_evalute_costs(self):
+        sizes = {"occ": 3, "virt": 5, "core": 2, "general": 7}
+        sizes = Sizes.from_dict(sizes)
+        comp = ScalingComponent(42, 1, 2, 3, 4)
+        mem = ScalingComponent(42, 4, 3, 2, 1)
+        scaling = Scaling(comp, mem)
+        assert comp.evaluate_costs(sizes) == 75600
+        assert mem.evaluate_costs(sizes) == 5402250
+        assert scaling.evaluate_costs(sizes) == (75600, 5402250)
+        # ensure that zero sized spaces are ignored
+        sizes = {"occ": 3, "virt": 5, "core": 0}  # general == 8
+        sizes = Sizes.from_dict(sizes)
+        assert comp.evaluate_costs(sizes) == 5400
+        comp = ScalingComponent(42, 0, 1, 2, 3)
+        assert comp.evaluate_costs(sizes) == 45

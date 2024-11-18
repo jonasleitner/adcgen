@@ -3,7 +3,52 @@ from ..indices import Index, Indices, sort_idx_canonical
 
 from collections import Counter
 from dataclasses import dataclass, fields
+from pathlib import Path
 import itertools
+import json
+
+
+_config_file = "config.json"
+
+
+@dataclass(frozen=True, slots=True)
+class Sizes:
+    """
+    Explicit sizes for each of the spaces (occ, virt, ...).
+    Used to estimate the costs of a contraction.
+    """
+    core: int = 0
+    occ: int = 0
+    virt: int = 0
+    general: int = 0
+
+    @staticmethod
+    def from_dict(input: dict[str, int]):
+        """
+        Construct an instance from dictionary. The size of the "general" space
+        is evaluated on the fly as sum of the sizes of the other spaces
+        if not provided.
+        """
+        if "general" not in input:
+            input["general"] = sum(input.values())
+        return Sizes(**input)
+
+    @staticmethod
+    def from_config():
+        """
+        Construct an instance using the values in the config file
+        (by default: "config.json"). The size of the "general" space is
+        evaluated on the fly as sum of the sizes of the other spaces if not
+        present in the config file.
+        """
+        config_file = Path(__file__).parent.resolve() / _config_file
+        sizes: dict[str, str] = (
+            json.load(open(config_file, "r")).get("sizes", None)
+        )
+        if sizes is None:
+            raise KeyError(f"Invalid config file {config_file}. "
+                           "Missing key 'sizes'.")
+        return Sizes.from_dict(sizes)
 
 
 class Contraction:
@@ -13,11 +58,11 @@ class Contraction:
     Parameters
     ----------
     indices: tuple[tuple[Index]]
-        The indices of the contracted tensors
+        The indices of the contracted tensors.
     names: tuple[str]
-        The names of the contracted tensors
+        The names of the contracted tensors.
     term_target_indices: tuple[Index]
-        The target indices of the term the contraction belongs to
+        The target indices of the term the contraction belongs to.
     """
     # use counter that essentially counts how many class instances have
     # been created
@@ -25,6 +70,9 @@ class Contraction:
     # -> easy to differentiate and identify individual instances
     _base_name = "contraction"
     _instance_counter = itertools.count(0, 1)
+
+    # fallback sizes to estimate the costs of a contraction
+    _sizes = Sizes.from_config()
 
     def __init__(self, indices: tuple[tuple[Index]],
                  names: tuple[str],
@@ -111,6 +159,22 @@ class Contraction:
         # overall scaling
         self.scaling = Scaling(computational=comp_scaling, memory=mem_scaling)
 
+    def evaluate_costs(self, sizes: Sizes | None = None
+                       ) -> tuple[int, int]:
+        """
+        Estimate the costs of the contraction. Returns a tuple containing
+        the flop count and the memory foot print of the result tensor.
+
+        Parameters
+        ----------
+        sizes: dict[str, int] | Sizes | None, optional
+            The sizes of the individual spaces used to estimate the
+            computational costs and the memory footprint of the contraction.
+        """
+        if sizes is None:
+            sizes = self._sizes
+        return self.scaling.evaluate_costs(sizes)
+
     def __eq__(self, other: "Contraction"):
         if not isinstance(other, Contraction):
             return False
@@ -143,6 +207,14 @@ class Scaling:
     computational: "ScalingComponent"
     memory: "ScalingComponent"
 
+    def evaluate_costs(self, sizes: Sizes) -> tuple[int, int]:
+        """
+        Estimate the computational costs and the memory footprint using the
+        provided sizes for the spaces.
+        """
+        return (self.computational.evaluate_costs(sizes),
+                self.memory.evaluate_costs(sizes))
+
 
 @dataclass(frozen=True, slots=True, order=True)
 class ScalingComponent:
@@ -151,3 +223,17 @@ class ScalingComponent:
     virt: int
     occ: int
     core: int
+
+    def evaluate_costs(self, sizes: Sizes) -> int:
+        """
+        Estimate the costs of the component using the provided sizes for the
+        spaces.
+        """
+        costs = 1
+        for field in fields(sizes):
+            base = getattr(sizes, field.name)
+            power = getattr(self, field.name, None)
+            assert power is not None
+            if base:
+                costs *= base ** power
+        return costs

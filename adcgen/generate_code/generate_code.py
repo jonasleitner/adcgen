@@ -21,7 +21,8 @@ def generate_code(expr: Expr, target_indices: str,
                   antisymmetric_result_tensor: bool = True,
                   backend: str = "einsum", max_itmd_dim: int | None = None,
                   max_n_simultaneous_contracted: int | None = None,
-                  optimize_contraction_scheme: bool = True) -> str:
+                  optimize_contraction_scheme: bool = True,
+                  space_dims: dict[str, int] | None = None) -> str:
     """
     Generates contractions for a given expression using either 'einsum'
     (Python) or 'libtensor' (C++) syntax.
@@ -58,6 +59,10 @@ def generate_code(expr: Expr, target_indices: str,
         If set, we try to find the contractions with the lowest arithmetic
         and memory scaling, i.e., if possible only 2 tensors are contracted
         simultaneously. (default: True)
+    space_dims: dict[str, int] | None, optional
+        The sizes of the spaces (occ, virt, ...) used to estimate the cost of
+        contractions. If not provided, the sizes from "config.json" will be
+        used.
     """
     if not isinstance(expr, Expr):
         raise Inputerror("The expression needs to be provided as 'Expr'.")
@@ -98,6 +103,7 @@ def generate_code(expr: Expr, target_indices: str,
                 contractions = optimize_contractions(
                     term=term, target_indices=target_indices,
                     target_spin=target_spin, max_itmd_dim=max_itmd_dim,
+                    space_dims=space_dims,
                     max_n_simultaneous_contracted=max_n_simultaneous_contracted
                 )
             else:
