@@ -33,21 +33,32 @@ class TestAntiSymmetricTensor:
     def test_bra_ket_symmetry(self):
         i, j = Index("i", below_fermi=True), Index("j", below_fermi=True)
         a, b = Index("a", above_fermi=True), Index("b", above_fermi=True)
-        assert AntiSymmetricTensor("V", (i, j), (a, b), 1) - \
-            AntiSymmetricTensor("V", (a, b), (i, j), 1) is S.Zero
-        assert AntiSymmetricTensor("V", (i, j), (a, b), -1) + \
-            AntiSymmetricTensor("V", (a, b), (i, j), -1) is S.Zero
+        test = AntiSymmetricTensor("V", (i, j), (a, b), 1)
+        assert test - AntiSymmetricTensor("V", (a, b), (i, j), 1) is S.Zero
+        assert test.idx == (i, j, a, b)
+        test = AntiSymmetricTensor("V", (i, j), (a, b), -1)
+        assert test + AntiSymmetricTensor("V", (a, b), (i, j), -1) is S.Zero
+        assert test.idx == (i, j, a, b)
         k, l = Index("k", below_fermi=True), Index("l", below_fermi=True)  # noqa E741
-        assert AntiSymmetricTensor("V", (i, j), (k, l), 1) - \
-            AntiSymmetricTensor("V", (k, l), (i, j), 1) is S.Zero
+        test = AntiSymmetricTensor("V", (i, j), (k, l), 1)
+        assert test - AntiSymmetricTensor("V", (k, l), (i, j), 1) is S.Zero
+        assert test.idx == (i, j, k, l)
         ia = Index("i", below_fermi=True, alpha=True)
         ib = Index("i", below_fermi=True, alpha=True)
-        assert AntiSymmetricTensor("V", (i, ia), (k, l), 1) - \
-            AntiSymmetricTensor("V", (k, l), (i, ia), 1) is S.Zero
-        assert AntiSymmetricTensor("V", (i, j), (ia, ib), 1) - \
-            AntiSymmetricTensor("V", (ia, ib), (i, j), 1) is S.Zero
-        assert AntiSymmetricTensor("V", (i, j, ib), (i, ia, ib), 1) - \
-            AntiSymmetricTensor("V", (i, ia, ib), (i, j, ib), 1) is S.Zero
+        test = AntiSymmetricTensor("V", (i, ia), (k, l), 1)
+        assert test - AntiSymmetricTensor("V", (k, l), (i, ia), 1) is S.Zero
+        assert test.idx == (k, l, i, ia)
+        test = AntiSymmetricTensor("V", (i, j), (ia, ib), 1)
+        assert test - AntiSymmetricTensor("V", (ia, ib), (i, j), 1) is S.Zero
+        assert test.idx == (i, j, ia, ib)
+        test = AntiSymmetricTensor("V", (i, j, ib), (i, ia, ib), 1)
+        assert (test -
+                AntiSymmetricTensor("V", (i, ia, ib), (i, j, ib), 1) is S.Zero)
+        assert test.idx == (i, j, ib, i, ia, ib)
+        I = Index("I", core=True)  # noqa E741
+        test = AntiSymmetricTensor("d", (I,), (i,), 1)  # co -> oc
+        assert test - AntiSymmetricTensor("d", (i,), (I,), 1) is S.Zero
+        assert test.idx == (i, I)
 
 
 class TestSymmetricTensor:

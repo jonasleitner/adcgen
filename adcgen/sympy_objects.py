@@ -94,10 +94,13 @@ class AntiSymmetricTensor(SymbolicTensor):
             raise NotImplementedError("Bra Ket symmetry only implemented "
                                       "for tensors with an equal amount "
                                       "of upper and lower indices.")
-        # compare the space of upper and lower indices
-        space_u = [s.space[0] for s in upper]
-        space_l = [s.space[0] for s in lower]
-        if space_l < space_u:  # space with more occ should be upper
+        # compare the space of upper and lower indices:
+        # we have to map the spaces onto numbers, since in adcman and adcc
+        # the ordering o < c < v is used for the definition of canonical blocks
+        space_order = {"g": 0, "o": 1, "c": 2, "v": 3}
+        space_u = [space_order[s.space[0]] for s in upper]
+        space_l = [space_order[s.space[0]] for s in lower]
+        if space_l < space_u:
             return True
         elif space_l == space_u:  # diagonal block
             # compare the spin of both index blocks:
