@@ -1,7 +1,7 @@
 {
-	"sizes": {
-		"core": 5,
-		"occ": 20,
-		"virt": 200
-	}
+  "sizes": {
+    "core": 5,
+    "occ": 20,
+    "virt": 200
+  }
 }

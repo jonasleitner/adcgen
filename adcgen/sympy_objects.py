@@ -94,29 +94,19 @@ class AntiSymmetricTensor(SymbolicTensor):
             raise NotImplementedError("Bra Ket symmetry only implemented "
                                       "for tensors with an equal amount "
                                       "of upper and lower indices.")
-        # compare the space of upper and lower indices:
-        # we have to map the spaces onto numbers, since in adcman and adcc
-        # the ordering o < c < v is used for the definition of canonical blocks
-        space_order = {"g": 0, "o": 1, "c": 2, "v": 3}
-        space_u = [space_order[s.space[0]] for s in upper]
-        space_l = [space_order[s.space[0]] for s in lower]
-        if space_l < space_u:
-            return True
-        elif space_l == space_u:  # diagonal block
-            # compare the spin of both index blocks:
-            # space with more spin orbitals or alpha spin should be upper.
-            spin_u = [s.spin for s in upper]
-            spin_l = [s.spin for s in lower]
-            if spin_l < spin_u:
+        # Build the sort key for each index and collect the first, second, ...
+        # entries of the keys
+        # -> Compare each component of the sort keys individually and abort
+        # if it is clear, that we need or don't need to swap
+        # Assumes that upper indices should have the smaller keys.
+        upper_sort_keys = (sort_idx_canonical(s) for s in upper)
+        lower_sort_keys = (sort_idx_canonical(s) for s in lower)
+        for upper_keys, lower_keys in \
+                zip(zip(*upper_sort_keys), zip(*lower_sort_keys)):
+            if lower_keys < upper_keys:
                 return True
-            elif spin_l == spin_u:  # diagonal spin block
-                # compare the names of indices
-                lower_names = [(int(s.name[1:]) if s.name[1:] else 0,
-                               s.name[0]) for s in lower]
-                upper_names = [(int(s.name[1:]) if s.name[1:] else 0,
-                               s.name[0]) for s in upper]
-                if lower_names < upper_names:
-                    return True
+            elif upper_keys < lower_keys:
+                return False
         return False
 
     def _latex(self, printer) -> str:

@@ -483,7 +483,7 @@ def _has_fully_contracted_contribution(op_string: list[FermionicOperator]
                                        ) -> bool:
     """
     Takes a list of second quantized operators and checks whether a
-    non-vanishing fully contribution can exist.
+    non-vanishing fully contracted contribution can exist.
     """
     if len(op_string) % 2:  # odd number of operators
         return False

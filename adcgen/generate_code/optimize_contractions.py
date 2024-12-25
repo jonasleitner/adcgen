@@ -95,11 +95,8 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
     )
     # go through all schemes and find the one with the lowest scaling by
     # considering the:
-    # 1) Maximum scaling of each field
-    # 2) The number of contractions with the maximum scaling
-    # Thereby, we rely on the order in which the fields are defined on the
-    # dataclass. Furthermore, the computational scaling is prioritized over the
-    # memory scaling.
+    # 1) Computational scaling (flop count)
+    # 2) Memory scaling (number of elements to store)
     optimal_scaling = None
     optimal_scheme = None
     for scheme in contraction_schemes:

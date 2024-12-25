@@ -45,6 +45,10 @@ matrix = factor_intermediates(matrix, max_order=1)
 
 # This generates code using the numpy.einsum syntax
 # The naming convention is currently chosen to work for the adc-connect module.
+# The scaling is determined by assuming sizes for each space, e.g.,
+# 5 core, 20 occupied and 200 virtual orbitals. This can be modified
+# through 'adcgen/generate_code/config.json' or by providing a dict with
+# the desired sizes to the 'generate_code' function.
 code = generate_code(matrix, target_indices="ia,jb", backend="einsum",
                      bra_ket_sym=1, max_tensor_dim=4,
                      optimize_contractions=True)

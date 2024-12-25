@@ -16,6 +16,9 @@ expec = Expr(expec, real=True).substitute_contracted()
 expec = simplify(expec)
 
 # remove the operator matrix to obtain the transition dm
+# The one particle operator is by named 'd' by default. The tensor names can
+# be modified through 'adcgen/tensor_names.json' and accessed through the
+# TensorNames class.
 dm = remove_tensor(expec, tensor_names.operator)
 for dm_block, dm_expr in dm.items():
     assert len(dm_block) == 1
