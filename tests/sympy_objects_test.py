@@ -44,7 +44,7 @@ class TestAntiSymmetricTensor:
         assert test - AntiSymmetricTensor("V", (k, l), (i, j), 1) is S.Zero
         assert test.idx == (i, j, k, l)
         ia = Index("i", below_fermi=True, alpha=True)
-        ib = Index("i", below_fermi=True, alpha=True)
+        ib = Index("i", below_fermi=True, beta=True)
         test = AntiSymmetricTensor("V", (i, ia), (k, l), 1)
         assert test - AntiSymmetricTensor("V", (k, l), (i, ia), 1) is S.Zero
         assert test.idx == (k, l, i, ia)
