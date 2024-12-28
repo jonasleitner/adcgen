@@ -83,9 +83,10 @@ def optimize_contractions(term: Term, target_indices: str | None = None,
         # trivial: only a single tensor/delta with exponent 1
         # - resorting of indices
         # - trace
-        names, indices = relevant_obj_names[0], relevant_obj_indices[0]
-        return Contraction(indices=indices, names=names,
-                           term_target_indices=target_indices)
+        return [Contraction(
+            indices=relevant_obj_indices, names=relevant_obj_names,
+            term_target_indices=target_indices
+        )]
     # lazily find the contraction schemes
     contraction_schemes = _optimize_contractions(
         relevant_obj_names=tuple(relevant_obj_names),
