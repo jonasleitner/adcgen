@@ -1850,10 +1850,17 @@ class Obj(Container):
         if itmd is None:
             expanded = self.sympy
         else:
-            expanded = itmd.expand_itmd(
-                indices=self.idx, return_sympy=True, fully_expand=fully_expand
-            )
-            expanded = Pow(expanded, self.exponent)
+            # Use a for loop to obtain different contracted itmd indices
+            # for each x in: x * x * ...
+            expanded = 1
+            exponent = self.exponent
+            for _ in range(abs(exponent)):
+                expanded *= itmd.expand_itmd(
+                    indices=self.idx, return_sympy=True,
+                    fully_expand=fully_expand
+                )
+            if self.exponent < 0:
+                expanded = Pow(expanded, -1)
 
         if return_sympy:
             return expanded
