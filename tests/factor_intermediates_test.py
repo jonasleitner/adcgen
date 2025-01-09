@@ -1,5 +1,6 @@
 from adcgen.factor_intermediates import factor_intermediates
 from adcgen.func import import_from_sympy_latex
+from adcgen.intermediates import t2eri_2, p0_3_oo
 from adcgen.simplify import simplify
 
 from sympy import S
@@ -143,3 +144,37 @@ class TestFactorIntermediates:
         ref.make_real()
 
         assert (res.sympy - ref.sympy) is S.Zero
+
+    def test_repeated_indices(self):
+        # Short intermediate
+        pi2 = t2eri_2()
+        # check that factorization works at all
+        test = pi2.expand_itmd("ijka", fully_expand=False).make_real()
+        res = factor_intermediates(test, ["t2_1", "t2eri_2"])
+        assert res.sympy - pi2.tensor(indices="ijka").sympy is S.Zero
+        # allow repeated indices
+        test = pi2.expand_itmd("ijia", fully_expand=False).make_real()
+        res = factor_intermediates(test, ["t2_1", "t2eri_2"],
+                                   allow_repeated_itmd_indices=True)
+        assert res.sympy - pi2.tensor(indices="ijia").sympy is S.Zero
+        # don't allow repeated indices
+        res = factor_intermediates(test, ["t2_1", "t2eri_2"],
+                                   allow_repeated_itmd_indices=False)
+        assert simplify(res - test).sympy is S.Zero
+        # Long intermediate
+        # not working, because the number of terms of e.g., p0_3_oo is reduced
+        # from 2 to 1.
+        p0_oo = p0_3_oo()
+        # check that factorization works at all
+        test = p0_oo.expand_itmd("ij", fully_expand=False).make_real()
+        res = factor_intermediates(test, ["t2_1", "t2_2", "p0_3_oo"])
+        assert res.sympy - p0_oo.tensor(indices="ij").sympy is S.Zero
+        # allow repeated indices -> does not work anyway
+        test = p0_oo.expand_itmd("ii", fully_expand=False).make_real()
+        res = factor_intermediates(test, ["t2_1", "t2_2", "p0_3_oo"],
+                                   allow_repeated_itmd_indices=True)
+        # don't allow repeated indices
+        assert simplify(res - test).sympy is S.Zero
+        res = factor_intermediates(test, ["t2_1", "t2_2", "p0_3_oo"],
+                                   allow_repeated_itmd_indices=False)
+        assert simplify(res - test).sympy is S.Zero

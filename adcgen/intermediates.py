@@ -336,7 +336,8 @@ class RegisteredIntermediate:
         return itmd
 
     def factor_itmd(self, expr: e.Expr, factored_itmds: tuple[str] = tuple(),
-                    max_order: int = None) -> e.Expr:
+                    max_order: int = None,
+                    allow_repeated_itmd_indices: bool = False) -> e.Expr:
         """
         Factors the intermediate in an expression assuming a real orbital
         basis.
@@ -354,6 +355,14 @@ class RegisteredIntermediate:
         max_order : int, optional
             The maximum perturbation theoretical order of intermediates
             to consider.
+        allow_repeated_itmd_indices: bool, optional
+            If set, the factorization of intermediates of the form I_iij are
+            allowed, i.e., indices on the intermediate may appear more than
+            once. This corresponds to either a partial trace or a diagonal
+            element of the intermediate. Note that this does not consistently
+            work for "long" intermediates (at least 2 terms), because the
+            number of terms might be reduced which is not correctly handled
+            currently.
         """
 
         from .factor_intermediates import (_factor_long_intermediate,
@@ -426,14 +435,16 @@ class RegisteredIntermediate:
         # factor the intermediate in the expr
         if len(itmd) == 1:  # short intermediate that consists of a single term
             factored = _factor_short_intermediate(
-                to_factor, itmd[0], itmd_data[0], self
+                to_factor, itmd[0], itmd_data[0], self,
+                allow_repeated_itmd_indices=allow_repeated_itmd_indices
             )
             factored += remainder
         else:  # long intermediate that consists of multiple terms
             itmd_term_map = self.itmd_term_map(factored_itmds)
             for _ in range(max_order // self.order):
                 to_factor = _factor_long_intermediate(
-                    to_factor, itmd, itmd_data, itmd_term_map, self
+                    to_factor, itmd, itmd_data, itmd_term_map, self,
+                    allow_repeated_itmd_indices=allow_repeated_itmd_indices
                 )
             factored = to_factor + remainder
         return factored
@@ -465,7 +476,8 @@ class t2_1(RegisteredIntermediate):
         )
 
     def factor_itmd(self, expr: e.Expr, factored_itmds: list[str] = None,
-                    max_order: int = None):
+                    max_order: int = None,
+                    allow_repeated_itmd_indices: bool = False) -> e.Expr:
         """Factors the t2_1 intermediate in an expression assuming a real
            orbital basis."""
 
@@ -516,6 +528,10 @@ class t2_1(RegisteredIntermediate):
                                         include_target_idx=False)
                 if descr != t2_eri_descr:
                     continue
+                # repeated indices on t2_1 make no sense since
+                # t^aa_ij = <ij||aa> / (2a - i - j) = 0
+                # due to the permutational antisymmetry of V
+                assert all(c == 1 for c in Counter(eri.idx).values())
                 # - have a correct eri -> zip indices together and substitute
                 #   the itmd denominator
                 sub = order_substitutions(dict(zip(t2_eri_idx, eri.idx)))

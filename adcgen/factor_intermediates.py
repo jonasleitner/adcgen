@@ -11,7 +11,8 @@ from itertools import product, compress
 
 
 def factor_intermediates(expr: e.Expr, types_or_names: str | list[str] = None,
-                         max_order: int = None) -> e.Expr:
+                         max_order: int = None,
+                         allow_repeated_itmd_indices: bool = False) -> e.Expr:
     """
     Factors the intermediates defined in 'intermediates.py' in an expression.
     Note that the implementation assumes that a real orbital basis is used.
@@ -26,6 +27,13 @@ def factor_intermediates(expr: e.Expr, types_or_names: str | list[str] = None,
     max_order : int, optional
         The maximum perturbation theoretical order of intermediates to
         consider.
+    allow_repeated_itmd_indices: bool, optional
+        If set, the factorization of intermediates of the form I_iij are
+        allowed, i.e., indices on the intermediate may appear more than once.
+        This corresponds to either a partial trace or a diagonal element of
+        the intermediate. Note that this does not consistently work for
+        "long" intermediates (at least 2 terms), because the number of terms
+        might be reduced which is not correctly handled currently.
     """
     from .intermediates import Intermediates
     from time import perf_counter
@@ -70,7 +78,10 @@ def factor_intermediates(expr: e.Expr, types_or_names: str | list[str] = None,
     for name, itmd_cls in itmd_to_factor.items():
         logger.info("".join(["\n", ' '*25, f"Factoring {name}\n\n", '#'*80]))
         start = perf_counter()
-        expr = itmd_cls.factor_itmd(expr, factored, max_order)
+        expr = itmd_cls.factor_itmd(
+            expr, factored, max_order,
+            allow_repeated_itmd_indices=allow_repeated_itmd_indices
+        )
         factored.append(name)
         logger.info("".join([
             "\n", "-"*80, "\n"
@@ -97,7 +108,9 @@ def factor_intermediates(expr: e.Expr, types_or_names: str | list[str] = None,
 
 def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                               itmd_data: tuple['FactorizationTermData'],
-                              itmd_term_map: LazyTermMap, itmd_cls) -> e.Expr:
+                              itmd_term_map: LazyTermMap, itmd_cls,
+                              allow_repeated_itmd_indices: bool = False
+                              ) -> e.Expr:
     """
     Factores a long intermediate - an intermediate that consists of more
     than one term - in an expression.
@@ -117,6 +130,12 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
         if the target indices of the intermediate are permuted.
     idmd_cls
         The class instance of the intermediate to factor.
+    allow_repeated_itmd_indices: bool, optional
+        If set, the factorization of intermediates of the form I_iij are
+        allowed, i.e., indices on the intermediate may appear more than
+        once. This does not consistently work for "long" intermediates
+        (at least 2 terms), because the number of terms might be reduced which
+        is not correctly handled currently.
     """
 
     if expr.sympy.is_number:
@@ -233,6 +252,11 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
                 # - obtain the indices of the intermediate
                 itmd_indices = tuple(variant_data['sub'].get(s, s) for s in
                                      itmd_default_symbols)
+
+                # - ensure that we have no repeated indices on the itmd
+                if not allow_repeated_itmd_indices and itmd_indices and \
+                        any(c != 1 for c in Counter(itmd_indices).values()):
+                    continue
 
                 # - check that none of the contracted itmd indices appears
                 #   in the remainder!
@@ -375,7 +399,9 @@ def _factor_long_intermediate(expr: e.Expr, itmd: list[EriOrbenergy],
 
 def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
                                itmd_data: 'FactorizationTermData',
-                               itmd_cls) -> e.Expr:
+                               itmd_cls,
+                               allow_repeated_itmd_indices: bool = False
+                               ) -> e.Expr:
     """
     Factors a short intermediate - an intermediate that consits only of one
     term - in an expression.
@@ -391,6 +417,11 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
         expression.
     itmd_cls
         The class instance of the intermediate to factor.
+    allow_repeated_itmd_indices: bool, optional
+        If set, the factorization of intermediates of the form I_iij are
+        allowed, i.e., indices on the intermediate may appear more than
+        once. This corresponds to either a partial trace or a diagonal
+        element of the intermediate.
     """
 
     if expr.sympy.is_number:
@@ -435,6 +466,17 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
         if variants is None:
             factored += term.expr
             continue
+
+        # filter out variants, where repeated indices appear on the
+        # intermediate to factor
+        if not allow_repeated_itmd_indices:
+            variants = [var for var in variants if all(
+                c == 1 for c in Counter(var["sub"].get(s, s) for s in
+                                        itmd_default_symbols).values()
+            )]
+            if not variants:
+                factored += term.expr
+                continue
 
         # choose the variant with the lowest overlap to other variants
         #  - find all unique obj indices (eri and denom)
@@ -489,7 +531,7 @@ def _factor_short_intermediate(expr: e.Expr, itmd: EriOrbenergy,
         #   for short itmds it is not necessary to minimize the itmd indices
         #   just use whatever is found
         itmd_indices = tuple(variant_data['sub'].get(s, s) for s in
-                             get_symbols(itmd_cls.default_idx))
+                             itmd_default_symbols)
 
         contracted_itmd_indices = tuple(variant_data['sub'].get(s, s)
                                         for s in itmd_contracted_symbols)
