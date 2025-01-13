@@ -167,6 +167,7 @@ class IntermediateStates:
             )
 
             # prefactor due to the sum - sum_J |J><J|I>
+            n_ov = n_ov_from_space(lower_space)
             prefactor = Rational(
                 1, factorial(n_ov["occ"]) * factorial(n_ov["virt"])
             )
