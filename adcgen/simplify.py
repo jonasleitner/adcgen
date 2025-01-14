@@ -630,6 +630,10 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
         #   - diagonal block: multiply the term by 1/2 to keep the result
         #     normalized... we will get twice as many terms from applying
         #     the tensor symmetry as without bra ket symmetry
+        #     -> the factor from lifting the index restrictions remains
+        #        constant, while the factor for the symmetrisation is
+        #        multiplied by 2:
+        #        (n_perms + 1) / [2 (n_perms + 1)] = 1/2
         #   - non-diagonal block: bra ket swap gives a non canonical block
         #     which can be folded into the canonical block:
         #       f_ia + f_ai = 2 f_ia
@@ -688,13 +692,12 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
             remaining_term *= remaining_t
         # the tensor might have an exponent that we need to take care of!
         tensor = tensors[0]
-        base, exponent = tensor.base_and_exponent
-        if exponent > 1:  # lower exponent by 1
-            tensor = e.Expr(base, **tensor.assumptions).terms[0].objects[0]
-            remaining_term *= Pow(base, exponent - 1)
-        elif exponent < 1:
+        exponent = tensor.exponent
+        # I am not 100% sure atm how to remove tensors with exponents != 1
+        # so wait for an actual example to come up and implement it then.
+        if exponent != 1:
             raise NotImplementedError("Did not implement the case of removing "
-                                      f"tensors with exponents < 1: {t_name} "
+                                      f"tensors with exponents != 1: {t_name} "
                                       f"in {term}")
         assert len(remaining_term) == 1
         remaining_term = remove(remaining_term.terms[0], tensor,
@@ -714,8 +717,7 @@ def remove_tensor(expr: e.Expr, t_name: str) -> dict:
             # removed and recurse for each term
             ret = {}
             for t in remaining_term.terms:
-                # hier gibts ein dict mit block, expr
-                # bereits entfernter block + zusätzlich entfernte block
+                # add the blocks to the already removed block
                 contribution = process_term(t, t_name)
                 for blocks, contrib in contribution.items():
                     key = tuple(sorted(t_block + list(blocks)))

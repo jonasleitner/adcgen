@@ -1,10 +1,102 @@
-from adcgen.simplify import simplify_unitary
-from adcgen.sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, \
-    KroneckerDelta
+from adcgen.simplify import simplify_unitary, remove_tensor, simplify
+from adcgen.sympy_objects import (
+    NonSymmetricTensor, AntiSymmetricTensor, KroneckerDelta, Amplitude
+)
 from adcgen.expr_container import Expr
 from adcgen.indices import get_symbols
+from adcgen.tensor_names import tensor_names
 
-from sympy import S
+from sympy import S, Rational
+
+
+class TestRemoveTensor:
+    def test_trivial(self):
+        i, j, k, a, b, c = get_symbols("ijkabc")
+
+        test = Expr(
+            Rational(1, 2) *
+            Amplitude(tensor_names.left_adc_amplitude, (a, b), (i, j)) *
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k)) *
+            AntiSymmetricTensor(tensor_names.operator, (k,), (c,))
+        )
+        ref = Expr(
+            Rational(1, 2) *
+            Amplitude(tensor_names.left_adc_amplitude, (b, c), (j, k)) *
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k))
+        )
+        res = remove_tensor(test, tensor_names.operator)
+        assert len(res) == 1
+        block, res = res.popitem()
+        assert block == ("ov",)
+        assert simplify(res - ref).sympy is S.Zero
+
+    def test_with_braketsym(self):
+        i, j, k, a, b, c = get_symbols("ijkabc")
+        # we will get an additional factor of 1/2, because the non-canonical
+        # d_vo block is also included in the test term.
+
+        test = Expr(
+            Rational(1, 2) *
+            Amplitude(tensor_names.left_adc_amplitude, (a, b), (i, j)) *
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k)) *
+            AntiSymmetricTensor(tensor_names.operator, (k,), (c,), 1)
+        )
+        ref = Expr(
+            Rational(1, 4) *
+            Amplitude(tensor_names.left_adc_amplitude, (b, c), (j, k)) *
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k))
+        )
+        res = remove_tensor(test, tensor_names.operator)
+        assert len(res) == 1
+        block, res = res.popitem()
+        assert block == ("ov",)
+        assert simplify(res - ref).sympy is S.Zero
+
+    def test_adc_amplitude(self):
+        i, j, k, a, b, c = get_symbols("ijkabc")
+        # due to the perm symmetry of X, the term will be expanded in 4 terms
+        # that can be collected into a single term. Since X is an adc amplitude
+        # we will get a special prefactor of 1/2
+        # -> final pref: 1/2 * 4 * 1/2 = 1
+
+        test = Expr(
+            Rational(1, 2) *
+            Amplitude(tensor_names.left_adc_amplitude, (a, b), (i, j)) *
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k)) *
+            AntiSymmetricTensor(tensor_names.operator, (k,), (c,), 1)
+        )
+        ref = Expr(
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k)) *
+            AntiSymmetricTensor(tensor_names.operator, (k,), (c,), 1)
+        )
+        res = remove_tensor(test, tensor_names.left_adc_amplitude)
+        assert len(res) == 1
+        block, res = res.popitem()
+        assert block == ("oovv",)
+        assert simplify(res - ref).sympy is S.Zero
+
+    def test_multiple_tensors(self):
+        i, j, k, a, b, c = get_symbols("ijkabc")
+        # 1/2 t_ijkabc d_kc d_ijab -> 1/4 t_ijkabc d_ijab
+        # (because d is symmetric)
+        # 1/4 t_ijkabc d_ijab -> 1/2 t_ijkabc
+        # 1/4 * 1/2 (d is symmetric) * 4 (we can collect the 4 terms) = 1/2
+
+        test = Expr(
+            Rational(1, 2) *
+            AntiSymmetricTensor(tensor_names.operator, (i, j), (a, b), 1) *
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k)) *
+            AntiSymmetricTensor(tensor_names.operator, (k,), (c,), 1)
+        )
+        ref = Expr(
+            Rational(1, 2) *
+            Amplitude(tensor_names.gs_amplitude, (a, b, c), (i, j, k))
+        )
+        res = remove_tensor(test, tensor_names.operator)
+        assert len(res) == 1
+        block, res = res.popitem()
+        assert block == ("oovv", "ov")
+        assert simplify(res - ref).sympy is S.Zero
 
 
 class TestSimplify:
