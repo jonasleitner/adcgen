@@ -93,6 +93,7 @@ class IntermediateStates:
         if len(occupied) != n_ov["occ"] or len(virtual) != n_ov["virt"]:
             raise Inputerror(f"The indices {indices} and the space {space} "
                              "are not compatible.")
+        del n_ov  # prevent accidentally usage below
 
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the

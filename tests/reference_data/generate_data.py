@@ -198,7 +198,8 @@ class Generator:
     def gen_precursor(self):
         outfile = "isr_precursor.json"
 
-        to_generate = {'pp': {('ph', 'ia'): [0, 1, 2]}}
+        to_generate = {'pp': {('ph', 'ia'): [0, 1, 2],
+                              ('pphh', 'ijab'): [0, 1, 2]}}
 
         results = {}
         for variant, spaces in to_generate.items():
