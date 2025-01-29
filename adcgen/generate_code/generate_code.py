@@ -340,9 +340,9 @@ def _format_python_prefactor(prefactor) -> str:
         return str(prefactor)
     elif prefactor in [Rational(1, 2), Rational(1, 4)]:  # simple Rational
         return str(float(prefactor))
-    elif isinstance(prefactor, Rational):  # mor ecomplex rational
+    elif isinstance(prefactor, Rational):  # more complex rational
         return f"{prefactor.p} / {prefactor.q}"
-    elif isinstance(prefactor, Pow) and prefactor.args[1] == 0.5:  # sqrt
+    elif isinstance(prefactor, Pow) and prefactor.args[1] == Rational(1, 2):
         return f"sqrt({prefactor.args[0]})"
     elif isinstance(prefactor, Mul):
         return " * ".join(
@@ -362,7 +362,7 @@ def _format_cpp_prefactor(prefactor) -> str:
         return str(float(prefactor))
     elif isinstance(prefactor, Rational):
         return f"{float(prefactor.p)} / {float(prefactor.q)}"
-    elif isinstance(prefactor, Pow) and prefactor.args[1] == 0.5:
+    elif isinstance(prefactor, Pow) and prefactor.args[1] == Rational(1, 2):
         return f"constants::sq{prefactor.args[0]}"
     elif isinstance(prefactor, Mul):
         return " * ".join(
