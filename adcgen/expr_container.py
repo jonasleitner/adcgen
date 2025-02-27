@@ -2166,6 +2166,10 @@ class NormalOrdered(Obj):
     def type_as_str(self):
         return 'NormalOrdered'
 
+    @property
+    def target(self):
+        return self.term.target
+
     @cached_property
     def idx(self) -> tuple[Index]:
         """
