@@ -262,7 +262,8 @@ class Expr(Container):
             self._antisym_tensors = antisym_tensors
             self._apply_tensor_braket_sym()
 
-    def set_target_idx(self, target_idx: None | list[str | Index]) -> None:
+    def set_target_idx(self, target_idx: None | list[str] | list[Index]
+                       ) -> None:
         """
         Set the target indices of the expression. Only necessary if the
         Einstein sum contension is not sufficient to determine them

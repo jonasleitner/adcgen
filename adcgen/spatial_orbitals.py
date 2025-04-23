@@ -1,8 +1,10 @@
 from .expr_container import Expr
+from .logger import logger
 from .misc import Inputerror
 from .indices import get_symbols, order_substitutions, sort_idx_canonical
 from .simplify import simplify
 
+from collections import Counter
 from itertools import product
 
 
@@ -97,158 +99,154 @@ def integrate_spin(expr: Expr, target_idx: str, target_spin: str) -> Expr:
     target_spin : str
         Spin of target indices of the expression.
     """
-
-    if not isinstance(expr, Expr):
-        raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
-    target_idx = get_symbols(target_idx)
-    if len(target_idx) != len(target_spin):
-        raise Inputerror(f"Spin {target_spin} and indices {target_idx} are "
-                         "not compatible.")
-    sorted_target = tuple(sorted(target_idx, key=sort_idx_canonical))
-    # - assign the target indices to a spin
-    target_idx_spin_map = {}
-    for idx, spin in zip(target_idx, target_spin):
-        if idx in target_idx_spin_map and target_idx_spin_map[idx] != spin:
+    assert isinstance(expr, Expr)
+    # - validate the target indices and target spin
+    target_symbols = get_symbols(target_idx)
+    if len(target_symbols) != len(target_spin):
+        raise Inputerror(f"Spin {target_spin} and indices {target_symbols} are"
+                         " not compatible.")
+    target_idx_spins = {}
+    for idx, spin in zip(target_symbols, target_spin):
+        if idx in target_idx_spins and target_idx_spins[idx] != spin:
             raise ValueError(f"The index {idx} can not be assigned to alpha "
                              "and beta spin simultaneously.")
-        target_idx_spin_map[idx] = spin
-
-    # generate the new target indices of the expression to set them if needed
-    result_target = get_symbols([s.name for s in target_idx], target_spin)
+        target_idx_spins[idx] = spin
+    # - sort the target indices to validate that the terms have the correct
+    #   target indices and build the target spins
+    sorted_target = tuple(sorted(target_idx_spins, key=sort_idx_canonical))
+    target_spins = [target_idx_spins[idx] for idx in sorted_target]
+    del target_idx_spins
+    # - generate the new target indices of the resulting expression to set
+    #   them if needed
+    result_target = get_symbols([s.name for s in target_symbols], target_spin)
 
     result = Expr(0, **expr.assumptions)
-    if expr.provided_target_idx is not None:  # set target indices if necessary
+    if expr.provided_target_idx is not None:
         result.set_target_idx(result_target)
 
     for term in expr.terms:
+        logger.debug(f"Integrating spin in term {term}")
         # - ensure that the term has matching target indices
-        if term.target != sorted_target:
-            raise ValueError(f"Target indices of {term} {term.target} dont "
-                             f"match the desired target indices {target_idx}")
+        term_target = term.target
+        if term_target != sorted_target:
+            raise ValueError(f"Target indices {term_target} of term {term} "
+                             "don't match the desired target indices "
+                             f"{target_symbols}")
         # - ensure that no index in the term is holding a spin
-        term_indices = set(term.idx)
-        if any(s.spin for s in term_indices):
+        if any(s.spin for s in term.idx):
             raise ValueError("The function assumes that the input expression "
                              "is expressed in terms of spin orbitals. Found "
                              f"a spatial orbital in term {term}.")
-        # check of the term is just a number: nothing to do
-        # a number can not have any indices -> nothing to do
-        if not term_indices:
-            result += term
+        # we have no indices (the term is a number) we don't have anything
+        # to do
+        if not term.idx:
+            logger.debug(f"Result = {term}")
+            result += term.sympy
             continue
-        # - go through all objects in the term and get the allowed spin
-        #   blocks of all tensors and deltas contained in the term
-        #   filtering out those spin blocks that are in contradiction to the
-        #   desired spin of the target indices
+        # - build a list of indices and base map for the spins of the indices
+        #   starting with the target indices
+        term_contracted = term.contracted
+        term_indices = (*term_target, *term_contracted)
+        assert all(v == 1 for v in Counter(term_indices).values())
+        base_spins = target_spins.copy()
+        base_spins.extend(None for _ in range(len(term_contracted)))
+        # - for each object in the term: go through the allowed spin_blocks and
+        #   try to add them to the base spins (target spins) in order to form a
+        #   valid variants where all indices are assigned to a spin.
+        spin_variants = [base_spins]
         term_vanishes = False
-        term_spin_idx_maps = []
         for obj in term.objects:
             allowed_blocks = obj.allowed_spin_blocks
             # hit a Polynom, Prefactor or unknown tensor
             if allowed_blocks is None:
                 continue
-            obj_idx = obj.idx
-            obj_spin_idx_maps = []
+            # we have some allowed blocks to check
+            # -> try to form valid combinations assigning all indices to a spin
+            indices = tuple(term_indices.index(idx) for idx in obj.idx)
+            old_spin_variants = spin_variants.copy()
+            spin_variants.clear()
             for block in allowed_blocks:
-                valid = True
-                idx_map = {"a": set(), "b": set()}
-                for spin, idx in zip(block, obj_idx):
-                    if idx in target_idx_spin_map and \
-                            spin != target_idx_spin_map[idx]:
-                        valid = False
-                        break
-                    else:
-                        idx_map[spin].add(idx)
-                if not valid:
+                # - ensure that the block is valid: a index can not be
+                #   assigned to alpha and beta at the same time
+                addition = [None for _ in range(len(term_indices))]
+                for spin, idx in zip(block, indices):
+                    if addition[idx] is not None and addition[idx] != spin:
+                        raise ValueError("Found invalid allowed spin block "
+                                         f"{block} for {obj}.")
+                    addition[idx] = spin
+                # check for contracdictions with the target_spin and skip the
+                # block if this is the case
+                if any(sp1 != sp2 for sp1, sp2 in
+                       zip(target_spins, addition[:len(term_target)])
+                       if sp2 is not None):
                     continue
-                if idx_map["a"] & idx_map["b"]:
-                    raise ValueError("Found invalid allowed spin block "
-                                     f"{block} for {obj}.")
-                obj_spin_idx_maps.append(idx_map)
-            if not obj_spin_idx_maps:
-                term_vanishes = True
-                break
-            term_spin_idx_maps.append(obj_spin_idx_maps)
-        if term_vanishes:
-            continue
-
-        # - form all unique valid combinations of idx_maps while checking
-        #   for contradictions
-        combinations = []
-        for tensor_spin_idx_maps in term_spin_idx_maps:
-            if not combinations:  # initialize combinations
-                combinations.extend(tensor_spin_idx_maps)
-                continue
-            old_combinations = combinations.copy()
-            combinations.clear()
-            for idx_map, addition in \
-                    product(old_combinations, tensor_spin_idx_maps):
-                # ensure that there are no contradictions
-                if idx_map["a"] & addition["b"] or \
-                        idx_map["b"] & addition["a"]:
-                    continue
-                combined_map = {"a": idx_map["a"] | addition["a"],
-                                "b": idx_map["b"] | addition["b"]}
-                # we only need unique variants -> remove duplicates
-                if any(d == combined_map for d in combinations):
-                    continue
-                combinations.append(combined_map)
-            # it was not possible to find a single valid combination
-            # -> the term should vanish for the given target indices
-            if not combinations:
+                # iterate over the existing variants and try to add the
+                # addition
+                for old_variant in old_spin_variants:
+                    # check for any contradiction
+                    if any(sp1 != sp2 for sp1, sp2 in
+                           zip(old_variant, addition)
+                           if sp1 is not None and sp2 is not None):
+                        continue
+                    # add the addition to the old variant
+                    combination = [sp1 if sp2 is None else sp2
+                                   for sp1, sp2 in zip(old_variant, addition)]
+                    # we only need unique variants -> remove duplicates
+                    if any(comb == combination for comb in spin_variants):
+                        continue
+                    spin_variants.append(combination)
+            # we could not find a single valid combination for the given
+            # object -> the term has to vanish
+            if not spin_variants:
                 term_vanishes = True
                 break
         if term_vanishes:
+            logger.debug("Result = 0")
             continue
-
+        # collect the result in a separate expression such that we can call
+        # simplify before adding the contribution to the result
+        contribution = Expr(0, **expr.assumptions)
+        if expr.provided_target_idx is not None:  # if necessary update target
+            contribution.set_target_idx(result_target)
         # - iterate over the unique combinations, replace the spin orbitals
         #   by the corresponding spatial orbitals (assign a spin to the
         #   indices) and add the corresponding terms to the result.
         #   Thereby, ensure that all indices have a spin assigned and
         #   try to assign a spin for not yet assigned indices:
-        #   if they are are target indices -> use the input spin
-        #   if they are contracted -> generate a variant for both spins
-
-        contribution = Expr(0, **expr.assumptions)
-        if expr.provided_target_idx is not None:  # if necessary update target
-            contribution.set_target_idx(result_target)
-
-        for idx_map in combinations:
-            assigned_indices = idx_map["a"] | idx_map["b"]
-            missing_indices = [idx for idx in term_indices
-                               if idx not in assigned_indices]
-            if missing_indices:  # some indices don't have a spin assigned yet!
-                missing_contracted = []
-                for idx in missing_indices:
-                    spin = target_idx_spin_map.get(idx, None)
-                    if spin is not None:  # is a target index -> just add
-                        idx_map[target_idx_spin_map[idx]].add(idx)
-                    else:  # is a contracted index -> need to try both spins
-                        missing_contracted.append(idx)
-                if missing_contracted:
-                    # construct all the different variants where all missing
-                    # contracted indices are assigned to either a or b spin
-                    variants = []
-                    for var in product("ab", repeat=len(missing_contracted)):
-                        complete_variant = idx_map.copy()
-                        for spin, idx in zip(var, missing_contracted):
-                            complete_variant[spin].add(idx)
-                        variants.append(complete_variant)
-                else:
-                    variants = [idx_map]
+        #   since all variants are initialized with the target spins
+        #   set, only contracted indices can not be assigned
+        #  -> generate a variant for alpha and beta since both are allowed
+        for spin_var in spin_variants:
+            missing_contracted = [
+                idx for idx, spin in enumerate(spin_var)
+                if idx >= len(target_spin) and spin is None
+            ]
+            # construct variants for missing contracted indices assuming that
+            # alpha and beta spin is allowed.
+            if missing_contracted:
+                variants = []
+                for spins in product("ab", repeat=len(missing_contracted)):
+                    complete_variant = spin_var.copy()
+                    for spin, idx in zip(spins, missing_contracted):
+                        complete_variant[idx] = spin
+                    variants.append(complete_variant)
             else:
-                variants = [idx_map]
-            for var in variants:
-                sub = {}
-                for spin in ["a", "b"]:
-                    old = list(var[spin])
-                    if not old:
-                        continue
-                    names = "".join(s.name for s in old)
-                    spins = "".join(spin for _ in range(len(old)))
-                    new = get_symbols(names, spins)
-                    sub.update({o: n for o, n in zip(old, new)})
-                contribution += term.sympy.subs(order_substitutions(sub))
+                variants = [spin_var]
+            # go through the variants and perform the actual substitutions
+            for variant in variants:
+                # ensure that we indeed assigned all spins
+                assert not any(spin is None for spin in variant)
+
+                new_indices = get_symbols(
+                    indices=[s.name for s in term_indices],
+                    spins="".join(variant)
+                )
+                sub = {
+                    old: new for old, new in zip(term_indices, new_indices)
+                }
+                contrib = term.sympy.subs(order_substitutions(sub))
+                logger.debug(f"Found contribution {contrib}")
+                contribution += contrib
         # TODO: if we simplify the result it will throw an error for any
         # polynoms or denominators. Should we skip the simplification altough
         # we currently don't treat polynoms correctly in this function
@@ -272,14 +270,15 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
         The target indices of the expression.
     """
 
-    if not isinstance(expr, Expr):
-        raise Inputerror(f"Expr needs to be provided as {Expr}. Found {expr}")
+    assert isinstance(expr, Expr)
 
-    target_idx = get_symbols(target_idx)
-    sorted_target = tuple(sorted(target_idx, key=sort_idx_canonical))
+    target_symbols = get_symbols(target_idx)
+    sorted_target = tuple(sorted(target_symbols, key=sort_idx_canonical))
 
     # - determine all possible spin blocks
-    spin_blocks = ["".join(b) for b in product("ab", repeat=len(target_idx))]
+    spin_blocks = [
+        "".join(b) for b in product("ab", repeat=len(target_symbols))
+    ]
     spin_blocks_to_check = [i for i in range(len(spin_blocks))]
 
     allowed_blocks = set()
@@ -287,7 +286,8 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
         # - ensure that the term has matching target indices
         if term.target != sorted_target:
             raise ValueError(f"Target indices {term.target} of {term} dont "
-                             f"match the provided target indices {target_idx}")
+                             "match the provided target indices "
+                             f"{target_symbols}")
         # - extract the allowed blocks for all tensors and initialize
         #   index maps to relate indices to a spin
         term_idx_maps = []
@@ -297,7 +297,9 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
             if allowed_object_blocks is None:
                 continue
             obj_indices = obj.idx
-            n_target = len([idx for idx in obj_indices if idx in target_idx])
+            n_target = len([
+                idx for idx in obj_indices if idx in target_symbols
+            ])
             object_idx_maps = []
             for block in allowed_object_blocks:
                 idx_map = {}
@@ -324,7 +326,7 @@ def allowed_spin_blocks(expr: Expr, target_idx: str) -> tuple[str]:
 
             # - assign the target indices to a spin
             target_spin = {}
-            for spin, idx in zip(block, target_idx):
+            for spin, idx in zip(block, target_symbols):
                 # in case we have target indices iiab only spin blocks
                 # aaxx or bbxx are valid
                 if idx in target_spin and target_spin[spin] != spin:
