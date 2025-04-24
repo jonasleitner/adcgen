@@ -1,4 +1,8 @@
+from collections.abc import Sequence
+from typing import Any, TypeGuard
+
 from sympy import Dummy
+
 from .misc import Inputerror, Singleton
 
 
@@ -54,9 +58,11 @@ class Index(Dummy):
         return self.__str__()
 
     def _sympystr(self, printer):
+        _ = printer
         return self.__str__()
 
     def _latex(self, printer) -> str:
+        _ = printer
         ret = self.name
         if (spin := self.spin):
             spin = "alpha" if spin == "a" else "beta"
@@ -129,19 +135,19 @@ class Indices(metaclass=Singleton):
         self._generic_indices[space][spin].extend(new_idx)
         self._counter[space][spin] += 1
 
-    def get_indices(self, indices: str | list[str],
-                    spins: str | list[str] | None = None
+    def get_indices(self, indices: Sequence[str],
+                    spins: Sequence[str] | None = None
                     ) -> dict[tuple[str, str], list[Index]]:
         """
         Obtain the Indices for the provided string of names.
 
         Parameters
         ----------
-        indices : str | list[str]
+        indices : Sequence[str]
             The names of the indices as a single string that is split
             automatically as "ij21kl3" -> i, j21, k, l3.
             They can also provided as list/tuple of index names.
-        spins : str | list[str] | None, optional
+        spins : Sequence[str] | None, optional
             The spins of the indices as a single string, e.g., "aaba"
             to obtain four indices with spin: alpha, alpha, beta, alpha.
             Since no spin is represented by the empty string, it is only
@@ -255,7 +261,7 @@ def index_space(idx: str) -> str:
     raise Inputerror(f"Could not assign the index {idx} to a space.")
 
 
-def sort_idx_canonical(idx: Index):
+def sort_idx_canonical(idx: Index | Any):
     """Use as sort key to to bring indices in canonical order."""
     if isinstance(idx, Index):
         # - also add the hash here for wicks, where multiple i are around
@@ -344,18 +350,18 @@ def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
     return [s for s in idx if s not in used][:n]
 
 
-def get_symbols(indices: str | Index | list[str] | list[Index],
-                spins: str | None = None) -> list[Index]:
+def get_symbols(indices: Sequence[str] | Index | Sequence[Index],
+                spins: Sequence[str] | None = None) -> list[Index]:
     """
     Wrapper around the Indices class to initialize 'Index' instances with the
     provided names and spin.
 
     Parameters
     ----------
-    indices : str | Index | list[str] | list[Index]
+    indices : Index | Sequence[str] | Sequence[Index]
         The names of the indices to generate. If they are already instances
         of the 'Index' class we do nothing.
-    spins : str | None, optional
+    spins : Sequence[str] | None, optional
         The spin of the indices, e.g., "aab" to obtain 3 indices with
         alpha, alpha and beta spin.
     """
@@ -364,8 +370,8 @@ def get_symbols(indices: str | Index | list[str] | list[Index],
         return []
     elif isinstance(indices, Index):  # a single symbol is not iterable
         return [indices]
-    elif all(isinstance(i, Index) for i in indices):
-        return indices
+    elif _is_index_sequence(indices):
+        return indices if isinstance(indices, list) else list(indices)
     # we actually have to do something
     # -> prepare indices and spin
     if isinstance(indices, str):
@@ -374,6 +380,7 @@ def get_symbols(indices: str | Index | list[str] | list[Index],
         spins = ["" for _ in range(len(indices))]
     # at this point we should have a list/tuple of strings
     # construct the indices
+    assert _is_str_sequence(indices)
     symbols = Indices().get_indices(indices, spins)
     # and return them in the order they were provided in the input
     for val in symbols.values():
@@ -419,7 +426,7 @@ def order_substitutions(subsdict: dict[Index, Index]
     return subs
 
 
-def minimize_tensor_indices(tensor_indices: tuple[Index],
+def minimize_tensor_indices(tensor_indices: Sequence[Index],
                             target_idx_names: dict[tuple, list[str]]):
     """
     Minimizes the indices on a tensor using the lowest available indices that
@@ -427,7 +434,7 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
 
     Parameters
     ----------
-    tensor_indices : tuple[Index]
+    tensor_indices : Sequence[Index]
         The indices of the tensor.
     target_idx : dict[tuple, list[str]]
         The names of target indices sorted by their space and spin with
@@ -445,12 +452,12 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
         if not all(isinstance(s, str) for s in target):
             raise TypeError("Target indices need to be provided as string.")
 
-    tensor_indices: list[Index] = list(tensor_indices)
-    n_unique_indices: int = len(set(tensor_indices))
-    minimal_indices: dict[str, list[Index]] = {}
-    permutations = []  # list for collecting the applied permutations
+    tensor_idx: list[Index] = list(tensor_indices)
+    n_unique_indices: int = len(set(tensor_idx))
+    minimal_indices: dict[tuple[str, str], list[Index]] = {}
+    permutations: list[Permutation] = []
     minimized = set()
-    for s in tensor_indices:
+    for s in tensor_idx:
         if s in minimized:
             continue
         idx_key = s.space_and_spin
@@ -482,7 +489,20 @@ def minimize_tensor_indices(tensor_indices: tuple[Index],
         # -> permute tensor indices and append permutation to permutations
         #    list
         perm = {s: min_s, min_s: s}
-        for i, other_s in enumerate(tensor_indices):
-            tensor_indices[i] = perm.get(other_s, other_s)
+        for i, other_s in enumerate(tensor_idx):
+            tensor_idx[i] = perm.get(other_s, other_s)
         permutations.append(Permutation(s, min_s))
-    return tuple(tensor_indices), PermutationProduct(permutations)
+    return tuple(tensor_idx), PermutationProduct(permutations)
+
+
+################################################
+# Some TypeGuards to make the type checker happy
+###############################################
+def _is_index_sequence(sequence: Sequence) -> TypeGuard[Sequence[Index]]:
+    return all(isinstance(s, Index) for s in sequence)
+
+
+def _is_str_sequence(sequence: Sequence) -> TypeGuard[Sequence[str]]:
+    return (
+        isinstance(sequence, str) or all(isinstance(s, str) for s in sequence)
+    )

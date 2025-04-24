@@ -1,10 +1,13 @@
+from collections.abc import Sequence
+from collections import defaultdict
+from itertools import chain, combinations
+
+from sympy import S
+
 from .indices import Index, sort_idx_canonical
 from . import expr_container as e
 from .misc import cached_member, cached_property, Inputerror
 from .eri_orbenergy import EriOrbenergy
-from sympy import S
-from collections import defaultdict
-from itertools import chain, combinations
 
 
 class Permutation(tuple):
@@ -34,7 +37,7 @@ class PermutationProduct(tuple):
     spaces, e.g., P_{ab}P_{ij} = P_{ij}P_{ab}.
     """
 
-    def __new__(cls, args: tuple[Permutation]):
+    def __new__(cls, args: Sequence[Permutation]):
         # identify spaces that are linked to each other
         # the order of permutations within a linked group has to be maintained!
         # e.g. P_ia * P_ij * P_ab * P_pq
