@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Any, TypeGuard
 
-from sympy import Dummy
+from sympy import Dummy, Tuple
 
 from .misc import Inputerror, Singleton
 
@@ -499,6 +499,10 @@ def minimize_tensor_indices(tensor_indices: Sequence[Index],
 # Some TypeGuards to make the type checker happy
 ###############################################
 def _is_index_sequence(sequence: Sequence) -> TypeGuard[Sequence[Index]]:
+    return all(isinstance(s, Index) for s in sequence)
+
+
+def _is_index_tuple(sequence: tuple | Tuple) -> TypeGuard[tuple[Index, ...]]:
     return all(isinstance(s, Index) for s in sequence)
 
 
