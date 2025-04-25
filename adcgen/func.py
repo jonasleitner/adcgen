@@ -1,3 +1,11 @@
+from collections.abc import Sequence
+import itertools
+
+from sympy.physics.secondquant import (
+    F, Fd, FermionicOperator, NO
+)
+from sympy import S, Add, Mul, Pow, sqrt, Symbol
+
 from .expr_container import Expr
 from .misc import Inputerror
 from .rules import Rules
@@ -7,13 +15,6 @@ from .sympy_objects import (
     Amplitude
 )
 from .tensor_names import is_adc_amplitude, is_t_amplitude, tensor_names
-
-from sympy.physics.secondquant import (
-    F, Fd, FermionicOperator, NO
-)
-from sympy import S, Add, Mul, Pow, sqrt, Symbol
-
-from itertools import product
 
 
 def gen_term_orders(order: int, term_length: int, min_order: int):
@@ -42,7 +43,7 @@ def gen_term_orders(order: int, term_length: int, min_order: int):
                          "non-negative integers.")
 
     orders = (o for o in range(min_order, order + 1))
-    combinations = product(orders, repeat=term_length)
+    combinations = itertools.product(orders, repeat=term_length)
     return [comb for comb in combinations if sum(comb) == order]
 
 
@@ -273,7 +274,8 @@ def import_from_sympy_latex(expr_string: str,
     return Expr(sympy_expr)
 
 
-def evaluate_deltas(expr, target_idx: str = None):
+def evaluate_deltas(expr,
+                    target_idx: Sequence[str] | Sequence[Index] | None = None):
     """
     Evaluates the KroneckerDeltas in an expression.
     The function only removes contracted indices from the expression and
@@ -288,7 +290,7 @@ def evaluate_deltas(expr, target_idx: str = None):
     expr
         Expression containing the KroneckerDeltas to evaluate. This function
         expects a plain object from sympy (Add/Mul/...) and no container class.
-    target_idx : str, optional
+    target_idx : Sequence[str] | Sequence[Index] | None, optional
         Optionally, target indices can be provided if they can not be
         determined from the expression using the Einstein sum convention.
     """
