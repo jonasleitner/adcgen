@@ -1,3 +1,9 @@
+from collections.abc import Sequence
+from collections import namedtuple, Counter
+from itertools import product, chain
+
+from sympy import S, Rational, Pow
+
 from .core_valence_separation import allowed_cvs_blocks
 from .indices import get_symbols, order_substitutions, sort_idx_canonical
 from .indices import Indices
@@ -10,11 +16,6 @@ from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, Amplitude
 from .symmetry import LazyTermMap
 from .spatial_orbitals import allowed_spin_blocks
 from .tensor_names import tensor_names
-
-from sympy import S, Rational, Pow
-
-from collections import namedtuple, Counter
-from itertools import product, chain
 
 
 base_expr = namedtuple('base_expr', ['expr', 'target', 'contracted'])
@@ -104,7 +105,9 @@ class RegisteredIntermediate:
             raise AttributeError(f"No itmd_type defined for {self.name}.")
         return itmd_type
 
-    def validate_indices(self, indices: str = None) -> tuple[Index]:
+    def validate_indices(self,
+                         indices: Sequence[str] | Sequence[Index] | None = None
+                         ) -> list[Index]:
         """
         Ensures that the indices are valid for the intermediate and
         transforms them to 'Index' instances.
@@ -122,8 +125,9 @@ class RegisteredIntermediate:
                              f"itmd {self.name}")
         return indices
 
-    def expand_itmd(self, indices: str = None, return_sympy: bool = False,
-                    fully_expand: bool = True):
+    def expand_itmd(self,
+                    indices: Sequence[str] | Sequence[Index] | None = None,
+                    return_sympy: bool = False, fully_expand: bool = True):
         """
         Expands the intermediate into orbital energies and ERI.
 
