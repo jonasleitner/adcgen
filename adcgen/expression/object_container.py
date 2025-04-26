@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 class ObjectContainer(Container):
     """
-    Wrapper for a single Object, e.g., a tensor that is part of a term.
+    Wrapper for a single object, e.g., a tensor that is part of a term.
 
     Parameters
     ----------
@@ -59,8 +59,13 @@ class ObjectContainer(Container):
         )
         # we can not wrap an Add object: should be wrapped by ExprContainer
         # we can not wrap an Mul object: should be wrapped by TermContainer
+        # we can not wrap an NO object: should be wrapped by
+        # NormalOrderedContainer
+        # we can not wrap a polynom: should be wrapped by PolynomContainer
         # But everything else should be fine (single objects)
         assert not isinstance(self._inner, (Add, Mul, NO))
+        if isinstance(self._inner, Pow):  # polynom
+            assert not isinstance(self._inner.args[0], Add)
 
     ####################################
     # Some helpers for accessing inner #

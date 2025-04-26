@@ -15,6 +15,7 @@ from ..sympy_objects import NonSymmetricTensor
 from ..tensor_names import tensor_names
 from .container import Container
 from .normal_ordered_container import NormalOrderedContainer
+from .polynom_container import PolynomContainer
 from .object_container import ObjectContainer
 
 # imports only required for type checking (avoid circular imports)
@@ -76,6 +77,9 @@ class TermContainer(Container):
         def dispatch(obj, kwargs) -> ObjectContainer:
             if isinstance(obj, NO):
                 return NormalOrderedContainer(inner=obj, **kwargs)
+            elif (isinstance(obj, Pow) and isinstance(obj.args[0], Add)) or \
+                    isinstance(obj, Add):
+                return PolynomContainer(inner=obj, **kwargs)
             else:
                 return ObjectContainer(inner=obj, **kwargs)
 

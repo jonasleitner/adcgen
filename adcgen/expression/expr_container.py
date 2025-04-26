@@ -253,7 +253,7 @@ class ExprContainer(Container):
         Currently this only works for real orbitals, i.e.,
         for symmetric ERI's <pq||rs> = <rs||pq>."""
         res = Add(*(
-            term.expand_antisym_eri(wrap_result=True)
+            term.expand_antisym_eri(wrap_result=False)
             for term in self.terms
         ))
         assert isinstance(res, Expr)
