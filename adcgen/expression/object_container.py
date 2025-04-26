@@ -3,7 +3,7 @@ from functools import cached_property
 from typing import Any, Sequence, TYPE_CHECKING
 import itertools
 
-from sympy.physics.secondquant import F, Fd, FermionicOperator
+from sympy.physics.secondquant import F, Fd, FermionicOperator, NO
 from sympy import Add, Expr, Mul, Number, Pow, S, Symbol, latex, sympify
 
 from ..indices import Index, _is_index_tuple
@@ -60,7 +60,7 @@ class ObjectContainer(Container):
         # we can not wrap an Add object: should be wrapped by ExprContainer
         # we can not wrap an Mul object: should be wrapped by TermContainer
         # But everything else should be fine (single objects)
-        assert not isinstance(self._inner, (Add, Mul))
+        assert not isinstance(self._inner, (Add, Mul, NO))
 
     ####################################
     # Some helpers for accessing inner #
@@ -71,25 +71,25 @@ class ObjectContainer(Container):
         Returns the base of an :py:class:`Pow` object (base^exp) - if we have
         a Pow object. Otherwise the object itself is returned.
         """
-        if isinstance(self._inner, Pow):
-            return self._inner.args[0]
+        if isinstance(self.inner, Pow):
+            return self.inner.args[0]
         else:
-            return self._inner
+            return self.inner
 
     @property
     def exponent(self) -> Expr:
         """
         Returns the exponent of an :py:class:`Pow` object (base^exp).
         """
-        if isinstance(self._inner, Pow):
-            return self._inner.args[1]
+        if isinstance(self.inner, Pow):
+            return self.inner.args[1]
         else:
             return sympify(1)
 
     @property
     def base_and_exponent(self) -> tuple[Expr, Expr]:
         """Return base and exponent of the object."""
-        base = self._inner
+        base = self.inner
         if isinstance(base, Pow):
             return base.args
         else:
@@ -609,7 +609,7 @@ class ObjectContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        real_obj = self._inner
+        real_obj = self.inner
         if self.is_t_amplitude:
             old = self.name
             assert old is not None

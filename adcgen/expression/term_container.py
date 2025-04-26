@@ -4,6 +4,7 @@ from functools import cached_property
 from typing import Any, TYPE_CHECKING, Sequence
 
 from sympy import Add, Expr, Mul, Pow, S, Symbol, latex, nsimplify
+from sympy.physics.secondquant import NO
 
 from ..indices import (
     Index, Indices, get_lowest_avail_indices, get_symbols, order_substitutions,
@@ -13,6 +14,7 @@ from ..misc import Inputerror, cached_member
 from ..sympy_objects import NonSymmetricTensor
 from ..tensor_names import tensor_names
 from .container import Container
+from .normal_ordered_container import NormalOrderedContainer
 from .object_container import ObjectContainer
 
 # imports only required for type checking (avoid circular imports)
@@ -61,8 +63,8 @@ class TermContainer(Container):
         assert not isinstance(self._inner, Add)
 
     def __len__(self) -> int:
-        if isinstance(self._inner, Mul):
-            return len(self._inner.args)
+        if isinstance(self.inner, Mul):
+            return len(self.inner.args)
         else:
             return 1
 
@@ -71,14 +73,20 @@ class TermContainer(Container):
         """
         Returns all objects the term contains, e.g. tensors.
         """
+        def dispatch(obj, kwargs) -> ObjectContainer:
+            if isinstance(obj, NO):
+                return NormalOrderedContainer(inner=obj, **kwargs)
+            else:
+                return ObjectContainer(inner=obj, **kwargs)
+
         kwargs = self.assumptions
-        if isinstance(self._inner, Mul):
+        if isinstance(self.inner, Mul):
             return tuple(
-                ObjectContainer(inner=obj, **kwargs)
-                for obj in self._inner.args
+                dispatch(obj, kwargs)
+                for obj in self.inner.args
             )
         else:
-            return (ObjectContainer(inner=self._inner, **kwargs),)
+            return (dispatch(self.inner, kwargs),)
 
     ###############################################
     # methods that compute additional information #
