@@ -962,7 +962,7 @@ class Term(Container):
                 yield perms
             if len(space_perms) > 1:  # form the product
                 for perm_tpl in product(*space_perms):
-                    yield PermutationProduct(chain.from_iterable(perm_tpl))
+                    yield PermutationProduct(*chain.from_iterable(perm_tpl))
 
         if only_contracted and only_target:
             raise Inputerror("Can not set only_contracted and only_target "

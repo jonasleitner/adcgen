@@ -793,10 +793,10 @@ def _map_on_other_terms(itmd_i: int, remainder: e.Expr,
     matching_itmd_terms: set[int] = {itmd_i}
     for perms, perm_factor in rem.terms[0].symmetry(only_target=True).items():
         # translate the permutations to the default indices
-        perms = PermutationProduct(
+        perms = PermutationProduct(*(
             Permutation(minimal_to_default[p], minimal_to_default[q])
             for p, q in perms
-        )
+        ))
         # look up the translated symmetry in the term map
         term_map: dict = itmd_term_map[(perms, perm_factor)]
         if itmd_i in term_map:

@@ -492,7 +492,7 @@ def minimize_tensor_indices(tensor_indices: Sequence[Index],
         for i, other_s in enumerate(tensor_idx):
             tensor_idx[i] = perm.get(other_s, other_s)
         permutations.append(Permutation(s, min_s))
-    return tuple(tensor_idx), PermutationProduct(permutations)
+    return tuple(tensor_idx), PermutationProduct(*permutations)
 
 
 ################################################

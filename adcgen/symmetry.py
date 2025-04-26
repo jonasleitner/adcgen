@@ -37,20 +37,19 @@ class PermutationProduct(tuple):
     spaces, e.g., P_{ab}P_{ij} = P_{ij}P_{ab}.
     """
 
-    def __new__(cls, args: Sequence[Permutation]):
+    def __new__(cls, *args: Permutation):
         # identify spaces that are linked to each other
         # the order of permutations within a linked group has to be maintained!
         # e.g. P_ia * P_ij * P_ab * P_pq
         # the spaces o and v are linked -> the order of the first 3
         # permutations has to be maintained, while P_pq can be moved
         # to any arbitrary place
-        args = tuple(args)
         splitted = cls.split_in_separable_parts(args)
-        args = [val for _, val in sorted(splitted.items())]
-        return super().__new__(cls, chain.from_iterable(args))
+        sorted_args = [val for _, val in sorted(splitted.items())]
+        return super().__new__(cls, chain.from_iterable(sorted_args))
 
     @staticmethod
-    def split_in_separable_parts(permutations):
+    def split_in_separable_parts(permutations: Sequence[Permutation]):
         """
         Splits the permutations in subsets that can be treated independently
         of each other.
