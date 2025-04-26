@@ -48,12 +48,18 @@ class Container:
         if not isinstance(inner, Expr):
             inner = sympify(inner)
             assert isinstance(inner, Expr)
-        self._inner = inner
+        self._inner: Expr = inner
         # set the assumptions
-        self._real = real
-        self._sym_tensors = sym_tensors
-        self._antisym_tensors = antisym_tensors
-        self._target_idx = target_idx
+        self._real: bool = real
+        if not isinstance(sym_tensors, tuple):
+            sym_tensors = tuple(sym_tensors)
+        self._sym_tensors: tuple[str, ...] = sym_tensors
+        if not isinstance(antisym_tensors, tuple):
+            antisym_tensors = tuple(antisym_tensors)
+        self._antisym_tensors: tuple[str, ...] = antisym_tensors
+        if target_idx is not None and not isinstance(target_idx, tuple):
+            target_idx = tuple(target_idx)
+        self._target_idx: tuple[Index, ...] | None = target_idx
 
     def __str__(self) -> str:
         return latex(self.inner)
@@ -72,15 +78,15 @@ class Container:
         return self._real
 
     @property
-    def sym_tensors(self) -> Iterable[str]:
+    def sym_tensors(self) -> tuple[str, ...]:
         return self._sym_tensors
 
     @property
-    def antisym_tensors(self) -> Iterable[str]:
+    def antisym_tensors(self) -> tuple[str, ...]:
         return self._antisym_tensors
 
     @property
-    def provided_target_idx(self) -> Iterable[Index] | None:
+    def provided_target_idx(self) -> tuple[Index, ...] | None:
         return self._target_idx
 
     @property

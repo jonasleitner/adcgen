@@ -59,7 +59,6 @@ class TermContainer(Container):
         # we can not wrap an Add object: should be wrapped by ExprContainer
         # But everything else should be fine (Mul or single objects)
         assert not isinstance(self._inner, Add)
-        assert isinstance(self._target_idx, tuple)
 
     def __len__(self) -> int:
         if isinstance(self._inner, Mul):
@@ -117,7 +116,6 @@ class TermContainer(Container):
         be applied.
         """
         if (target := self.provided_target_idx) is not None:
-            assert isinstance(target, tuple)
             return target
         else:
             return tuple(s for s, n in self._idx_counter if not n)
