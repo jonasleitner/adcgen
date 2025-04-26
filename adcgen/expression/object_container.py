@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from functools import cached_property
 from typing import Any, Sequence, TYPE_CHECKING
 import itertools
 
@@ -7,7 +8,7 @@ from sympy import Add, Expr, Mul, Number, Pow, S, Symbol, latex, sympify
 
 from ..indices import Index, _is_index_tuple
 from ..logger import logger
-from ..misc import cached_property, cached_member
+from ..misc import cached_member
 from ..sympy_objects import (
     Amplitude, AntiSymmetricTensor, KroneckerDelta, NonSymmetricTensor,
     SymbolicTensor, SymmetricTensor
@@ -119,6 +120,12 @@ class ObjectContainer(Container):
         """Whether the object is a orbital energy tensor."""
         # all orb energies should be nonsym_tensors actually
         return self.name == tensor_names.orb_energy and len(self.idx) == 1
+
+    @property
+    def contains_only_orb_energies(self):
+        """Whether the object is a orbital energy tensor."""
+        # To have a common interface with e.g. Polynoms
+        return self.is_orbital_energy
 
     @cached_property
     def idx(self) -> tuple[Index, ...]:
@@ -352,7 +359,7 @@ class ObjectContainer(Container):
 
     @cached_member
     def crude_pos(self, target_idx: Sequence[Index] | None = None,
-                  include_exponent: bool = True) -> dict[Index, list]:
+                  include_exponent: bool = True) -> dict[Index, list[str]]:
         """
         Returns the 'crude' position of the indices in the object.
         (e.g. only if they are located in bra/ket, not the exact position).
