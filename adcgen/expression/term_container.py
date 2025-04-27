@@ -335,6 +335,14 @@ class TermContainer(Container):
                 symmetry[perms] = +1
         return symmetry
 
+    @property
+    def contains_only_orb_energies(self) -> bool:
+        """Whether the term only contains orbital energies."""
+        return all(
+            o.contains_only_orb_energies for o in self.objects
+            if not o.inner.is_number
+        )
+
     ###############################
     # method that modify the term #
     ###############################
@@ -684,6 +692,18 @@ class TermContainer(Container):
                 key = 'remainder'
             ret[key] *= Pow(base, abs(exponent))
         return ret
+
+    def use_symbolic_denominators(self) -> "ExprContainer":
+        """
+        Replace all orbital energy denominators in the expression by tensors,
+        e.g., (e_a + e_b - e_i - e_j)^{-1} will be replaced by D^{ab}_{ij},
+        where D is a SymmetricTensor."""
+        from ..eri_orbenergy import EriOrbenergy
+
+        term = EriOrbenergy(self)
+        symbolic_denom = term.symbolic_denominator()
+        # symbolic denom might additionaly have D set as antisym tensor
+        return symbolic_denom * term.pref * term.num.sympy * term.eri.sympy
 
     def to_latex_str(self, only_pull_out_pref: bool = False,
                      spin_as_overbar: bool = False):

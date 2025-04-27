@@ -102,6 +102,11 @@ class PolynomContainer(ObjectContainer):
         # allowed spin blocks not available for Polynoms
         return None
 
+    @property
+    def contains_only_orb_energies(self) -> bool:
+        """Whether the poylnom only contains orbital energy tensors."""
+        return all(term.contains_only_orb_energies for term in self.terms)
+
     ####################################
     # methods manipulating the polynom #
     ####################################

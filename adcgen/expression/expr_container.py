@@ -358,6 +358,31 @@ class ExprContainer(Container):
         self.set_target_idx(expanded.provided_target_idx)
         return self
 
+    def use_symbolic_denominators(self) -> "ExprContainer":
+        """
+        Replace all orbital energy denominators in the expression by tensors,
+        e.g., (e_a + e_b - e_i - e_j)^{-1} will be replaced by D^{ab}_{ij},
+        where D is a SymmetricTensor.
+        """
+        symbolic_denom = S.Zero
+        has_symbolic_denom = False
+        for term in self.terms:
+            term = term.use_symbolic_denominators()
+            symbolic_denom += term.inner
+            if tensor_names.sym_orb_denom in term.antisym_tensors:
+                has_symbolic_denom = True
+        # the symbolic denominators have additional antisymmetry
+        # for bra ket swaps
+        # -> this is the only possible change in the assumptions
+        # -> only set if we replaced a denominator in the expr
+        assert isinstance(symbolic_denom, Expr)
+        self._inner = symbolic_denom
+        if has_symbolic_denom:
+            self._antisym_tensors = tuple(sorted(set(
+                self._antisym_tensors + (tensor_names.sym_orb_denom,)
+            )))
+        return self
+
     ###########################################################
     # Overwrite parent class methods for inplace modification #
     ###########################################################
