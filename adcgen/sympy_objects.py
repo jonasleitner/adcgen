@@ -5,7 +5,7 @@ from sympy.physics.secondquant import (
     _sort_anticommuting_fermions, ViolationOfPauliPrinciple
 )
 from sympy.core.logic import fuzzy_not
-from sympy import sympify, Tuple, Symbol, S, Number, Expr, Function
+from sympy import sympify, Add, Tuple, Symbol, S, Number, Expr, Function
 
 from .misc import Inputerror
 from .indices import Index, _is_index_tuple, sort_idx_canonical
@@ -301,7 +301,7 @@ class KroneckerDelta(Function):
     """
 
     @classmethod
-    def eval(cls, i: Any, j: Any) -> Expr | None:
+    def eval(cls, i: Any, j: Any) -> Expr | None:  # type: ignore[override]
         """
         Evaluates the KroneckerDelta. Adapted from sympy to also cover Spin.
         """
@@ -309,7 +309,7 @@ class KroneckerDelta(Function):
         if not isinstance(i, Index) or not isinstance(j, Index):
             return None
 
-        diff = i - j
+        diff = Add(i, -j)
         if diff.is_zero or fuzzy_not(diff.is_zero):  # same index
             return S.One
 
@@ -327,7 +327,7 @@ class KroneckerDelta(Function):
             return cls(j, i)
         return None
 
-    def _eval_power(self, exp) -> "KroneckerDelta":
+    def _eval_power(self, exp):  # type: ignore[override]
         # we don't want exponents > 1 on deltas!
         if exp.is_positive:
             return self
