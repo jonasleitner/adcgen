@@ -1,9 +1,12 @@
-from collections.abc import Sequence
-from typing import Any, TypeGuard
+from collections.abc import Sequence, Collection, Mapping
+from typing import Any, TypeGuard, TYPE_CHECKING
 
 from sympy import Dummy, Tuple
 
 from .misc import Inputerror, Singleton
+
+if TYPE_CHECKING:
+    from .symmetry import Permutation
 
 
 class Index(Dummy):
@@ -323,7 +326,8 @@ def repeated_indices(idx_a: str, idx_b: str) -> bool:
     return any(i in split_b for i in split_a)
 
 
-def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
+def get_lowest_avail_indices(n: int, used: Collection[str], space: str
+                             ) -> list[str]:
     """
     Return the names of the n lowest available indices belonging to the desired
     space.
@@ -332,7 +336,7 @@ def get_lowest_avail_indices(n: int, used: list[str], space: str) -> list[str]:
     ----------
     n : int
         The number of available indices.
-    used : list[str]
+    used : Collection[str]
         The names of the indices that are already in use.
     space : str
         The space (occ/virt/general) to which the indices belong.
@@ -426,8 +430,10 @@ def order_substitutions(subsdict: dict[Index, Index]
     return subs
 
 
-def minimize_tensor_indices(tensor_indices: Sequence[Index],
-                            target_idx_names: dict[tuple, list[str]]):
+def minimize_tensor_indices(
+        tensor_indices: Sequence[Index],
+        target_idx_names: Mapping[tuple[str, str], Collection[str]]
+        ) -> tuple[tuple[Index, ...], tuple[Permutation, ...]]:
     """
     Minimizes the indices on a tensor using the lowest available indices that
     are no target indices.
@@ -436,7 +442,7 @@ def minimize_tensor_indices(tensor_indices: Sequence[Index],
     ----------
     tensor_indices : Sequence[Index]
         The indices of the tensor.
-    target_idx : dict[tuple, list[str]]
+    target_idx : dict[tuple[str, str], Collection[str]]
         The names of target indices sorted by their space and spin with
         key = (space, spin).
 
@@ -510,3 +516,6 @@ def _is_str_sequence(sequence: Sequence) -> TypeGuard[Sequence[str]]:
     return (
         isinstance(sequence, str) or all(isinstance(s, str) for s in sequence)
     )
+
+
+_ = _is_index_tuple

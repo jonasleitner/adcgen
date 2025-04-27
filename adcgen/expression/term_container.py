@@ -163,7 +163,8 @@ class TermContainer(Container):
 
     @cached_member
     def pattern(self, include_target_idx: bool = True,
-                include_exponent: bool = True) -> dict:
+                include_exponent: bool = True
+                ) -> dict[tuple[str, str], dict[Index, list[str]]]:
         """
         Determins the pattern of the indices in the term. This is a (kind of)
         readable string hash for each index that is based upon the positions
@@ -185,7 +186,7 @@ class TermContainer(Container):
             include_target_idx=include_target_idx,
             include_exponent=include_exponent
         )
-        pattern = {}
+        pattern: dict[tuple[str, str], dict[Index, list[str]]] = {}
         for i, o in enumerate(self.objects):
             positions = o.crude_pos(target_idx=target_idx,
                                     include_exponent=include_exponent)
@@ -197,9 +198,9 @@ class TermContainer(Container):
                 if s not in pattern[key]:
                     pattern[key][s] = []
                 if c is None:
-                    pattern[key][s].extend((p for p in pos))
+                    pattern[key][s].extend(p for p in pos)
                 else:
-                    pattern[key][s].extend((p + c for p in pos))
+                    pattern[key][s].extend(p + c for p in pos)
         # sort pattern to allow for direct comparison
         for ov, idx_pat in pattern.items():
             for s, pat in idx_pat.items():
