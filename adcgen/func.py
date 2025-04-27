@@ -4,9 +4,9 @@ import itertools
 from sympy.physics.secondquant import (
     F, Fd, FermionicOperator, NO
 )
-from sympy import S, Add, Mul, Pow, sqrt, Symbol
+from sympy import S, Add, Expr, Mul, Pow, sqrt, Symbol, sympify
 
-from .expr_container import Expr
+from .expression import ExprContainer
 from .misc import Inputerror
 from .rules import Rules
 from .indices import Index, Indices, get_symbols, split_idx_string
@@ -17,7 +17,8 @@ from .sympy_objects import (
 from .tensor_names import is_adc_amplitude, is_t_amplitude, tensor_names
 
 
-def gen_term_orders(order: int, term_length: int, min_order: int):
+def gen_term_orders(order: int, term_length: int, min_order: int
+                    ) -> list[tuple[int, ...]]:
     """
     Generate all combinations of orders that contribute to the n'th-order
     contribution of a term of the given length
@@ -48,24 +49,28 @@ def gen_term_orders(order: int, term_length: int, min_order: int):
 
 
 def import_from_sympy_latex(expr_string: str,
-                            convert_default_names: bool = False) -> Expr:
+                            convert_default_names: bool = False
+                            ) -> ExprContainer:
     """
     Imports an expression from a string created by the 'sympy.latex' function.
 
-    Returns
-    -------
-    Expr
-        The imported expression in a 'Expr' container. Note that no assumptions
-        (sym_tensors or antisym_tensors) have been applied yet.
+    Parameters
+    ----------
     convert_default_names : bool, optional
         If set, all default tensor names found in the expression to import
         will be converted to the currently configured names.
+
+    Returns
+    -------
+    ExprContainer
+        The imported expression in a 'Expr' container. Note that no assumptions
+        (sym_tensors or antisym_tensors) have been applied yet.
     """
 
-    def import_indices(indices: str):
+    def import_indices(indices: str) -> list[Index]:
         # split at the end of each index with a spin label
         # -> n1n2n3_{spin}
-        idx = []
+        idx: list[Index] = []
         for sub_part in indices.split("}"):
             if not sub_part:  # skip empty string
                 continue
@@ -81,10 +86,10 @@ def import_from_sympy_latex(expr_string: str,
                 idx.extend(get_symbols(sub_part))
         return idx
 
-    def import_tensor(tensor: str):
+    def import_tensor(tensor: str) -> Expr:
         # split the tensor in base and exponent
-        stack = []
-        separator = None
+        stack: list[str] = []
+        separator: int | None = None
         for i, c in enumerate(tensor):
             if c == "{":
                 stack.append(c)
@@ -107,8 +112,8 @@ def import_from_sympy_latex(expr_string: str,
         if tensor[-1] == "}":
             tensor = tensor[:-1]
         stack.clear()
-        components = []
-        temp = []
+        components: list[str] = []
+        temp: list[str] = []
         for i, c in enumerate(tensor):
             if c == "{":
                 stack.append(c)
@@ -139,12 +144,12 @@ def import_from_sympy_latex(expr_string: str,
             indices[i] = idx
 
         if len(indices) == 0:  # no indices -> a symbol
-            base = Symbol(name)
+            base: Expr = Symbol(name)
         elif name == "a":  # create / annihilate
             if len(indices) == 2 and indices[0] == "\\dagger":
-                base = Fd(*import_indices(indices[1]))
+                base: Expr = Fd(*import_indices(indices[1]))
             elif len(indices) == 1:
-                base = F(*import_indices(indices[0]))
+                base: Expr = F(*import_indices(indices[0]))
             else:
                 raise RuntimeError("Unknown second quantized operator: ",
                                    tensor)
@@ -153,21 +158,22 @@ def import_from_sympy_latex(expr_string: str,
             lower = import_indices(indices[1])
             # ADC-Amplitude or t-amplitudes
             if is_adc_amplitude(name) or is_t_amplitude(name):
-                base = Amplitude(name, upper, lower)
+                base: Expr = Amplitude(name, upper, lower)
             elif name == tensor_names.coulomb:  # eri in chemist notation
-                base = SymmetricTensor(name, upper, lower)
+                base: Expr = SymmetricTensor(name, upper, lower)
             else:
-                base = AntiSymmetricTensor(name, upper, lower)
+                base: Expr = AntiSymmetricTensor(name, upper, lower)
         elif len(indices) == 1:  # nonsymtensor
-            base = NonSymmetricTensor(name, import_indices(indices[0]))
+            base: Expr = NonSymmetricTensor(name, import_indices(indices[0]))
         else:
             raise RuntimeError(f"Unknown tensor object: {tensor}")
+        assert isinstance(base, Expr)
         return Pow(base, exponent)
 
-    def import_obj(obj_str: str):
+    def import_obj(obj_str: str) -> Expr:
         # import an individial object
         if obj_str.isnumeric():  # prefactor
-            return int(obj_str)
+            return sympify(int(obj_str))
         elif obj_str.startswith("\\sqrt{"):  # sqrt{x} prefactor
             return sqrt(int(obj_str[:-1].replace("\\sqrt{", "", 1)))
         elif obj_str.startswith("\\delta_"):  # KroneckerDelta
@@ -175,7 +181,9 @@ def import_from_sympy_latex(expr_string: str,
             idx = import_indices("".join(idx))
             if len(idx) != 2:
                 raise RuntimeError(f"Invalid indices for delta: {idx}.")
-            return KroneckerDelta(*idx)
+            ret = KroneckerDelta(*idx)
+            assert isinstance(ret, Expr)
+            return ret
         elif obj_str.startswith("\\left("):  # braket
             # need to take care of exponent of the braket!
             base, exponent = obj_str.rsplit('\\right)', 1)
@@ -187,7 +195,7 @@ def import_from_sympy_latex(expr_string: str,
             obj = import_from_sympy_latex(
                 obj_str, convert_default_names=convert_default_names
             )
-            return Pow(obj.sympy, exponent)
+            return Pow(obj.inner, exponent)
         elif obj_str.startswith("\\left\\{"):  # NO
             no, unexpected_stuff = obj_str.rsplit("\\right\\}", 1)
             if unexpected_stuff:
@@ -196,7 +204,7 @@ def import_from_sympy_latex(expr_string: str,
             obj = import_from_sympy_latex(
                 obj_str, convert_default_names=convert_default_names
             )
-            return NO(obj.sympy)
+            return NO(obj.inner)
         else:  # tensor or creation/annihilation operator or symbol
             return import_tensor(obj_str)
 
@@ -218,7 +226,7 @@ def import_from_sympy_latex(expr_string: str,
         terms.append(expr_string[term_start_idx:])  # append last term
         return terms
 
-    def import_term(term_string: str) -> list[str]:
+    def import_term(term_string: str) -> Expr:
         from sympy import Mul
 
         stack: list[str] = []
@@ -237,7 +245,7 @@ def import_from_sympy_latex(expr_string: str,
             elif char in ['+', '-'] and not stack:
                 return import_from_sympy_latex(
                     term_string, convert_default_names=convert_default_names
-                ).sympy
+                ).inner
             elif char == " " and not stack and i != obj_start_idx:
                 objects.append(term_string[obj_start_idx:i])
                 obj_start_idx = i + 1
@@ -246,20 +254,21 @@ def import_from_sympy_latex(expr_string: str,
 
     expr_string = expr_string.strip()
     if not expr_string:
-        return Expr(0)
+        return ExprContainer(0)
 
     terms = split_terms(expr_string)
     if terms[0][0] not in ['+', '-']:
         terms[0] = '+ ' + terms[0]
 
-    sympy_expr = 0
+    sympy_expr = S.Zero
     for term in terms:
         sign = term[0]  # extract the sign of the term
         if sign not in ['+', '-']:
             raise ValueError(f"Found invalid sign {sign} in term {term}")
         term = term[1:].strip()
 
-        sympy_term = -1 if sign == '-' else +1
+        sympy_term = S.NegativeOne if sign == '-' else S.One
+        assert isinstance(sympy_term, Expr)
 
         if term.startswith("\\frac"):  # fraction
             # remove frac layout and split: \\frac{...}{...}
@@ -267,15 +276,18 @@ def import_from_sympy_latex(expr_string: str,
         else:  # no denominator
             num, denom = term, None
 
-        sympy_term *= import_term(num)
+        sympy_term = Mul(sympy_term, import_term(num))
+        assert isinstance(sympy_term, Expr)
         if denom is not None:
-            sympy_term /= import_term(denom)
+            sympy_term = Mul(sympy_term, S.One/import_term(denom))
         sympy_expr += sympy_term
-    return Expr(sympy_expr)
+    assert isinstance(sympy_expr, Expr)
+    return ExprContainer(sympy_expr)
 
 
-def evaluate_deltas(expr,
-                    target_idx: Sequence[str] | Sequence[Index] | None = None):
+def evaluate_deltas(expr: Expr,
+                    target_idx: Sequence[str] | Sequence[Index] | None = None
+                    ) -> Expr:
     """
     Evaluates the KroneckerDeltas in an expression.
     The function only removes contracted indices from the expression and
@@ -287,17 +299,19 @@ def evaluate_deltas(expr,
 
     Parameters
     ----------
-    expr
+    expr: Expr
         Expression containing the KroneckerDeltas to evaluate. This function
         expects a plain object from sympy (Add/Mul/...) and no container class.
     target_idx : Sequence[str] | Sequence[Index] | None, optional
         Optionally, target indices can be provided if they can not be
         determined from the expression using the Einstein sum convention.
     """
+    assert isinstance(expr, Expr)
 
     if isinstance(expr, Add):
-        return expr.func(*[evaluate_deltas(arg, target_idx)
-                           for arg in expr.args])
+        return Add(*(
+            evaluate_deltas(arg, target_idx) for arg in expr.args
+        ))
     elif isinstance(expr, Mul):
         if target_idx is None:
             # for determining the target indices it is sufficient to use
@@ -306,8 +320,8 @@ def evaluate_deltas(expr,
             # We are only interested in indices on deltas
             # -> it is sufficient to know that an index occurs on another
             #    object. (twice on the same delta is not possible)
-            deltas = []
-            indices = {}
+            deltas: list[KroneckerDelta] = []
+            indices: dict[Index, int] = {}
             for obj in expr.args:
                 for s in obj.atoms(Index):
                     if s in indices:
@@ -335,16 +349,19 @@ def evaluate_deltas(expr,
             preferred, killable = idx
             # try to remove killable
             if killable not in target_idx:
-                expr = expr.subs(killable, preferred)
+                res = expr.subs(killable, preferred)
+                assert isinstance(res, Expr)
+                expr = res
                 if len(deltas) > 1:
                     return evaluate_deltas(expr, target_idx)
-                continue
             # try to remove preferred.
             # But only if no information is lost if doing so
             # -> killable has to be of length 1
             elif preferred not in target_idx \
                     and d.indices_contain_equal_information:
-                expr = expr.subs(preferred, killable)
+                res = expr.subs(preferred, killable)
+                assert isinstance(res, Expr)
+                expr = res
                 if len(deltas) > 1:
                     return evaluate_deltas(expr, target_idx)
         return expr
@@ -352,7 +369,8 @@ def evaluate_deltas(expr,
         return expr
 
 
-def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
+def wicks(expr: Expr, rules: Rules | None = None,
+          simplify_kronecker_deltas: bool = False):
     """
     Evaluates Wicks theorem in the provided expression only returning fully
     contracted contributions.
@@ -360,7 +378,7 @@ def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
 
     Parameters
     ----------
-    expr
+    expr: Expr
         Expression containing the second quantized operator strings to
         evaluate. This function expects plain sympy objects (Add/Mul/...)
         and no container class.
@@ -371,7 +389,7 @@ def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
         If set, the KroneckerDeltas generated through the contractions
         will be evaluated before returning.
     """
-
+    assert isinstance(expr, Expr)
     # normal ordered operator string has to evaluate to zero
     # and a single second quantized operator can not be contracted
     if isinstance(expr, (NO, FermionicOperator)):
@@ -379,44 +397,48 @@ def wicks(expr, rules: Rules = None, simplify_kronecker_deltas: bool = False):
 
     # break up any NO-objects, and evaluate commutators
     expr = expr.doit(wicks=True).expand()
+    assert isinstance(expr, Expr)
 
     if isinstance(expr, Add):
-        return Add(*[wicks(term, rules=rules,
-                           simplify_kronecker_deltas=simplify_kronecker_deltas)
-                     for term in expr.args])
-    elif isinstance(expr, Mul):
-        # we don't want to mess around with commuting part of Mul
-        # so we factorize it out before starting recursion
-        c_part = []
-        op_string = []
-        for factor in expr.args:
-            if factor.is_commutative:
-                c_part.append(factor)
-            else:
-                op_string.append(factor)
-
-        if (n := len(op_string)) == 0:  # no operators
-            result = expr
-        elif n == 1:  # a single operator
-            return S.Zero
-        else:  # at least 2 operators
-            result = _contract_operator_string(op_string)
-            result = (Mul(*c_part) * result).expand()
-            if simplify_kronecker_deltas:
-                result = evaluate_deltas(result)
-    else:  # neither add, Mul, NO or Operator -> maybe a number or a tensor
+        return Add(*(
+            wicks(term, rules=rules,
+                  simplify_kronecker_deltas=simplify_kronecker_deltas)
+            for term in expr.args
+        ))
+    elif not isinstance(expr, Mul):
+        # nether Add, Mul, NO, F, Fd -> maybe a number or tensor
         return expr
+    # -> we have a Mul object
+    # we don't want to mess around with commuting part of Mul
+    # so we factorize it out before starting recursion
+    c_part: list[Expr] = []
+    op_string: list[FermionicOperator] = []
+    for factor in expr.args:
+        if factor.is_commutative:
+            c_part.append(factor)
+        else:
+            assert isinstance(factor, FermionicOperator)
+            op_string.append(factor)
+
+    if (n := len(op_string)) == 0:  # no operators
+        result = expr
+    elif n == 1:  # a single operator
+        return S.Zero
+    else:  # at least 2 operators
+        result = _contract_operator_string(op_string)
+        result = Mul(*c_part, result).expand()
+        assert isinstance(result, Expr)
+        if simplify_kronecker_deltas:
+            result = evaluate_deltas(result)
 
     # apply rules to the result
     if rules is None:
         return result
-    elif not isinstance(rules, Rules):
-        raise TypeError(f"Rules needs to be of type {Rules}")
-
-    return rules.apply(Expr(result)).sympy
+    assert isinstance(rules, Rules)
+    return rules.apply(ExprContainer(result)).inner
 
 
-def _contract_operator_string(op_string: list) -> Add:
+def _contract_operator_string(op_string: list[FermionicOperator]) -> Expr:
     """
     Contracts the operator string only returning fully contracted
     contritbutions.
@@ -426,59 +448,68 @@ def _contract_operator_string(op_string: list) -> Add:
     if not _has_fully_contracted_contribution(op_string):
         return S.Zero
 
-    result = []
+    result: list[Expr] = []
     for i in range(1, len(op_string)):
         c = _contraction(op_string[0], op_string[i])
         if c is S.Zero:
             continue
         if not i % 2:  # introduce -1 for swapping operators
             c *= S.NegativeOne
+        assert isinstance(c, Expr)
 
         if len(op_string) - 2 > 0:  # at least one operator left
             # remove the contracted operators from the string and recurse
             remaining = op_string[1:i] + op_string[i+1:]
-            result.append(c * _contract_operator_string(remaining))
+            result.append(Mul(
+                c, _contract_operator_string(remaining)
+            ))
         else:  # no operators left
             result.append(c)
     return Add(*result)
 
 
-def _contraction(p, q):
+def _contraction(p: FermionicOperator, q: FermionicOperator) -> Expr:
     """
     Evaluates the contraction between two sqcond quantized fermionic
     operators.
     Adapted from 'sympy.physics.secondquant'.
     """
-    if not isinstance(p, FermionicOperator) or \
-            not isinstance(q, FermionicOperator):
-        raise NotImplementedError("Contraction only implemented for "
-                                  "FermionicOperators.")
-    if p.state.spin or q.state.spin:
+    assert isinstance(p, FermionicOperator)
+    assert isinstance(q, FermionicOperator)
+
+    p_idx, q_idx = p.args[0], q.args[0]
+    assert isinstance(p_idx, Index) and isinstance(q_idx, Index)
+    if p_idx.spin or q_idx.spin:
         raise NotImplementedError("Contraction not implemented for indices "
                                   "with spin.")
     # get the space and ensure we have no unexpected space
-    p_idx, q_idx = p.args[0], q.args[0]
     space_p, space_q = p_idx.space[0], q_idx.space[0]
     assert space_p in ["o", "v", "g"] and space_q in ["o", "v", "g"]
 
     if isinstance(p, F) and isinstance(q, Fd):
         if space_p == "o" or space_q == "o":
-            return S.Zero
+            res = S.Zero
         elif space_p == "v" or space_q == "v":
-            return KroneckerDelta(p_idx, q_idx)
+            res = KroneckerDelta(p_idx, q_idx)
         else:
-            return (KroneckerDelta(p_idx, q_idx) *
-                    KroneckerDelta(q_idx, Index('a', above_fermi=True)))
+            res = Mul(
+                KroneckerDelta(p_idx, q_idx),
+                KroneckerDelta(q_idx, Index('a', above_fermi=True))
+            )
     elif isinstance(p, Fd) and isinstance(q, F):
         if space_p == "v" or space_q == "v":
-            return S.Zero
+            res = S.Zero
         elif space_p == "o" or space_q == "o":
-            return KroneckerDelta(p_idx, q_idx)
+            res = KroneckerDelta(p_idx, q_idx)
         else:
-            return (KroneckerDelta(p_idx, q_idx) *
-                    KroneckerDelta(q_idx, Index('i', below_fermi=True)))
+            res = Mul(
+                KroneckerDelta(p_idx, q_idx),
+                KroneckerDelta(q_idx, Index('i', below_fermi=True))
+            )
     else:  # vanish if 2xAnnihilator or 2xCreator
-        return S.Zero
+        res = S.Zero
+    assert isinstance(res, Expr)
+    return res
 
 
 def _has_fully_contracted_contribution(op_string: list[FermionicOperator]
@@ -497,7 +528,9 @@ def _has_fully_contracted_contribution(op_string: list[FermionicOperator]
             counter = create
         else:
             counter = annihilate
-        counter[op.args[0].space] += 1
+        idx = op.args[0]
+        assert isinstance(idx, Index)
+        counter[idx.space] += 1
     # check that we have a matching amount of creation and annihilation
     # operators
     for space, n_create in create.items():
