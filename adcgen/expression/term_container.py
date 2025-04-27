@@ -3,7 +3,7 @@ from collections import Counter
 from functools import cached_property
 from typing import Any, TYPE_CHECKING, Sequence
 
-from sympy import Add, Expr, Mul, Pow, S, Symbol, latex, nsimplify
+from sympy import Add, Expr, Mul, Pow, S, Symbol, factor, latex, nsimplify
 from sympy.physics.secondquant import NO
 
 from ..indices import (
@@ -106,6 +106,11 @@ class TermContainer(Container):
             Mul(*(o.inner for o in self.objects if o.inner.is_number)),
             rational=True
         )
+
+    @property
+    def sign(self) -> str:
+        """Returns the sign of the term."""
+        return "minus" if self.prefactor < 0 else "plus"
 
     @property
     def contracted(self) -> tuple[Index, ...]:
@@ -246,7 +251,8 @@ class TermContainer(Container):
 
     @cached_member
     def symmetry(self, only_contracted: bool = False,
-                 only_target: bool = False) -> "dict[tuple[Permutation], int]":
+                 only_target: bool = False
+                 ) -> "dict[tuple[Permutation, ...], int]":
         """
         Determines the symmetry of the term with respect to index permutations.
         By default all indices of the term are considered. However, by setting
@@ -642,6 +648,16 @@ class TermContainer(Container):
             expanded = ExprContainer(expanded, **assumptions)
         return expanded
 
+    def factor(self) -> "ExprContainer":
+        """
+        Tries to factor the term.
+        """
+        from .expr_container import ExprContainer
+
+        return ExprContainer(
+            inner=factor(self.inner), **self.assumptions
+        )
+
     def use_explicit_denominators(self, wrap_result: bool = True
                                   ) -> "ExprContainer | Expr":
         """
@@ -703,7 +719,7 @@ class TermContainer(Container):
         term = EriOrbenergy(self)
         symbolic_denom = term.symbolic_denominator()
         # symbolic denom might additionaly have D set as antisym tensor
-        return symbolic_denom * term.pref * term.num.sympy * term.eri.sympy
+        return symbolic_denom * term.pref * term.num.inner * term.eri.inner
 
     def to_latex_str(self, only_pull_out_pref: bool = False,
                      spin_as_overbar: bool = False):

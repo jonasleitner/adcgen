@@ -96,6 +96,15 @@ class ExprContainer(Container):
         else:
             return (TermContainer(inner=self._inner, **kwargs),)
 
+    @property
+    def idx(self) -> tuple[Index, ...]:
+        """
+        Returns all indices that occur in the expression. Indices that occur
+        multiple times will be listed multiple times.
+        """
+        idx = [s for t in self.terms for s in t.idx]
+        return tuple(sorted(idx, key=sort_idx_canonical))
+
     ###############################
     # setters for the assumptions #
     ###############################
