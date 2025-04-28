@@ -1,74 +1,80 @@
-from . import expr_container as e
+from collections import defaultdict
+import itertools
+
+from sympy import Add, S
+
 from .eri_orbenergy import EriOrbenergy
+from .expression import ExprContainer, TermContainer
 from .indices import get_symbols, sort_idx_canonical
 from .misc import Inputerror
 from .simplify import simplify
-from .sympy_objects import AntiSymmetricTensor, SymmetricTensor
+from .symmetry import Permutation
+from .sympy_objects import AntiSymmetricTensor, KroneckerDelta, SymmetricTensor
 
-from collections import defaultdict
 
-
-def by_delta_types(expr: e.Expr) -> dict[tuple[str], e.Expr]:
+def by_delta_types(expr: ExprContainer
+                   ) -> dict[tuple[str, ...], ExprContainer]:
     """Sort the terms in an expression according to their space and spin."""
+    assert isinstance(expr, ExprContainer)
     expr = expr.expand()
-    if not isinstance(expr, e.Expr):
-        expr = e.Expr(expr)
-    ret = {}
+    ret: dict[tuple[str, ...], ExprContainer] = {}
     for term in expr.terms:
         d_blocks = []
-        for delta in term.deltas:
+        for delta in term.objects:
+            if not isinstance(delta.base, KroneckerDelta):
+                continue
             spin = delta.spin
             if all(c == "n" for c in spin):  # no indices with spin
                 block = delta.space
             else:
                 block = f"{delta.space}_{spin}"
-            d_blocks.extend(block for _ in range(delta.exponent))
+            exp = delta.exponent
+            assert exp.is_Integer
+            d_blocks.extend(block for _ in range(int(exp)))
         d_blocks = tuple(sorted(d_blocks))
         if not d_blocks:
             d_blocks = ('none',)
         if d_blocks not in ret:
-            ret[d_blocks] = e.Expr(0, **term.assumptions)
+            ret[d_blocks] = ExprContainer(0, **term.assumptions)
         ret[d_blocks] += term
     return ret
 
 
-def by_delta_indices(expr: e.Expr) -> dict[tuple[str], e.Expr]:
+def by_delta_indices(expr: ExprContainer
+                     ) -> dict[tuple[str, ...], ExprContainer]:
     """
     Sort the terms in an expression according to the names and spin of indices
     on the KroneckerDeltas in each term.
     """
+    assert isinstance(expr, ExprContainer)
     expr = expr.expand()
-    if not isinstance(expr, e.Expr):
-        expr = e.Expr(expr)
-    ret = {}
+    ret: dict[tuple[str, ...], ExprContainer] = {}
     for term in expr.terms:
         d_idx = tuple(sorted(
-            "".join(str(s) for s in o.idx) for o in term.deltas
-            for _ in range(o.exponent)
+            "".join(str(s) for s in o.idx) for o in term.objects
+            if isinstance(o.base, KroneckerDelta)
+            for _ in range(int(o.exponent))
         ))
         if not d_idx:
             d_idx = ('none',)
         if d_idx not in ret:
-            ret[d_idx] = e.Expr(0, **term.assumptions)
+            ret[d_idx] = ExprContainer(0, **term.assumptions)
         ret[d_idx] += term
     return ret
 
 
-def by_tensor_block(expr: e.Expr, t_name: str) -> dict[tuple[str], e.Expr]:
+def by_tensor_block(expr: ExprContainer, t_name: str
+                    ) -> dict[tuple[str, ...], ExprContainer]:
     """
     Sort the terms in an expression according to the blocks of a tensor.
     """
-
-    if not isinstance(t_name, str):
-        raise Inputerror("Tensor name must be provided as string.")
+    assert isinstance(t_name, str)
+    assert isinstance(expr, ExprContainer)
     expr = expr.expand()
-    if not isinstance(expr, e.Expr):
-        expr = e.Expr(expr)
-
-    ret = {}
+    ret: dict[tuple[str, ...], ExprContainer] = {}
     for term in expr.terms:
         t_blocks = []
-        for tensor in term.tensors:
+        for tensor in term.objects:
             if tensor.name != t_name:
                 continue
             spin = tensor.spin
@@ -76,18 +82,20 @@ def by_tensor_block(expr: e.Expr, t_name: str) -> dict[tuple[str], e.Expr]:
                 block = tensor.space
             else:
                 block = f"{tensor.space}_{spin}"
-            t_blocks.extend(block for _ in range(tensor.exponent))
+            exp = tensor.exponent
+            assert exp.is_Integer
+            t_blocks.extend(block for _ in range(int(exp)))
         t_blocks = tuple(sorted(t_blocks))
         if not t_blocks:
             t_blocks = ("none",)
         if t_blocks not in ret:
-            ret[t_blocks] = e.Expr(0, **term.assumptions)
+            ret[t_blocks] = ExprContainer(0, **term.assumptions)
         ret[t_blocks] += term
     return ret
 
 
-def by_tensor_target_block(expr: e.Expr,
-                           t_name: str) -> dict[tuple[str], e.Expr]:
+def by_tensor_target_block(expr: ExprContainer, t_name: str
+                           ) -> dict[tuple[str, ...], ExprContainer]:
     """
     Sort the terms in an expression according to the type of target indices on
     the specified tensor, e.g. f_cc Y_ij^ac, where i, j and a are target
@@ -95,18 +103,14 @@ def by_tensor_target_block(expr: e.Expr,
     -> if sorting according to the indices on Y: (oov,);
     if sorting acording to the indices on f: (none,).
     """
-
-    if not isinstance(t_name, str):
-        raise Inputerror("Tensor name must be provided as string.")
+    assert isinstance(t_name, str)
+    assert isinstance(expr, ExprContainer)
     expr = expr.expand()
-    if not isinstance(expr, e.Expr):
-        expr = e.Expr(expr)
-
-    ret = {}
+    ret: dict[tuple[str, ...], ExprContainer] = {}
     for term in expr.terms:
         key = []
         target = term.target
-        for tensor in term.tensors:
+        for tensor in term.objects:
             if tensor.name == t_name:
                 # indices are in canonical order
                 tensor_target = [s for s in tensor.idx if s in target]
@@ -117,37 +121,34 @@ def by_tensor_target_block(expr: e.Expr,
                     s.space[0] for s in tensor_target
                 )
                 if any(s.spin for s in tensor_target):  # spin is defined
-                    spin = "".join(s.spin if s.spin else "n"
-                                   for s in tensor_target)
+                    spin = "".join(
+                        s.spin if s.spin else "n" for s in tensor_target
+                    )
                     tensor_target_block += f"_{spin}"
                 key.append(tensor_target_block)
         key = tuple(sorted(key))  # in case of multiple occurences
         if not key:  # did not find a single occurence of the tensor
             key = (f'no_{t_name}',)
         if key not in ret:
-            ret[key] = 0
+            ret[key] = ExprContainer(0, **term.assumptions)
         ret[key] += term
     return ret
 
 
-def by_tensor_target_indices(expr: e.Expr,
-                             t_name: str) -> dict[tuple[str], e.Expr]:
+def by_tensor_target_indices(expr: ExprContainer, t_name: str
+                             ) -> dict[tuple[str, ...], ExprContainer]:
     """
     Sort the terms in an expression according to the names of target indices on
     the specified tensor.
     """
-
-    if not isinstance(t_name, str):
-        raise Inputerror("Tensor name must be provided as string.")
+    assert isinstance(t_name, str)
+    assert isinstance(expr, ExprContainer)
     expr = expr.expand()
-    if not isinstance(expr, e.Expr):
-        expr = e.Expr(expr)
-
-    ret = {}
+    ret: dict[tuple[str, ...], ExprContainer] = {}
     for term in expr.terms:
         key = []
         target = term.target
-        for obj in term.tensors:
+        for obj in term.objects:
             if obj.name == t_name:
                 # indices are in canonical order
                 obj_target_idx = "".join(
@@ -160,16 +161,16 @@ def by_tensor_target_indices(expr: e.Expr,
         if not key:  # tensor did not occur in the term
             key = (f"no_{t_name}",)
         if key not in ret:
-            ret[key] = 0
+            ret[key] = ExprContainer(0, **term.assumptions)
         ret[key] += term
     return ret
 
 
-def exploit_perm_sym(expr: e.Expr, target_indices: str | None = None,
-                     target_spin: str | None = None,
-                     bra_ket_sym: int = 0,
-                     antisymmetric_result_tensor: bool = True
-                     ) -> dict[tuple, e.Expr]:
+def exploit_perm_sym(
+        expr: ExprContainer, target_indices: str | None = None,
+        target_spin: str | None = None, bra_ket_sym: int = 0,
+        antisymmetric_result_tensor: bool = True
+        ) -> dict[tuple[tuple[tuple[Permutation, ...], int], ...], ExprContainer]:  # noqa E501
     """
     Reduces the number of terms in an expression by exploiting the symmetry:
     by applying permutations of target indices it might be poossible to map
@@ -208,26 +209,21 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str | None = None,
                applied in order to recover the original expression.
     """
     from .reduce_expr import factor_eri_parts, factor_denom
-    from sympy import S
-    from itertools import chain
 
-    def simplify_terms_with_denom(sub_expr: e.Expr):
-        factored = chain.from_iterable(
+    def simplify_terms_with_denom(sub_expr: ExprContainer):
+        factored = itertools.chain.from_iterable(
             factor_denom(sub_e) for sub_e in factor_eri_parts(sub_expr)
         )
-        ret = e.Expr(0, **sub_expr.assumptions)
+        ret = ExprContainer(0, **sub_expr.assumptions)
         for term in factored:
             ret += term.factor()
         return ret
 
-    if not isinstance(expr, e.Expr):
-        raise Inputerror("Expression needs to be provided as expr instance.")
-
-    if expr.sympy.is_number:
+    assert isinstance(expr, ExprContainer)
+    if expr.inner.is_number:
         return {tuple(): expr}
-
-    expr: e.Expr = expr.expand()
-    terms: list[e.Term] = expr.terms
+    expr.expand()
+    terms: tuple[TermContainer, ...] = expr.terms
 
     # check that each term in the expr contains the same target indices
     ref_target = terms[0].target
@@ -265,8 +261,9 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str | None = None,
 
         upper = get_symbols(upper, upper_spin)
         lower = get_symbols(lower, lower_spin)
-        sorted_provided_target = tuple(sorted(upper + lower,
-                                              key=sort_idx_canonical))
+        sorted_provided_target = tuple(sorted(
+            upper + lower, key=sort_idx_canonical
+        ))
         if sorted_provided_target != ref_target:
             raise Inputerror(f"The provided target indices {target_indices} "
                              "are not equal to the target indices found in "
@@ -281,40 +278,41 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str | None = None,
         tensor = AntiSymmetricTensor("x", upper, lower, bra_ket_sym)
     else:
         tensor = SymmetricTensor("x", upper, lower, bra_ket_sym)
-    symmetry = e.Expr(tensor).terms[0].symmetry()
+    symmetry = ExprContainer(tensor).terms[0].symmetry()
 
     # prefilter the terms according to the contained objects (name, space, exp)
     # and if a denominator is present -> number and length of the brackets
-    filtered_terms = defaultdict(list)
+    filtered_terms: defaultdict[tuple, list[int]] = defaultdict(list)
     has_denom: list[bool] = []
     for term_i, term in enumerate(terms):
-        term = EriOrbenergy(term)
-        has_denom.append(not term.denom.is_number)
-        eri_descr: tuple[str] = tuple(sorted(
-            o.description(include_target_idx=False)
-            for o in term.eri.objects
+        term_splitted = EriOrbenergy(term)
+        has_denom.append(not term_splitted.denom.inner.is_number)
+        eri_descr: tuple[str, ...] = tuple(sorted(
+            o.description(target_idx=None)
+            for o in term_splitted.eri.objects
         ))
         idx_space = "".join(sorted(
-            s.space[0] + s.spin for s in term.eri.contracted
+            s.space[0] + s.spin for s in term_splitted.eri.contracted
         ))
-        key = (eri_descr, term.denom_description(), idx_space)
+        key = (eri_descr, term_splitted.denom_description(), idx_space)
         filtered_terms[key].append(term_i)
 
-    ret = {}
-    removed_terms = set()
+    ret: dict[tuple[tuple[tuple[Permutation, ...], int], ...], ExprContainer] = {}  # noqa E501
+    removed_terms: set[int] = set()
     for term_idx_list in filtered_terms.values():
         # term is unique -> nothing to compare with
         # can not map this term onto any other terms
         if len(term_idx_list) == 1:
             if tuple() not in ret:
-                ret[tuple()] = 0
+                ret[tuple()] = ExprContainer(0, **expr.assumptions)
             ret[tuple()] += terms[term_idx_list[0]]
             continue
 
         # decide which function to use for comparing the terms
         terms_have_denom = has_denom[term_idx_list[0]]
-        assert all(terms_have_denom == has_denom[term_i]
-                   for term_i in term_idx_list)
+        assert all(
+            terms_have_denom == has_denom[term_i] for term_i in term_idx_list
+        )
         if terms_have_denom:
             simplify_terms = simplify_terms_with_denom
         else:
@@ -330,24 +328,24 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str | None = None,
         for term_i in term_idx_list:
             if term_i in removed_terms:
                 continue
-            term: e.Expr = terms[term_i]
-            found_sym = []
+            term = terms[term_i]
+            found_sym: list[tuple[tuple[Permutation, ...], int]] = []
             for perms, factor in symmetry.items():
                 # apply the permutations to the current term
                 perm_term = term.permute(*perms)
                 # permutations are not valid for the current term
-                if perm_term.sympy is S.Zero and term.sympy is not S.Zero:
+                if perm_term.inner is S.Zero and term.inner is not S.Zero:
                     continue
                 # check if the permutations did change the term
                 # if the term is still the same (up to the sign) continue
                 # thereby only looking for the desired symmetry
                 if factor == -1:
                     # looking for antisym: P_pq X = - X -> P_pq X + X = 0?
-                    if perm_term.sympy + term.sympy is S.Zero:
+                    if Add(perm_term.inner, term.inner) is S.Zero:
                         continue
                 elif factor == 1:
                     # looking for sym: P_pq X = + X -> P_pq X - X = 0?
-                    if perm_term.sympy - term.sympy is S.Zero:
+                    if Add(perm_term.inner, -term.inner) is S.Zero:
                         continue
                 else:
                     raise ValueError(f"Invalid sym factor {factor}.")
@@ -370,16 +368,15 @@ def exploit_perm_sym(expr: e.Expr, target_indices: str | None = None,
                             simplify_terms(perm_term - terms[other_term_i])
                         )
                     # could not map the terms onto each other
-                    if simplified.sympy is not S.Zero:
+                    if simplified.inner is not S.Zero:
                         continue
                     # mapped the terms onto each other
                     removed_terms.add(other_term_i)
                     found_sym.append((perms, factor))
                     break
             # use the found symmetry as dict key
-            found_sym = tuple(found_sym)
-
-            if found_sym not in ret:
-                ret[found_sym] = 0
-            ret[found_sym] += term
+            found_sym_tpl = tuple(found_sym)
+            if found_sym_tpl not in ret:
+                ret[found_sym_tpl] = ExprContainer(0, **expr.assumptions)
+            ret[found_sym_tpl] += term
     return ret
