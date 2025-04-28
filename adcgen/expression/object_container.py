@@ -121,13 +121,13 @@ class ObjectContainer(Container):
         return False if name is None else is_gs_density(name)
 
     @property
-    def is_orbital_energy(self):
+    def is_orbital_energy(self) -> bool:
         """Whether the object is a orbital energy tensor."""
         # all orb energies should be nonsym_tensors actually
         return self.name == tensor_names.orb_energy and len(self.idx) == 1
 
     @property
-    def contains_only_orb_energies(self):
+    def contains_only_orb_energies(self) -> bool:
         """Whether the object is a orbital energy tensor."""
         # To have a common interface with e.g. Polynoms
         return self.is_orbital_energy

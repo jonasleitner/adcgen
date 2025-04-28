@@ -1,16 +1,16 @@
 from collections.abc import Sequence
 from collections import defaultdict
-from itertools import chain, combinations
+import itertools
 
-from sympy import S
+from sympy import Add, S
 
+from .expression import ExprContainer, TermContainer
 from .indices import Index, sort_idx_canonical
-from . import expr_container as e
 from .misc import cached_member, cached_property, Inputerror
 from .eri_orbenergy import EriOrbenergy
 
 
-class Permutation(tuple):
+class Permutation(tuple[Index, Index]):
     """
     Represents a permutation operator P_{pq} that permutes the indices p and q.
     """
@@ -29,7 +29,7 @@ class Permutation(tuple):
         return f"P_{self[0].name}{self[1].name}"
 
 
-class PermutationProduct(tuple):
+class PermutationProduct(tuple[Permutation, ...]):
     """
     Represents a product of permutation operators P_{pq}P{rs}.
     The permutations are sorted taking into account that it is only possible
@@ -46,10 +46,11 @@ class PermutationProduct(tuple):
         # to any arbitrary place
         splitted = cls.split_in_separable_parts(args)
         sorted_args = [val for _, val in sorted(splitted.items())]
-        return super().__new__(cls, chain.from_iterable(sorted_args))
+        return super().__new__(cls, itertools.chain.from_iterable(sorted_args))
 
     @staticmethod
-    def split_in_separable_parts(permutations: Sequence[Permutation]):
+    def split_in_separable_parts(permutations: Sequence[Permutation]
+                                 ) -> dict[str, list[Permutation]]:
         """
         Splits the permutations in subsets that can be treated independently
         of each other.
@@ -58,11 +59,11 @@ class PermutationProduct(tuple):
         # split the permutations according to their index space
         # and identify spaces that are linked to each other through at least
         # 1 permutation
-        perm_spaces = []
-        links = []
+        perm_spaces: list[set[str]] = []
+        links: list[set[str]] = []
         for perm in permutations:
             p, q = perm
-            space = set((p.space[0] + p.spin, q.space[0] + q.spin))
+            space: set[str] = set((p.space[0] + p.spin, q.space[0] + q.spin))
             perm_spaces.append(space)
 
             if len(space) > 1:  # identify linking permutations
@@ -70,12 +71,12 @@ class PermutationProduct(tuple):
                     links.append(space)
 
         if len(links) == 0:  # no links, all spaces separated
-            linked_spaces = []
+            linked_spaces: list[set[str]] = []
         elif len(links) == 1:  # exactly 2 spaces are linked
-            linked_spaces = links
+            linked_spaces: list[set[str]] = links
         else:  # more than 2 spaces linked: either ov, ox or ov, xy
-            treated = set()
-            linked_spaces = []
+            treated: set[int] = set()
+            linked_spaces: list[set[str]] = []
             for i, linked_sp in enumerate(links):
                 if i in treated:
                     continue
@@ -89,7 +90,7 @@ class PermutationProduct(tuple):
                 linked_spaces.append(linked)
 
         # sort them in groups that can be treated independently
-        ret = {}
+        ret: dict[str, list[Permutation]] = {}
         for perm, space in zip(permutations, perm_spaces):
             # if the current space is linked to other spaces
             # -> replace the space by the linked space
@@ -97,10 +98,10 @@ class PermutationProduct(tuple):
                 if any(sp in linked_sp for sp in space):
                     space = linked_sp
                     break
-            space = "".join(sorted(space))
-            if space not in ret:
-                ret[space] = []
-            ret[space].append(perm)
+            space_str = "".join(sorted(space))
+            if space_str not in ret:
+                ret[space_str] = []
+            ret[space_str].append(perm)
         return ret
 
 
@@ -111,12 +112,16 @@ class LazyTermMap:
     the expression.
     """
 
-    def __init__(self, expr: e.Expr):
+    def __init__(self, expr: ExprContainer):
         self._expr = expr
-        self._terms: tuple[e.Term] = expr.terms  # init all term objects
-        self._term_map = {}  # {(perms, factor): {i: other_i}}
+        # init all term container objects
+        self._terms: tuple[TermContainer, ...] = expr.terms
+        # {(perms, factor): {i: other_i}}
+        self._term_map: \
+            dict[tuple[tuple[Permutation, ...], int], dict[int, int]] = {}
 
-    def evaluate(self, antisymmetric_result_tensor: bool = True):
+    def evaluate(self, antisymmetric_result_tensor: bool = True
+                 ) -> dict:
         """
         Fully evaluates the term map of the expression by probing all
         possible permutations of target indices.
@@ -139,12 +144,12 @@ class LazyTermMap:
             tensor = AntiSymmetricTensor("x", tuple(), self.target_indices)
         else:
             tensor = SymmetricTensor("x", tuple(), self.target_indices)
-        tensor = e.Expr(tensor).terms[0]
+        tensor = ExprContainer(tensor).terms[0]
         for sym in tensor.symmetry().items():
             self[sym]
         return self._term_map
 
-    def __getitem__(self, symmetry: tuple):
+    def __getitem__(self, symmetry: tuple[tuple[Permutation, ...], int]):
         """
         Checks whether a given symmetry as already been evaluated and probes
         the expression for the symmetry if this is not the case.
@@ -169,36 +174,39 @@ class LazyTermMap:
         )
         # also check the sorted version before inverting
         if not isinstance(permutations, PermutationProduct):
-            permutations = tuple(chain.from_iterable(
+            permutations = tuple(itertools.chain.from_iterable(
                 [val for _, val in sorted(splitted)]
             ))
             sym = (permutations, factor)
             if sym in self._term_map:
                 return self._term_map[sym]
 
-        invertable_subsets = [i for i, (_, perms) in enumerate(splitted)
-                              if len(perms) > 1]
+        invertable_subsets: list[int] = [
+            i for i, (_, perms) in enumerate(splitted) if len(perms) > 1
+        ]
         for n_inverts in range(1, len(invertable_subsets)+1):
-            for to_invert in combinations(invertable_subsets, n_inverts):
-                inv_perms = []
+            for to_invert in \
+                    itertools.combinations(invertable_subsets, n_inverts):
+                inv_perms: list[tuple[str, list[Permutation]]] = []
                 for i, val in enumerate(splitted):
                     if i in to_invert:  # invert the order of the permutations
                         inv_perms.append((val[0], val[1][::-1]))
                     else:
                         inv_perms.append(val)
-                inv_perms = tuple(chain.from_iterable(
+                inv_perms_tpl = tuple(itertools.chain.from_iterable(
                     [val for _, val in sorted(inv_perms)]
                 ))
                 # check if the inverted variant has been already computed
-                sym = (inv_perms, factor)
+                sym = (inv_perms_tpl, factor)
                 if sym in self._term_map:
                     return self._term_map[sym]
         # could not find any variant in the term_map
         # -> probe the expression for the original variant
+        assert isinstance(permutations, PermutationProduct)
         return self.probe_symmetry(permutations, factor)
 
     @cached_property
-    def target_indices(self):
+    def target_indices(self) -> tuple[Index, ...]:
         """Returns the target indices of the expression."""
 
         if self._expr.provided_target_idx is not None:
@@ -214,7 +222,7 @@ class LazyTermMap:
         return target
 
     @cached_member
-    def _prescan_terms(self) -> tuple:
+    def _prescan_terms(self) -> tuple[tuple[bool, list[int]], ...]:
         """
         Prescan the terms of the expression collecting compatible terms that
         might be mapped onto each other.
@@ -235,8 +243,8 @@ class LazyTermMap:
             # don't include target indices in the description since thats
             # what we want to probe the expr for (contracted permutations
             # can be simplified, which is assumed to have happened before.)
-            eri_descriptions: tuple[str] = tuple(sorted(
-                o.description(include_target_idx=False)
+            eri_descriptions: tuple[str, ...] = tuple(sorted(
+                o.description(target_idx=None)
                 for o in term.eri.objects
             ))
             # space of contracted indices
@@ -279,18 +287,17 @@ class LazyTermMap:
             key: The index of the permuted term.
             value: The index of the term it can be mapped onto.
         """
-        from itertools import chain
         from .reduce_expr import factor_eri_parts, factor_denom
         from .simplify import simplify
 
-        def simplify_with_denom(expr: e.Expr) -> e.Expr:
-            if expr.sympy.is_number:  # trivial
+        def simplify_with_denom(expr: ExprContainer) -> ExprContainer:
+            if expr.inner.is_number:  # trivial
                 return expr
 
-            factored = chain.from_iterable(
+            factored = itertools.chain.from_iterable(
                 factor_denom(sub_e) for sub_e in factor_eri_parts(expr)
             )
-            ret = e.Expr(0, **expr.assumptions)
+            ret = ExprContainer(0, **expr.assumptions)
             for term in factored:
                 ret += term.factor()
             return ret
@@ -302,29 +309,29 @@ class LazyTermMap:
         # check that the given permutations only contain target indices
         target_indices = self.target_indices
         if any(s not in target_indices
-               for s in chain.from_iterable(permutations)):
+               for s in itertools.chain.from_iterable(permutations)):
             raise NotImplementedError("Found non target index in "
                                       f"{permutations}. Target indices are "
                                       f"{target_indices}.")
 
-        map_contribution = {}
+        map_contribution: dict[int, int] = {}
         for has_denom, term_i_list in self._prescan_terms():
             # go through the terms and filter out terms that are symmetric or
             # antisymmetric with respect to the given symmetry
-            relevant_terms = []
+            relevant_terms: list[tuple[int, ExprContainer]] = []
             for term_i in term_i_list:
-                term: e.Term = self._terms[term_i]
-                perm_term: e.Expr = term.permute(*permutations)
+                term: TermContainer = self._terms[term_i]
+                perm_term: ExprContainer = term.permute(*permutations)
                 # check that the permutations are valid
-                if perm_term.sympy is S.Zero and term.sympy is not S.Zero:
+                if perm_term.inner is S.Zero and term.inner is not S.Zero:
                     continue
                 # only look for the desired symmetry which is defined by
                 # sym_factor
                 if sym_factor == -1:  # looking for antisym: P_pq X != -X
-                    if perm_term.sympy + term.sympy is not S.Zero:
+                    if Add(perm_term.inner, term.inner) is not S.Zero:
                         relevant_terms.append((term_i, perm_term))
                 else:  # looking for sym: P_pq X != X
-                    if perm_term.sympy - term.sympy is not S.Zero:
+                    if Add(perm_term.inner, -term.inner) is not S.Zero:
                         relevant_terms.append((term_i, perm_term))
             # choose a function for simplifying the sum/difference of 2 terms
             # it might be neccessary to permute contracted indices to
@@ -348,7 +355,7 @@ class LazyTermMap:
                             perm_term - self._terms[other_term_i]
                         )
                     # was it possible to map the terms onto each other?
-                    if sum.sympy is S.Zero:
+                    if sum.inner is S.Zero:
                         map_contribution[term_i] = other_term_i
                         # can break the loop: if we are assuming that the
                         # expression is completely simplified, it will not

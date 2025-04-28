@@ -134,7 +134,8 @@ def find_compatible_terms(terms: Sequence[TermContainer]
         for ov, idx_pattern in pattern.items():
             # only compare indices that belong to the same space
             other_idx_pattern = other_pattern.get(ov, None)
-            # the other space is not available in the other term -> they cant match
+            # the other space is not available in the other term
+            # -> they cant match
             if other_idx_pattern is None:
                 return None
             # list to hold the substitution dictionaries of the current space
