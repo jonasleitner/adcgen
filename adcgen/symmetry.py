@@ -7,7 +7,6 @@ from sympy import Add, S
 from .expression import ExprContainer, TermContainer
 from .indices import Index, sort_idx_canonical
 from .misc import cached_member, cached_property, Inputerror
-from .eri_orbenergy import EriOrbenergy
 
 
 class Permutation(tuple[Index, Index]):
@@ -234,6 +233,7 @@ class LazyTermMap:
                          orbital energy denominator.
             Second entry: The terms by their index.
         """
+        from .eri_orbenergy import EriOrbenergy
 
         filtered_terms = defaultdict(list)
         for term_i, term in enumerate(self._terms):

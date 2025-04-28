@@ -8,10 +8,10 @@ from ..indices import Index, sort_idx_canonical
 from ..tensor_names import tensor_names
 from .container import Container
 from .object_container import ObjectContainer
-from .term_container import TermContainer
 
 # imports only required for type checking (avoid circular imports)
 if TYPE_CHECKING:
+    from .term_container import TermContainer
     from .expr_container import ExprContainer
 
 
@@ -60,7 +60,9 @@ class PolynomContainer(ObjectContainer):
         return len(self.base.args)
 
     @cached_property
-    def terms(self) -> tuple[TermContainer, ...]:
+    def terms(self) -> "tuple[TermContainer, ...]":
+        from .term_container import TermContainer
+
         return tuple(
             TermContainer(inner=term, **self.assumptions)
             for term in self.base.args

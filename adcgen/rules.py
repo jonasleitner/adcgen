@@ -46,7 +46,7 @@ class Rules:
     def is_empty(self) -> bool:
         return not bool(self._forbidden_blocks)
 
-    def __eq__(self, other: "Rules" | Any) -> bool:
+    def __eq__(self, other: "Rules | Any") -> bool:
         if not isinstance(other, Rules):
             return False
 

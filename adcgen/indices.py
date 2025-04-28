@@ -433,7 +433,7 @@ def order_substitutions(subsdict: dict[Index, Index]
 def minimize_tensor_indices(
         tensor_indices: Sequence[Index],
         target_idx_names: Mapping[tuple[str, str], Collection[str]]
-        ) -> tuple[tuple[Index, ...], tuple[Permutation, ...]]:
+        ) -> "tuple[tuple[Index, ...], tuple[Permutation, ...]]":
     """
     Minimizes the indices on a tensor using the lowest available indices that
     are no target indices.
