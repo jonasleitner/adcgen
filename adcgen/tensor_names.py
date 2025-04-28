@@ -1,10 +1,14 @@
-from .misc import Singleton, Inputerror
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import TYPE_CHECKING
+import json
 
 from sympy import Symbol
 
-from pathlib import Path
-from dataclasses import dataclass, fields
-import json
+from .misc import Singleton
+
+if TYPE_CHECKING:
+    from .expression import ExprContainer
 
 
 _config_file = "tensor_names.json"
@@ -65,7 +69,12 @@ class TensorNames(metaclass=Singleton):
     @staticmethod
     def defaults() -> dict[str, str]:
         """Returns the default values of all fields."""
-        return {field.name: field.default for field in fields(TensorNames)}
+        ret = {}
+        for field in fields(TensorNames):
+            val = field.default
+            assert isinstance(val, str)
+            ret[field.name] = val
+        return ret
 
     def map_default_name(self, name: str) -> str:
         """
@@ -86,7 +95,7 @@ class TensorNames(metaclass=Singleton):
                 return getattr(self, field.name)
         return name  # found not matching default name -> return input
 
-    def rename_tensors(self, expr):
+    def rename_tensors(self, expr: "ExprContainer") -> "ExprContainer":
         """
         Renames all tensors in the expression form their default names to the
         currently configured names. Note that only the name of the tensors
@@ -98,32 +107,34 @@ class TensorNames(metaclass=Singleton):
         expr: Expr
             The expression using the default tensor names.
         """
-        from .expr_container import Expr
+        from .expression import ExprContainer
 
-        if not isinstance(expr, Expr):
-            raise Inputerror("Expr needs to be provided as Expr instance.")
-
+        assert isinstance(expr, ExprContainer)
         for field in fields(self):
+            default = field.default
+            assert isinstance(default, str)
             new = getattr(self, field.name)
-            if field.default == new:  # nothing to do
+            if default == new:  # nothing to do
                 continue
             # find the necessary substitutions
             if field.name == "gs_amplitude":  # special case for t_amplitudes
-                subs = []
-                for sym in expr.sympy.atoms(Symbol):
+                subs: list[tuple[str, str]] = []
+                for sym in expr.inner.atoms(Symbol):
+                    assert isinstance(sym, Symbol)
                     split_name = _split_default_t_amplitude(sym.name)
                     if split_name is None:
                         continue
                     subs.append((sym.name, new + split_name[1]))
             elif field.name == "gs_density":  # and for gs densities
                 subs = []
-                for sym in expr.sympy.atoms(Symbol):
+                for sym in expr.inner.atoms(Symbol):
+                    assert isinstance(sym, Symbol)
                     split_name = _split_default_gs_density(sym.name)
                     if split_name is None:
                         continue
                     subs.append((sym.name, new + split_name[1]))
             else:
-                subs = [(field.default, new)]
+                subs = [(default, new)]
 
             for old, new in subs:
                 expr.rename_tensor(old, new)
