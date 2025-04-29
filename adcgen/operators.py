@@ -1,10 +1,11 @@
 from collections.abc import Sequence
+from functools import cached_property
 from typing import Any
 
 from sympy import Add, Expr, Rational, Mul, factorial, latex
 from sympy.physics.secondquant import Fd, F
 
-from .misc import cached_property, cached_member
+from .misc import cached_member
 from .indices import Indices, Index, get_symbols
 from .rules import Rules
 from .sympy_objects import AntiSymmetricTensor

@@ -1,12 +1,13 @@
 from collections.abc import Sequence
 from collections import defaultdict
+from functools import cached_property
 import itertools
 
 from sympy import Add, S
 
 from .expression import ExprContainer, TermContainer
 from .indices import Index, sort_idx_canonical
-from .misc import cached_member, cached_property, Inputerror
+from .misc import cached_member, Inputerror
 
 
 class Permutation(tuple[Index, Index]):

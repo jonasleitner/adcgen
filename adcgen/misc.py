@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from functools import wraps
 import inspect
 
@@ -53,26 +54,7 @@ def cached_member(function):
     return wrapper
 
 
-def cached_property(function):
-    """Decorator for a cached property member function."""
-
-    def get(self):
-        try:
-            return self._property_cache[function]
-        except AttributeError:
-            self._property_cache = {}
-            x = self._property_cache[function] = function(self)
-            return x
-        except KeyError:
-            x = self._property_cache[function] = function(self)
-            return x
-
-    get.__doc__ = function.__doc__
-
-    return property(get)
-
-
-def validate_input(**kwargs):
+def validate_input(**kwargs) -> None:
     # order, min_order, adc_order, braket, space, lr: single input
     # indices, block: 2 strings possible
     validate = {
@@ -109,7 +91,7 @@ def validate_input(**kwargs):
             raise Inputerror(f'Invalid input for {var}: {val}.')
 
 
-def transform_to_tuple(input):
+def transform_to_tuple(input: Sequence[str]) -> tuple[str, ...]:
     convertor = {
         str: lambda x: tuple(i for i in x.split(",")),
         list: lambda x: tuple(x),

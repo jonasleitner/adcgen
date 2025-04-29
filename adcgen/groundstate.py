@@ -1,7 +1,7 @@
 from math import factorial
 
 from sympy.physics.secondquant import NO, Dagger
-from sympy import Add, Expr, Mul, Rational, S, latex
+from sympy import Expr, Mul, Rational, S, latex
 
 from .expression import ExprContainer
 from .func import gen_term_orders, wicks
