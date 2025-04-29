@@ -4,9 +4,9 @@ from typing import TypeGuard
 
 from sympy import Add, Basic, Expr, Mul, Pow, Rational, S, nsimplify
 
-from adcgen.expression.object_container import ObjectContainer
-
-from .expression import ExprContainer, PolynomContainer, TermContainer
+from .expression import (
+    ExprContainer, ObjectContainer, PolynomContainer, TermContainer
+)
 from .logger import logger
 from .misc import Inputerror
 from .symmetry import Permutation

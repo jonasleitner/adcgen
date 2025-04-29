@@ -55,7 +55,7 @@ class GroundState:
         bra = self.psi(order=0, braket="bra")
         ket = self.psi(order=0, braket='ket') if order == 0 else \
             self.psi(order=order-1, braket='ket')
-        e = bra * h * ket
+        e = Mul(bra, h, ket)
         e = wicks(e, simplify_kronecker_deltas=True, rules=rules)
         # option 1: return the not simplified energy -> will give a lot more
         #           terms later on
@@ -213,7 +213,7 @@ class GroundState:
 
         # construct <k|H1|psi^(n-1)>
         h1, rules = self.h.h1
-        contrib = bra * h1 * self.psi(order-1, "ket")
+        contrib = Mul(bra, h1, self.psi(order-1, "ket"))
         numerator += wicks(
             contrib, simplify_kronecker_deltas=True, rules=rules
         )
@@ -285,11 +285,11 @@ class GroundState:
 
         # - compute (<Phi_k|0|n> + <Phi_k|1|n-1>)
         h0, rule = self.h.h0
-        term = bra * h0 * self.psi(order, 'ket')
+        term = Mul(bra, h0, self.psi(order, 'ket'))
         res += wicks(term, rules=rule, simplify_kronecker_deltas=True)
 
         h1, rule = self.h.h1
-        term = bra * h1 * self.psi(order - 1, 'ket')
+        term = Mul(bra, h1, self.psi(order - 1, 'ket'))
         res += wicks(term, rules=rule, simplify_kronecker_deltas=True)
 
         # - subtract sum_{m=0}^n E^{(m)} t_k^{(n-m)}

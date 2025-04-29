@@ -4,8 +4,7 @@ from math import factorial
 from sympy.physics.secondquant import NO, Dagger
 from sympy import Expr, Mul, Rational, S, latex, nsimplify, diff, symbols
 
-from adcgen.expression.expr_container import ExprContainer
-
+from .expression import ExprContainer
 from .func import gen_term_orders, wicks, evaluate_deltas
 from .groundstate import GroundState
 from .indices import (
@@ -71,13 +70,14 @@ class IntermediateStates:
         """
 
         # check input parameters
-        indices = transform_to_tuple(indices)
+        indices_tpl = transform_to_tuple(indices)
         validate_input(order=order, space=space, braket=braket,
-                       indices=indices)
-        if len(indices) != 1:
+                       indices=indices_tpl)
+        if len(indices_tpl) != 1:
             raise Inputerror(f"{indices} are not valid for constructing a "
                              "precursor state.")
-        indices = indices[0]
+        indices = indices_tpl[0]
+        del indices_tpl
         # check that the space is valid for the given ADC variant
         if not self.validate_space(space):
             raise Inputerror(f"{space} is not a valid space for "
@@ -257,14 +257,14 @@ class IntermediateStates:
         """
 
         # no need to do more validation here -> will be done in precursor
-        block_tpl: tuple[str, ...] = transform_to_tuple(block)
-        indices_tpl: tuple[str, ...] = transform_to_tuple(indices)
-        validate_input(order=order, block=block_tpl, indices=indices_tpl)
-        if len(indices_tpl) != 2:
+        block = transform_to_tuple(block)
+        indices = transform_to_tuple(indices)
+        validate_input(order=order, block=block, indices=indices)
+        if len(indices) != 2:
             raise Inputerror("2 index strings required for an overlap matrix "
                              f"block. Got: {indices}.")
 
-        if repeated_indices(indices_tpl[0], indices_tpl[1]):
+        if repeated_indices(indices[0], indices[1]):
             raise Inputerror("Repeated index found in indices of precursor "
                              f"overlap matrix: {indices}.")
 
@@ -284,10 +284,10 @@ class IntermediateStates:
             overlap = S.Zero
             for term in orders_overlap:
                 i1 = Mul(
-                    self.precursor(order=term[0], space=block_tpl[0],
-                                   braket="bra", indices=indices_tpl[0]),
-                    self.precursor(order=term[1], space=block_tpl[1],
-                                   braket="ket", indices=indices_tpl[1])
+                    self.precursor(order=term[0], space=block[0],
+                                   braket="bra", indices=indices[0]),
+                    self.precursor(order=term[1], space=block[1],
+                                   braket="ket", indices=indices[1])
                 )
                 i1 = wicks(i1, simplify_kronecker_deltas=True)
                 overlap += i1
@@ -319,16 +319,16 @@ class IntermediateStates:
             (S^{-0.5})_{ia,jkcd}.
         """
 
-        block_tpl: tuple[str, ...] = transform_to_tuple(block)
-        indices_tpl: tuple[str, ...] = transform_to_tuple(indices)
-        validate_input(order=order, block=block_tpl, indices=indices_tpl)
-        if len(indices_tpl) != 2:
+        block = transform_to_tuple(block)
+        indices = transform_to_tuple(indices)
+        validate_input(order=order, block=block, indices=indices)
+        if len(indices) != 2:
             raise Inputerror("2 index strings required for a block of the "
                              "inverse suqare root of the overlap matrix. "
                              f"Got: {indices}.")
-        if repeated_indices(indices_tpl[0], indices_tpl[1]):
+        if repeated_indices(indices[0], indices[1]):
             raise Inputerror(f"Repeated index found in indices {indices}.")
-        if block_tpl[0] != block_tpl[1]:
+        if block[0] != block[1]:
             raise NotImplementedError("Off diagonal blocks of the overlap "
                                       "matrix should be 0 by definition. "
                                       "Simply don't know how to handle the "
@@ -337,13 +337,13 @@ class IntermediateStates:
         taylor_expansion = self.expand_S_taylor(order, min_order=2)
         # create an index list: first and last element are the two provided
         # idx strings
-        idx: list[str] = list(indices_tpl)
+        idx: list[str] = list(indices)
         # create more indices: exponent-1 or len(taylor_expansion)-1 indices
         #  - x*x 1 additional index 'pair' is required: I,I' = I,I'' * I'',I'
         #  - x^3: I,I' = I,I'' * I'',I''' * I''',I'
         for _ in range(len(taylor_expansion) - 1):
             new_idx: str = "".join(
-                s.name for s in generic_indices_from_space(block_tpl[0])
+                s.name for s in generic_indices_from_space(block[0])
             )
             idx.insert(-1, new_idx)
         # iterate over exponents and terms, starting with the lowest exponent
@@ -356,7 +356,7 @@ class IntermediateStates:
                 i1 = S.One * pref
                 for o in term:
                     i1 *= self.overlap_precursor(
-                        order=o, block=block_tpl,
+                        order=o, block=block,
                         indices=tuple(relevant_idx[:2])
                     )
                     del relevant_idx[0]
@@ -364,7 +364,7 @@ class IntermediateStates:
                         break
                 assert (
                     len(relevant_idx) == 1 and
-                    relevant_idx[0] == indices_tpl[1]
+                    relevant_idx[0] == indices[1]
                 )
                 # in squared or higher terms S*S*... delta evaluation might
                 # be necessary
@@ -399,7 +399,8 @@ class IntermediateStates:
         if len(indices_tpl) != 1:
             raise Inputerror(f"{indices} are not valid for "
                              "constructing an intermediate state.")
-        indices = indices[0]
+        indices = indices_tpl[0]
+        del indices_tpl
 
         # generate additional indices for the precursor state
         idx_pre: str = "".join(
@@ -451,10 +452,10 @@ class IntermediateStates:
             The indices of the matrix element.
         """
 
-        block_tpl = transform_to_tuple(block)
-        indices_tpl = transform_to_tuple(indices)
-        validate_input(order=order, block=block_tpl, indices=indices_tpl)
-        if len(indices_tpl) != 2:
+        block = transform_to_tuple(block)
+        indices = transform_to_tuple(indices)
+        validate_input(order=order, block=block, indices=indices)
+        if len(indices) != 2:
             raise Inputerror("Constructing a ISR overlap matrix block requires"
                              f" 2 index strings. Provided: {indices}.")
 
@@ -473,12 +474,12 @@ class IntermediateStates:
             overlap = S.Zero
             for term in orders_overlap:
                 i1 = Mul(
-                    self.intermediate_state(order=term[0], space=block_tpl[0],
+                    self.intermediate_state(order=term[0], space=block[0],
                                             braket="bra",
-                                            indices=indices_tpl[0]),
-                    self.intermediate_state(order=term[1], space=block_tpl[1],
+                                            indices=indices[0]),
+                    self.intermediate_state(order=term[1], space=block[1],
                                             braket="ket",
-                                            indices=indices_tpl[1])
+                                            indices=indices[1])
                 )
                 i1 = wicks(i1, simplify_kronecker_deltas=True)
                 overlap += i1

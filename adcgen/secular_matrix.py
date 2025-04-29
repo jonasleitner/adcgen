@@ -1,16 +1,19 @@
-from sympy import sqrt, S
-
+from collections.abc import Sequence
 from math import factorial
 
+from sympy import Add, Expr, Mul, S, sqrt
+
+from .expression import ExprContainer
+from .func import gen_term_orders, wicks, evaluate_deltas
+from .groundstate import GroundState
 from .indices import (
     repeated_indices, Indices, generic_indices_from_space, n_ov_from_space
 )
 from .intermediate_states import IntermediateStates
 from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
-from .func import gen_term_orders, wicks, evaluate_deltas
-from .simplify import simplify
-from .expr_container import Expr
+from .operators import Operators
 from .rules import Rules
+from .simplify import simplify
 
 
 class SecularMatrix:
@@ -23,25 +26,31 @@ class SecularMatrix:
         The intermediate states the secular matrix is represented in.
     """
     def __init__(self, isr: IntermediateStates):
-        if not isinstance(isr, IntermediateStates):
-            raise Inputerror("Invalid intermediate states object.")
-        self.isr = isr
-        self.gs = isr.gs
-        self.h = isr.gs.h
-        self.indices = Indices()
+        assert isinstance(isr, IntermediateStates)
+        self.isr: IntermediateStates = isr
+        self.gs: GroundState = isr.gs
+        self.h: Operators = isr.gs.h
+        self.indices: Indices = Indices()
 
-    def hamiltonian(self, order: int, subtract_gs: bool):
+    def hamiltonian(self, order: int, subtract_gs: bool
+                    ) -> tuple[Expr, Rules | None]:
         """Constructs the n'th-order shifted Hamiltonian operator."""
-        h = {0: self.h.h0, 1: self.h.h1}
-        h, rules = h.get(order, (0, Rules()))
+        if order == 0:
+            h, rules = self.h.h0
+        elif order == 1:
+            h, rules = self.h.h1
+        else:
+            assert order > 0
+            h, rules = S.Zero, None
         if subtract_gs:
-            return h - self.gs.energy(order), rules
+            return Add(h, -self.gs.energy(order)), rules
         else:
             return h, rules
 
     @cached_member
-    def precursor_matrix_block(self, order: int, block: str, indices: str,
-                               subtract_gs: bool = True):
+    def precursor_matrix_block(self, order: int, block: Sequence[str],
+                               indices: Sequence[str],
+                               subtract_gs: bool = True) -> Expr:
         """
         Constructs the n'th order contribution to a secular matrix block in
         the basis of the precursor states.
@@ -50,10 +59,10 @@ class SecularMatrix:
         ----------
         order : int
             The perturbation theoretical order.
-        block : str
+        block : Sequence[str]
             The block of the secular matrix, e.g. "ph,pphh" for the
             1p-1h/2p-2h coupling block.
-        indices : str
+        indices : Sequence[str]
             The indices of the matrix block.
         subtract_gs : bool, optional
             Whether ground state contrubitions should be subtracted
@@ -72,7 +81,7 @@ class SecularMatrix:
         bra_idx, ket_idx = indices
 
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = 0
+        res = S.Zero
         # 1) iterate through all combinations of norm_factor*M^#
         for (norm_order, matrix_order) in orders:
             norm = self.gs.norm_factor(norm_order)
@@ -83,26 +92,29 @@ class SecularMatrix:
             orders_M = gen_term_orders(
                 order=matrix_order, term_length=3, min_order=0
             )
-            matrix = 0
+            matrix = S.Zero
             for (bra_order, op_order, ket_order) in orders_M:
                 operator, rules = self.hamiltonian(op_order, subtract_gs)
                 if operator == 0:
                     continue
-                itmd = (self.isr.precursor(order=bra_order, space=bra_space,
-                                           braket='bra', indices=bra_idx) *
-                        operator *
-                        self.isr.precursor(order=ket_order, space=ket_space,
-                                           braket='ket', indices=ket_idx))
+                itmd = Mul(
+                    self.isr.precursor(order=bra_order, space=bra_space,
+                                       braket='bra', indices=bra_idx),
+                    operator,
+                    self.isr.precursor(order=ket_order, space=ket_space,
+                                       braket='ket', indices=ket_idx)
+                )
                 itmd = wicks(itmd, simplify_kronecker_deltas=True, rules=rules)
                 matrix += itmd
             # evaluate_deltas should not be necessary here, because norm only
             # contains contracted indices
             res += (norm * matrix).expand()
-        return simplify(Expr(res)).sympy
+        return simplify(ExprContainer(res)).inner
 
     @cached_member
-    def isr_matrix_block(self, order: int, block: str, indices: str,
-                         subtract_gs: bool = True):
+    def isr_matrix_block(self, order: int, block: Sequence[str],
+                         indices: Sequence[str],
+                         subtract_gs: bool = True) -> Expr:
         """
         Constructs the n'th order contribution to a secular matrix block in
         the basis of the intermediate states.
@@ -111,10 +123,10 @@ class SecularMatrix:
         ----------
         order : int
             The perturbation theoretical order.
-        block : str
+        block : Sequence[str]
             The block of the secular matrix, e.g. "ph,pphh" for the
             1p-1h/2p-2h coupling block.
-        indices : str
+        indices : Sequence[str]
             The indices of the matrix block.
         subtract_gs : bool, optional
             Whether ground state contrubitions should be subtracted
@@ -133,7 +145,7 @@ class SecularMatrix:
         bra_idx, ket_idx = indices
 
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = 0
+        res = S.Zero
         # 1) iterate through all combinations of norm_factor*M
         for (norm_order, matrix_order) in orders:
             norm = self.gs.norm_factor(norm_order)
@@ -144,29 +156,31 @@ class SecularMatrix:
             orders_M = gen_term_orders(
                 order=matrix_order, term_length=3, min_order=0
             )
-            matrix = 0
+            matrix = S.Zero
             for (bra_order, op_order, ket_order) in orders_M:
                 operator, rules = self.hamiltonian(op_order, subtract_gs)
                 if operator == 0:
                     continue
-                itmd = (self.isr.intermediate_state(order=bra_order,
-                                                    space=bra_space,
-                                                    braket='bra',
-                                                    indices=bra_idx) *
-                        operator *
-                        self.isr.intermediate_state(order=ket_order,
-                                                    space=ket_space,
-                                                    braket='ket',
-                                                    indices=ket_idx))
+                itmd = Mul(
+                    self.isr.intermediate_state(order=bra_order,
+                                                space=bra_space,
+                                                braket='bra',
+                                                indices=bra_idx),
+                    operator,
+                    self.isr.intermediate_state(order=ket_order,
+                                                space=ket_space,
+                                                braket='ket',
+                                                indices=ket_idx)
+                )
                 itmd = wicks(itmd, simplify_kronecker_deltas=True, rules=rules)
                 matrix += itmd
             # evaluate deltas should not be necessary here
             res += (norm * matrix).expand()
-        return simplify(Expr(res)).sympy
+        return simplify(ExprContainer(res)).inner
 
     @cached_member
-    def mvp_block_order(self, order: int, space: str, block: str,
-                        indices: str, subtract_gs: bool = True):
+    def mvp_block_order(self, order: int, space: str, block: Sequence[str],
+                        indices: str, subtract_gs: bool = True) -> Expr:
         """
         Constructs the n'th-order contribution of a secular matrix block to
         the matrix vector product
@@ -180,7 +194,7 @@ class SecularMatrix:
             The excitation space of the result vector of the matrix vector
             product, e.g., "ph" if the contribution to the 1p-1h MVP
             is constructed.
-        block : str
+        block : Sequence[str]
             The block of the secular matrix, e.g. "ph,pphh" for the
             1p-1h/2p-2h coupling block.
         indices : str
@@ -189,11 +203,11 @@ class SecularMatrix:
             Whether ground state contrubitions should be subtracted
             (default: True).
         """
-        space = transform_to_tuple(space)
+        space_tpl = transform_to_tuple(space)
         block = transform_to_tuple(block)
-        indices = transform_to_tuple(indices)
-        validate_input(order=order, space=space, block=block,
-                       indices=indices)
+        indices_tpl = transform_to_tuple(indices)
+        validate_input(order=order, space=space_tpl, block=block,
+                       indices=indices_tpl)
         if len(indices) != 1:
             raise Inputerror(f"Invalid index input for MVP: {indices}")
         space = space[0]
@@ -204,12 +218,15 @@ class SecularMatrix:
                              f"{block}.")
 
         # generate additional indices for the ket state of the secular matrix
-        idx = "".join(s.name for s in generic_indices_from_space(block[1]))
+        idx: str = "".join(
+            s.name for s in generic_indices_from_space(block[1])
+        )
 
         # contruct the secular matrix block
-        m = self.isr_matrix_block(order=order, block=block,
-                                  indices=(indices, idx),
-                                  subtract_gs=subtract_gs)
+        m = self.isr_matrix_block(
+            order=order, block=block, indices=(indices, idx),
+            subtract_gs=subtract_gs
+        )
 
         # generate the amplitude vector
         y = self.isr.amplitude_vector(indices=idx, lr="right")
@@ -225,7 +242,7 @@ class SecularMatrix:
         # - To keep the equality r = M * Y we also have to multiply the right
         #   hand side of the equation with p if we multiply r with p
         n_ov = n_ov_from_space(space)
-        prefactor_mvp = 1 / sqrt(
+        prefactor_mvp = S.One / sqrt(
             factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
@@ -233,7 +250,7 @@ class SecularMatrix:
         #   However, p is hidden inside the amplitude vector -> only p present
         #   in the MVP equations
         n_ov = n_ov_from_space(block[1])
-        prefactor_ampl = 1 / sqrt(
+        prefactor_ampl = S.One / sqrt(
             factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
@@ -242,8 +259,8 @@ class SecularMatrix:
         )
 
     @cached_member
-    def mvp(self, adc_order: int, space: str, indices: str, order: int = None,
-            subtract_gs: bool = True):
+    def mvp(self, adc_order: int, space: str, indices: str,
+            order: int | None = None, subtract_gs: bool = True) -> Expr:
         """
         Constructs the matrix vector product
         r_{I} = sum_{J} M_{I,J} Y_{J}
@@ -266,9 +283,11 @@ class SecularMatrix:
             If set, ground state contributions are subtracted (default: True).
         """
         # validate the input parameters
-        space = transform_to_tuple(space)
-        indices = transform_to_tuple(indices)
-        validate_input(adc_order=adc_order, space=space, indices=indices)
+        space_tpl = transform_to_tuple(space)
+        indices_tpl = transform_to_tuple(indices)
+        validate_input(
+            adc_order=adc_order, space=space_tpl, indices=indices_tpl
+        )
         if order is not None:
             validate_input(order=order)
         if len(indices) != 1:
@@ -284,24 +303,28 @@ class SecularMatrix:
                              f"{self.isr.variant}-ADC({adc_order})")
 
         # add up all blocks that contribute to the given mvp
-        mvp = 0
+        mvp = S.Zero
         for block, max_order in self.block_order(adc_order).items():
             if space != block[0] or (order is not None and max_order < order):
                 continue
             if order is None:  # compute all contributions of the block
                 for o in range(max_order + 1):
-                    mvp += self.mvp_block_order(order=o, space=space,
-                                                block=block, indices=indices,
-                                                subtract_gs=subtract_gs)
+                    mvp += self.mvp_block_order(
+                        order=o, space=space, block=block, indices=indices,
+                        subtract_gs=subtract_gs
+                    )
             else:  # only compute contributions of the specified order
-                mvp += self.mvp_block_order(order=order, space=space,
-                                            block=block, indices=indices,
-                                            subtract_gs=subtract_gs)
+                mvp += self.mvp_block_order(
+                    order=order, space=space, block=block, indices=indices,
+                    subtract_gs=subtract_gs
+                )
+        assert isinstance(mvp, Expr)
         return mvp
 
     @cached_member
-    def expectation_value_block_order(self, order: int, block: str,
-                                      subtract_gs: bool = True):
+    def expectation_value_block_order(self, order: int,
+                                      block: Sequence[str],
+                                      subtract_gs: bool = True) -> Expr:
         """
         Constructs the n'th-order contribution of a secular matrix block
         to the energy expectation value.
@@ -310,7 +333,7 @@ class SecularMatrix:
         ----------
         order : int
             The perturbation theoretical order.
-        block : str
+        block : Sequence[str]
             The block of the secular matrix.
         subtract_gs : bool, optional
             If set, ground state contributions are subtracted (default: True).
@@ -319,10 +342,14 @@ class SecularMatrix:
         validate_input(order=order, block=block)
 
         # generate indices for the mvp
-        mvp_idx = "".join(s.name for s in generic_indices_from_space(block[0]))
+        mvp_idx: str = "".join(
+            s.name for s in generic_indices_from_space(block[0])
+        )
         # compute the MVP
-        mvp = self.mvp_block_order(order, space=block[0], block=block,
-                                   indices=mvp_idx, subtract_gs=subtract_gs)
+        mvp = self.mvp_block_order(
+            order, space=block[0], block=block, indices=mvp_idx,
+            subtract_gs=subtract_gs
+        )
         # generate the left amplitude vector
         left = self.isr.amplitude_vector(mvp_idx, lr='left')
         # call simplify -> symmetry of left amplitude vector might reduce
@@ -330,11 +357,11 @@ class SecularMatrix:
         # prefactors: I think there is no need for any further prefactors
         #  E = 1/sqrt(l) * 1/sqrt(r) sum_I,J  X_I M_I,J Y_J
         #    -> already included in the mvp function
-        return simplify(Expr(left * mvp)).sympy
+        return simplify(ExprContainer(Mul(left, mvp))).inner
 
     @cached_member
-    def expectation_value(self, adc_order: int, order: int = None,
-                          subtract_gs: bool = True):
+    def expectation_value(self, adc_order: int, order: int | None = None,
+                          subtract_gs: bool = True) -> Expr:
         """
         Constructs the ADC(n) energy expectation value considering all
         available secular matrix blocks.
@@ -350,7 +377,7 @@ class SecularMatrix:
         subtract_gs : bool, optional
             If set, ground state contributions are subtracted (default: True).
         """
-        expec = 0
+        expec = S.Zero
         for block, max_order in self.block_order(adc_order).items():
             # is the mvp expanded through the desired order?
             # e.g. ADC(4) S -> 4 // D -> 3 // T -> 2
@@ -367,22 +394,23 @@ class SecularMatrix:
                 )
         # it should not be possible to simplify any further here, because left
         # and right amplitude vector have different names
+        assert isinstance(expec, Expr)
         return expec
 
-    def max_ptorder_spaces(self, order: int) -> dict:
+    def max_ptorder_spaces(self, order: int) -> dict[str, int]:
         """
         Returns the maximum perturbation theoretical order of all excitation
         spaces in the ADC(n) matrix.
         """
 
         space = self.isr.min_space[0]
-        ret = {space: order}
+        ret: dict[str, int] = {space: order}
         for i in range(1, order//2 + 1):
             space = f"p{space}h"
             ret[space] = order - i
         return ret
 
-    def block_order(self, order: int) -> dict:
+    def block_order(self, order: int) -> dict[tuple[str, str], int]:
         """
         Returns the perturbation theoretical orders through which all blocks
         are expanded in the ADC(n) secular matrix.
@@ -392,7 +420,7 @@ class SecularMatrix:
         max_orders = self.max_ptorder_spaces(order)
         spaces = sorted(max_orders, key=lambda sp: len(sp))
         min_space = self.isr.min_space[0]
-        ret = {}
+        ret: dict[tuple[str, str], int] = {}
         for block in product(spaces, spaces):
             s1, s2 = block
             # diagonal

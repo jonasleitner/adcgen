@@ -1,13 +1,16 @@
+from collections.abc import Sequence
+from math import factorial
+
+from sympy import Add, Expr, S, sqrt, sympify
+
+from .expression import ExprContainer
 from .func import gen_term_orders, wicks
 from .indices import n_ov_from_space, generic_indices_from_space
 from .intermediate_states import IntermediateStates
 from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
-from .simplify import simplify
-from .secular_matrix import SecularMatrix
-from .expr_container import Expr
 from .rules import Rules
-from sympy import sqrt, S, sympify
-from math import factorial
+from .secular_matrix import SecularMatrix
+from .simplify import simplify
 
 
 class Properties:
@@ -26,15 +29,17 @@ class Properties:
     """
 
     def __init__(self, l_isr: IntermediateStates,
-                 r_isr: IntermediateStates = None):
-        if not isinstance(l_isr, IntermediateStates) or r_isr is not None \
-                and not isinstance(r_isr, IntermediateStates):
-            raise Inputerror("Provided ISR must be of type "
-                             f"{IntermediateStates}.")
-        self.l_isr = l_isr
-        self.r_isr = self.l_isr if r_isr is None else r_isr
-        self.l_m = SecularMatrix(l_isr)
-        self.r_m = self.l_m if r_isr is None else SecularMatrix(r_isr)
+                 r_isr: IntermediateStates | None = None):
+        assert isinstance(l_isr, IntermediateStates)
+        assert (
+            r_isr is None or isinstance(r_isr, IntermediateStates)
+        )
+        self.l_isr: IntermediateStates = l_isr
+        self.r_isr: IntermediateStates = self.l_isr if r_isr is None else r_isr
+        self.l_m: SecularMatrix = SecularMatrix(l_isr)
+        self.r_m: SecularMatrix = (
+            self.l_m if r_isr is None else SecularMatrix(r_isr)
+        )
         # Check if both ground states are compatible. Currently this only means
         # to check that either None ot both have singles enabled.
         self.gs = l_isr.gs
@@ -48,7 +53,7 @@ class Properties:
         self.h = l_isr.gs.h
 
     def operator(self, order: int, n_create: int, n_annihilate: int,
-                 subtract_gs=True):
+                 subtract_gs=True) -> tuple[Expr, Rules | None]:
         """
         Constructs an arbitrary n'th-order operator.
 
@@ -72,21 +77,22 @@ class Properties:
         validate_input(order=order)
 
         if order == 0:
-            d, rules = self.h.operator(n_create=n_create,
-                                       n_annihilate=n_annihilate)
+            d, rules = self.h.operator(
+                n_create=n_create, n_annihilate=n_annihilate
+            )
         else:
-            d, rules = sympify(0), Rules()
+            d, rules = S.Zero, None
 
         if subtract_gs and n_create == n_annihilate:
             e0 = self.gs.expectation_value(order=order, n_particles=n_create)
-            return d - e0, rules
+            return Add(d, -e0), rules
         else:
             return d, rules
 
     @cached_member
-    def expec_block_contribution(self, order: int, block: str,
+    def expec_block_contribution(self, order: int, block: Sequence[str],
                                  n_particles: int = 1,
-                                 subtract_gs: bool = True):
+                                 subtract_gs: bool = True) -> Expr:
         """
         Constructs the n'th order contribution of an individual block IJ to the
         expectation value of the operator
@@ -96,7 +102,7 @@ class Properties:
         ----------
         order : int
             The perturbation theoretical order.
-        block : str
+        block : Sequence[str]
             The block of the ADC matrix for which the expectation value
             is generated, e.g., 'ph,pphh' for the 1p-1h/2p-2h block.
         n_particles : int
@@ -112,19 +118,19 @@ class Properties:
 
         # generate indices for the block and compute the prefactors for the
         # contraction over the block space
-        left_idx = "".join(
+        left_idx: str = "".join(
             s.name for s in generic_indices_from_space(block[0])
         )
         n_ov = n_ov_from_space(block[0])
-        left_pref = 1 / sqrt(
+        left_pref = S.One / sqrt(
                 factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
-        right_idx = "".join(
+        right_idx: str = "".join(
             s.name for s in generic_indices_from_space(block[1])
         )
         n_ov = n_ov_from_space(block[1])
-        right_pref = 1 / sqrt(
+        right_pref = S.One / sqrt(
                 factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
 
@@ -133,7 +139,7 @@ class Properties:
         right_ampl = self.r_isr.amplitude_vector(indices=right_idx, lr='right')
 
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = sympify(0)
+        res = S.Zero
         # iterate over all norm*d combinations of n'th order
         for norm_term in orders:
             norm = self.gs.norm_factor(norm_term[0])
@@ -144,7 +150,7 @@ class Properties:
             orders_d = gen_term_orders(
                 order=norm_term[1], term_length=3, min_order=0
             )
-            expec = 0
+            expec = S.Zero
             for term in orders_d:
                 op, rules = self.operator(order=term[1],
                                           n_create=n_particles,
@@ -165,11 +171,12 @@ class Properties:
                       right_ampl)
                 expec += wicks(i1, simplify_kronecker_deltas=True, rules=rules)
             res += (norm * expec).expand()
-        return simplify(Expr(res)).sympy
+        return simplify(ExprContainer(res)).inner
 
     @cached_member
     def expectation_value(self, adc_order: int, n_particles: int = 1,
-                          order: int = None, subtract_gs: bool = True):
+                          order: int | None = None,
+                          subtract_gs: bool = True) -> Expr:
         """
         Constructs the expectation value taking all blocks into account
         that are available at the specified order of perturbation theory
@@ -201,8 +208,10 @@ class Properties:
         # get all blocks that are present in the ADC(n) secular matrix and
         # the order through which they are expanded.
         left_blocks = self.l_m.block_order(adc_order)
-        left_blocks = sorted(left_blocks.items(),
-                             key=lambda tpl: (len(tpl[0][0]), len(tpl[0][1])))
+        left_blocks = sorted(
+            left_blocks.items(),
+            key=lambda tpl: (len(tpl[0][0]), len(tpl[0][1]))
+        )
         right_blocks = self.r_m.block_order(adc_order)
         right_blocks = sorted(
             right_blocks, key=lambda bl: (len(bl[0]), len(bl[1]))
@@ -232,12 +241,15 @@ class Properties:
                     order=o, block=block, n_particles=n_particles,
                     subtract_gs=subtract_gs
                 )
+        assert isinstance(res, Expr)
         return res
 
     @cached_member
-    def trans_moment_space(self, order: int, space: str, n_create: int = None,
-                           n_annihilate: int = None, lr_isr: str = 'left',
-                           subtract_gs: bool = True):
+    def trans_moment_space(self, order: int, space: str,
+                           n_create: int | None = None,
+                           n_annihilate: int | None = None,
+                           lr_isr: str = 'left',
+                           subtract_gs: bool = True) -> Expr:
         """
         Constructs the n'th-order contribution to the transition moment
         for the desired excitation space and operator
@@ -286,8 +298,11 @@ class Properties:
         idx = "".join(s.name for s in generic_indices_from_space(space))
 
         # - map lr on the correct intermediate_states instance
-        isr = {'left': self.l_isr, 'right': self.r_isr}
-        isr = isr[lr_isr]
+        if lr_isr == "left":
+            isr = self.l_isr
+        else:
+            assert lr_isr == "right"
+            isr = self.r_isr
 
         # - if no operator string is given -> generate a default, i.e.
         #   'a' for IP- / 'ca' for PP-ADC
@@ -298,17 +313,18 @@ class Properties:
             n_create = 0
         elif n_annihilate is None:
             n_annihilate = 0
+        assert isinstance(n_create, int) and isinstance(n_annihilate, int)
 
         # - generate amplitude vector and prefactor for the summation
         ampl = isr.amplitude_vector(indices=idx, lr='left')
-        pref = 1 / sqrt(factorial(n_ov["occ"]) * factorial(n_ov["virt"]))
+        pref = S.One / sqrt(factorial(n_ov["occ"]) * factorial(n_ov["virt"]))
 
         # - import the gs wavefunction (possible here)
         mp = {o: self.gs.psi(order=o, braket='ket') for o in range(order + 1)}
 
         # iterate over all norm*d combinations
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = sympify(0)
+        res = S.Zero
         for norm_term in orders:
             norm = self.gs.norm_factor(norm_term[0])
             if norm is S.Zero:
@@ -317,11 +333,12 @@ class Properties:
             orders_d = gen_term_orders(
                 order=norm_term[1], term_length=3, min_order=0
             )
-            trans_mom = 0
+            trans_mom = S.Zero
             for term in orders_d:
-                op, rules = self.operator(order=term[1], n_create=n_create,
-                                          n_annihilate=n_annihilate,
-                                          subtract_gs=subtract_gs)
+                op, rules = self.operator(
+                    order=term[1], n_create=n_create,
+                    n_annihilate=n_annihilate, subtract_gs=subtract_gs
+                )
                 if op is S.Zero:
                     continue
                 i1 = (pref * ampl *
@@ -332,12 +349,12 @@ class Properties:
                 trans_mom += wicks(i1, simplify_kronecker_deltas=True,
                                    rules=rules)
             res += (norm * trans_mom).expand()
-        return simplify(Expr(res)).sympy
+        return simplify(ExprContainer(res)).inner
 
     @cached_member
-    def trans_moment(self, adc_order: int, n_create: int = None,
-                     n_annihilate: int = None, order: int = None,
-                     lr_isr: str = 'left', subtract_gs: bool = True):
+    def trans_moment(self, adc_order: int, n_create: int | None = None,
+                     n_annihilate: int | None = None, order: int | None = None,
+                     lr_isr: str = 'left', subtract_gs: bool = True) -> Expr:
         """
         Constructs the ADC(n) transition moment
         sum_I sum_pq... d_pq... X_I <I|pq...|Psi_0>
@@ -375,14 +392,18 @@ class Properties:
             operator contains an equal amount of creation and annihilation
             operators. (Defaults to True)
         """
+        validate_input(lr_isr=lr_isr)
 
         # obtain the maximum order through which all the spaces are expanded
         # in the secular matrix
-        m = {'left': self.l_m, 'right': self.r_m}
-        m = m[lr_isr]
+        if lr_isr == "left":
+            m = self.l_m
+        else:
+            assert lr_isr == "right"
+            m = self.r_m
         max_orders = m.max_ptorder_spaces(adc_order)
 
-        res = 0
+        res = S.Zero
         for space, max_order in max_orders.items():
             if order is None:
                 orders_to_gen = list(range(max_order + 1))
@@ -393,9 +414,10 @@ class Properties:
                 orders_to_gen = [order]
 
             for o in orders_to_gen:
-                res += self.trans_moment_space(order=o, space=space,
-                                               n_create=n_create,
-                                               n_annihilate=n_annihilate,
-                                               lr_isr=lr_isr,
-                                               subtract_gs=subtract_gs)
+                res += self.trans_moment_space(
+                    order=o, space=space, n_create=n_create,
+                    n_annihilate=n_annihilate, lr_isr=lr_isr,
+                    subtract_gs=subtract_gs
+                )
+        assert isinstance(res, Expr)
         return res
