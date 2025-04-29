@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import cached_property
 import itertools
 
-from sympy import Add, Expr, S, Rational, Pow, Min
+from sympy import Add, Expr, Min, Mul, Pow, Rational, S
 
 from .expression import ExprContainer, ObjectContainer
 from .core_valence_separation import allowed_cvs_blocks
@@ -211,6 +211,9 @@ class RegisteredIntermediate:
         return itmd
 
     def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
+        """
+        Expand the intermediate using the default indices.
+        """
         _ = fully_expand
         raise NotImplementedError("Build expanded intermediate not implemented"
                                   f" on {self.name}")
@@ -246,6 +249,9 @@ class RegisteredIntermediate:
             return tensor
 
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
+        """
+        Build the tensor representing the intermediate using the given indices.
+        """
         _ = indices
         raise NotImplementedError("Build tensor not implemented on "
                                   f"{self.name}")
@@ -526,7 +532,6 @@ class t2_1(RegisteredIntermediate):
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         # guess its not worth caching here. Maybe if used a lot.
         # build the tensor
-        assert len(indices) == 4
         return Amplitude(
             f"{tensor_names.gs_amplitude}1", indices[2:], indices[:2]
         )
@@ -647,31 +652,30 @@ class t2_1(RegisteredIntermediate):
 
 class t1_2(RegisteredIntermediate):
     """Second order MP singles amplitude."""
-    _itmd_type: str = "t_amplitude"
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'a')
-    _min_n_terms = 2
+    _itmd_type = "t_amplitude"
+    _order = 2
+    _default_idx = ("i", "a")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         # target_indices
         i, a = get_symbols(self.default_idx)
         # additional contracted indices
         j, k, b, c = get_symbols('jkbc')
         # t2_1 class instance
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the amplitude
-        denom = orb_energy(i) - orb_energy(a)
+        denom = Add(orb_energy(i), -orb_energy(a))
         term1 = (Rational(1, 2) *
-                 t2(indices=(i, j, b, c), return_sympy=True) *
+                 t2(indices=(i, j, b, c), wrap_result=False) *
                  eri([j, a, b, c]))
         term2 = (Rational(1, 2) *
-                 t2(indices=(j, k, a, b), return_sympy=True) *
+                 t2(indices=(j, k, a, b), wrap_result=False) *
                  eri([j, k, i, b]))
-        return base_expr(term1/denom + term2/denom, (i, a), (j, k, b, c))
+        return ItmdExpr(term1/denom + term2/denom, (i, a), (j, k, b, c))
 
-    def _build_tensor(self, indices) -> Amplitude:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return Amplitude(
             f"{tensor_names.gs_amplitude}2", (indices[1],), (indices[0],)
         )
@@ -679,36 +683,41 @@ class t1_2(RegisteredIntermediate):
 
 class t2_2(RegisteredIntermediate):
     """Second order MP doubles amplitude."""
-    _itmd_type: str = 't_amplitude'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = "t_amplitude"
+    _order = 2
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
         k, l, c, d = get_symbols('klcd')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the t2_2 amplitude
-        denom = (orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j))
+        denom = Add(
+            orb_energy(a), orb_energy(b), -orb_energy(i), -orb_energy(j)
+        )
+        itmd = S.Zero
         # - 0.5 t2eri_3
-        itmd = (- Rational(1, 2) * eri((i, j, k, l)) *
-                t2(indices=(k, l, a, b), return_sympy=True))
+        itmd += (- Rational(1, 2) * eri((i, j, k, l)) *
+                 t2(indices=(k, l, a, b), wrap_result=False))
         # - 0.5 t2eri_5
         itmd += (- Rational(1, 2) * eri((a, b, c, d)) *
-                 t2(indices=(i, j, c, d), return_sympy=True))
+                 t2(indices=(i, j, c, d), wrap_result=False))
         # + (1 - P_ij) (1 - P_ab) P_ij t2eri_4
-        base = (
-            t2(indices=(i, k, a, c)) * eri((k, b, j, c))
+        ampl = t2(indices=(i, k, a, c), wrap_result=True)
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((k, b, j, c))
+        itmd += Add(
+            base.inner, -base.copy().permute((i, j)).inner,
+            -base.copy().permute((a, b)).inner,
+            base.copy().permute((i, j), (a, b)).inner
         )
-        itmd += (base.sympy - base.copy().permute((i, j)).sympy
-                 - base.copy().permute((a, b)).sympy
-                 + base.copy().permute((i, j), (a, b)).sympy)
-        return base_expr(itmd / denom, (i, j, a, b), (k, l, c, d))
+        return ItmdExpr(itmd * S.One / denom, (i, j, a, b), (k, l, c, d))
 
-    def _build_tensor(self, indices) -> Amplitude:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return Amplitude(
             f"{tensor_names.gs_amplitude}2", indices[2:], indices[:2]
         )
@@ -716,44 +725,57 @@ class t2_2(RegisteredIntermediate):
 
 class t3_2(RegisteredIntermediate):
     """Second order MP triples amplitude."""
-    _itmd_type: str = 't_amplitude'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'k', 'a', 'b', 'c')
+    _itmd_type = "t_amplitude"
+    _order = 2
+    _default_idx = ("i", "j", "k", "a", "b", "c")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, k, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         l, d = get_symbols('ld')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the t3_2 amplitude
-        denom = (orb_energy(i) + orb_energy(j) + orb_energy(k)
-                 - orb_energy(a) - orb_energy(b) - orb_energy(c))
+        denom = Add(
+            orb_energy(i), orb_energy(j), orb_energy(k),
+            -orb_energy(a), -orb_energy(b), -orb_energy(c)
+        )
+        itmd = S.Zero
         # (1 - P_ik - P_jk) (1 - P_ab - P_ac) <kd||bc> t_ij^ad
-        base = t2(indices=(i, j, a, d)) * eri((k, d, b, c))
-        itmd = (base.sympy - base.copy().permute((i, k)).sympy
-                - base.copy().permute((j, k)).sympy
-                - base.copy().permute((a, b)).sympy
-                - base.copy().permute((a, c)).sympy
-                + base.copy().permute((i, k), (a, b)).sympy
-                + base.copy().permute((i, k), (a, c)).sympy
-                + base.copy().permute((j, k), (a, b)).sympy
-                + base.copy().permute((j, k), (a, c)).sympy)
+        ampl = t2(indices=(i, j, a, d), wrap_result=True)
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((k, d, b, c))
+        itmd += Add(
+            base.inner,
+            -base.copy().permute((i, k)).inner,
+            -base.copy().permute((j, k)).inner,
+            -base.copy().permute((a, b)).inner,
+            -base.copy().permute((a, c)).inner,
+            base.copy().permute((i, k), (a, b)).inner,
+            base.copy().permute((i, k), (a, c)).inner,
+            base.copy().permute((j, k), (a, b)).inner,
+            base.copy().permute((j, k), (a, c)).inner
+        )
         # (1 - P_ij - P_ik) (1 - P_ac - P_bc) <jk||lc> t_il^ab
-        base = t2(indices=(i, l, a, b)) * eri((j, k, l, c))
-        itmd += (base.sympy - base.copy().permute((i, j)).sympy
-                 - base.copy().permute((i, k)).sympy
-                 - base.copy().permute((a, c)).sympy
-                 - base.copy().permute((b, c)).sympy
-                 + base.copy().permute((i, j), (a, c)).sympy
-                 + base.copy().permute((i, j), (b, c)).sympy
-                 + base.copy().permute((i, k), (a, c)).sympy
-                 + base.copy().permute((i, k), (b, c)).sympy)
-        return base_expr(itmd/denom, (i, j, k, a, b, c), (l, d))
+        ampl = t2(indices=(i, l, a, b), wrap_result=True)
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((j, k, l, c))
+        itmd += Add(
+            base.inner,
+            -base.copy().permute((i, j)).inner,
+            -base.copy().permute((i, k)).inner,
+            -base.copy().permute((a, c)).inner,
+            -base.copy().permute((b, c)).inner,
+            base.copy().permute((i, j), (a, c)).inner,
+            base.copy().permute((i, j), (b, c)).inner,
+            base.copy().permute((i, k), (a, c)).inner,
+            base.copy().permute((i, k), (b, c)).inner
+        )
+        return ItmdExpr(itmd/denom, (i, j, k, a, b, c), (l, d))
 
-    def _build_tensor(self, indices) -> Amplitude:
+    def _build_tensor(self, indices) -> Expr:
         return Amplitude(
             f"{tensor_names.gs_amplitude}2", indices[3:], indices[:3]
         )
@@ -764,35 +786,34 @@ class t4_2(RegisteredIntermediate):
     Second order MP quadruple amplitudes in a factorized form that avoids
     the construction of the quadruples denominator.
     """
-    _itmd_type: str = 't_amplitude'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'k', 'l', 'a', 'b', 'c', 'd')
+    _itmd_type = "t_amplitude"
+    _order = 2
+    _default_idx = ("i", "j", "k", "l", "a", "b", "c", "d")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
-
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, k, l, a, b, c, d = get_symbols(self.default_idx)
         # t2_1 class instance
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the t4_2 amplitude
         # (1 - P_ac - P_ad - P_bc - P_bd + P_ac P_bd) (1 - P_jk - P_jl)
         #  t_ij^ab t_kl^cd
-        base: e.Expr = (
-            t2(indices=(i, j, a, b)) *
-            t2(indices=(k, l, c, d), return_sympy=True)
-        )
+        ampl = t2(indices=(i, j, a, b))
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * t2(indices=(k, l, c, d), wrap_result=False)
         v_permutations = {tuple(tuple()): 1, ((a, c),): -1, ((a, d),): -1,
                           ((b, c),): -1, ((b, d),): -1, ((a, c), (b, d)): +1}
         o_permutations = {tuple(tuple()): 1, ((j, k),): -1, ((j, l),): -1}
-        t4 = 0
+        t4 = S.Zero
         for (o_perms, o_factor), (v_perms, v_factor) in \
-                product(o_permutations.items(), v_permutations.items()):
+                itertools.product(o_permutations.items(),
+                                  v_permutations.items()):
             perms = o_perms + v_perms
-            t4 += o_factor * v_factor * base.copy().permute(*perms).sympy
-        return base_expr(t4, (i, j, k, l, a, b, c, d), None)
+            t4 += Mul(o_factor, v_factor, base.copy().permute(*perms).inner)
+        return ItmdExpr(t4, (i, j, k, l, a, b, c, d), None)
 
-    def _build_tensor(self, indices) -> Amplitude:
+    def _build_tensor(self, indices) -> Expr:
         return Amplitude(
             f"{tensor_names.gs_amplitude}2", indices[4:], indices[:4]
         )
@@ -800,19 +821,19 @@ class t4_2(RegisteredIntermediate):
 
 class t1_3(RegisteredIntermediate):
     """Third order MP single amplitude."""
-    _itmd_type: str = 't_amplitude'
-    _order: int = 3
-    _default_idx: tuple[str] = ('i', 'a')
+    _itmd_type = "t_amplitude"
+    _order = 3
+    _default_idx = ("i", "a")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, a = get_symbols('ia')
         # generate additional contracted indices (2o / 2v)
         j, k, b, c = get_symbols('jkbc')
         # other intermediate class instances
-        t1: t1_2 = self._registry['t_amplitude']['t1_2']
-        t2: t2_2 = self._registry['t_amplitude']['t2_2']
-        t3: t3_2 = self._registry['t_amplitude']['t3_2']
+        t1 = self._registry['t_amplitude']['t1_2']
+        t2 = self._registry['t_amplitude']['t2_2']
+        t3 = self._registry['t_amplitude']['t3_2']
         if fully_expand:
             t1 = t1.expand_itmd
             t2 = t2.expand_itmd
@@ -822,53 +843,55 @@ class t1_3(RegisteredIntermediate):
             t2 = t2.tensor
             t3 = t3.tensor
         # build the amplitude
-        denom = orb_energy(i) - orb_energy(a)
-        itmd = (Rational(1, 2) * eri([j, a, b, c]) *
-                t2(indices=(i, j, b, c), return_sympy=True))
+        denom = Add(orb_energy(i), -orb_energy(a))
+        itmd = S.Zero
+        itmd += (Rational(1, 2) * eri([j, a, b, c]) *
+                 t2(indices=(i, j, b, c), wrap_result=False))
         itmd += (Rational(1, 2) * eri([j, k, i, b]) *
-                 t2(indices=(j, k, a, b), return_sympy=True))
-        itmd -= (t1(indices=(j, b), return_sympy=True) *
-                 eri([i, b, j, a]))
+                 t2(indices=(j, k, a, b), wrap_result=False))
+        itmd -= Mul(
+            t1(indices=(j, b), wrap_result=False), eri([i, b, j, a])
+        )
         itmd += (Rational(1, 4) * eri([j, k, b, c]) *
-                 t3(indices=(i, j, k, a, b, c), return_sympy=True))
+                 t3(indices=(i, j, k, a, b, c), wrap_result=False))
         # need to keep track of all contracted indices... also contracted
         # indices within each of the second order t-amplitudes
         # -> substitute_contracted indices to minimize the number of contracted
         #    indices
         target = (i, a)
         if fully_expand:
-            itmd = e.Expr(itmd, target_idx=target)
-            itmd = itmd.substitute_contracted().sympy
+            itmd = ExprContainer(itmd, target_idx=target)
+            itmd = itmd.substitute_contracted().inner
             contracted = tuple(sorted(
                 [s for s in itmd.atoms(Index) if s not in target],
                 key=sort_idx_canonical
             ))
         else:
             contracted = (j, k, b, c)
-        return base_expr(itmd / denom, target, contracted)
+        return ItmdExpr(itmd * S.One / denom, target, contracted)
 
-    def _build_tensor(self, indices) -> Amplitude:
+    def _build_tensor(self, indices) -> Expr:
         return Amplitude(
             f"{tensor_names.gs_amplitude}3", (indices[1],), (indices[0],))
 
 
 class t2_3(RegisteredIntermediate):
     """Third order MP double amplitude."""
-    _itmd_type: str = 't_amplitude'
-    _order: int = 3
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = "t_amplitude"
+    _order = 3
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
         k, l, c, d = get_symbols('klcd')
         # other intermediate class instances
-        _t2_1: t2_1 = self._registry['t_amplitude']['t2_1']
-        t1: t1_2 = self._registry['t_amplitude']['t1_2']
-        t2: t2_2 = self._registry['t_amplitude']['t2_2']
-        t3: t3_2 = self._registry['t_amplitude']['t3_2']
-        t4: t4_2 = self._registry['t_amplitude']['t4_2']
+        _t2_1 = self._registry['t_amplitude']['t2_1']
+        t1 = self._registry['t_amplitude']['t1_2']
+        t2 = self._registry['t_amplitude']['t2_2']
+        t3 = self._registry['t_amplitude']['t3_2']
+        t4 = self._registry['t_amplitude']['t4_2']
         if fully_expand:
             _t2_1 = _t2_1.expand_itmd
             t1 = t1.expand_itmd
@@ -882,53 +905,69 @@ class t2_3(RegisteredIntermediate):
             t3 = t3.tensor
             t4 = t4.tensor
         # build the amplitude
-        denom = orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j)
+        denom = Add(
+            orb_energy(a), orb_energy(b), -orb_energy(i), -orb_energy(j)
+        )
+        itmd = S.Zero
         # +(1-P_ij) * <ic||ab> t^c_j(2)
-        base = t1(indices=(j, c)) * eri((i, c, a, b))
-        itmd = base.sympy - base.permute((i, j)).sympy
+        ampl = t1(indices=(j, c))
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((i, c, a, b))
+        itmd += Add(base.inner, -base.permute((i, j)).inner)
         # +(1-P_ab) * <ij||ka> t^b_k(2)
-        base = t1(indices=(k, b)) * eri((i, j, k, a))
-        itmd += base.sympy - base.permute((a, b)).sympy
+        ampl = t1(indices=(k, b))
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((i, j, k, a))
+        itmd += Add(base.inner, -base.permute((a, b)).inner)
         # - 0.5 * <ab||cd> t^cd_ij(2)
         itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
-                 t2(indices=(i, j, c, d), return_sympy=True))
+                 t2(indices=(i, j, c, d), wrap_result=False))
         # - 0.5 * <ij||kl> t^ab_kl(2)
         itmd -= (Rational(1, 2) * eri((i, j, k, l)) *
-                 t2(indices=(k, l, a, b), return_sympy=True))
+                 t2(indices=(k, l, a, b), wrap_result=False))
         # + (1-P_ij)*(1-P_ab) * <jc||kb> t^ac_ik(2)
-        base = t2(indices=(i, k, a, c)) * eri((j, c, k, b))
-        itmd += (base.sympy - base.copy().permute((i, j)).sympy
-                 - base.copy().permute((a, b)).sympy
-                 + base.copy().permute((i, j), (a, b)).sympy)
+        ampl = t2(indices=(i, k, a, c))
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((j, c, k, b))
+        itmd += Add(
+            base.inner,
+            -base.copy().permute((i, j)).inner,
+            -base.copy().permute((a, b)).inner,
+            base.copy().permute((i, j), (a, b)).inner
+        )
         # + 0.5 * (1-P_ab) * <ka||cd> t^bcd_ijk(2)
-        base = t3(indices=(i, j, k, b, c, d)) * eri((k, a, c, d))
-        itmd += (Rational(1, 2) * base.sympy
-                 - Rational(1, 2) * base.copy().permute((a, b)).sympy)
+        ampl = t3(indices=(i, j, k, b, c, d))
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((k, a, c, d))
+        itmd += (Rational(1, 2) * base.inner
+                 - Rational(1, 2) * base.copy().permute((a, b)).inner)
         # + 0.5 * (1-P_ij) <kl||ic> t^abc_jkl(2)
-        base = t3(indices=(j, k, l, a, b, c)) * eri((k, l, i, c))
-        itmd += (Rational(1, 2) * base.sympy
-                 - Rational(1, 2) * base.copy().permute((i, j)).sympy)
+        ampl = t3(indices=(j, k, l, a, b, c))
+        assert isinstance(ampl, ExprContainer)
+        base = ampl * eri((k, l, i, c))
+        itmd += (Rational(1, 2) * base.inner
+                 - Rational(1, 2) * base.copy().permute((i, j)).inner)
         # + 0.25 <kl||cd> t^abcd_ijkl(2)
         itmd += (Rational(1, 4) * eri((k, l, c, d)) *
-                 t4(indices=(i, j, k, l, a, b, c, d), return_sympy=True))
+                 t4(indices=(i, j, k, l, a, b, c, d), wrap_result=False))
         # - 0.25 <kl||cd> t^ab_ij(1) t^kl_cd(1)
         itmd -= (Rational(1, 4) * eri((k, l, c, d)) *
-                 _t2_1(indices=(i, j, a, b), return_sympy=True) *
-                 _t2_1(indices=(k, l, c, d), return_sympy=True))
+                 _t2_1(indices=(i, j, a, b), wrap_result=False) *
+                 _t2_1(indices=(k, l, c, d), wrap_result=False))
         # minimize the number of contracted indices
         target = (i, j, a, b)
         if fully_expand:
-            itmd = e.Expr(itmd, target_idx=target)
-            itmd = itmd.substitute_contracted().sympy
-            contracted = contracted = tuple(sorted(
+            itmd = ExprContainer(itmd, target_idx=target)
+            itmd = itmd.substitute_contracted().inner
+            contracted = tuple(sorted(
                 [s for s in itmd.atoms(Index) if s not in target],
                 key=sort_idx_canonical
             ))
         else:
             contracted = (k, l, c, d)
-        return base_expr(itmd / denom, target, contracted)
+        return ItmdExpr(itmd * S.One / denom, target, contracted)
 
-    def _build_tensor(self, indices) -> Amplitude:
+    def _build_tensor(self, indices) -> Expr:
         return Amplitude(
             f"{tensor_names.gs_amplitude}3", indices[2:], indices[:2]
         )
