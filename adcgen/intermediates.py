@@ -977,44 +977,56 @@ class t2_1_re_residual(RegisteredIntermediate):
     """
     Residual of the first order RE doubles amplitudes.
     """
-    _itmd_type: str = 're_residual'
-    _order: int = 2  # according to MP the maximum order of the residual is 2
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = "re_residual"
+    _order = 2  # according to MP the maximum order of the residual is 2
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         # re intermediates can not be fully expanded, but add the bool
         # anyway for a consistent interface
+        _ = fully_expand
         i, j, a, b = get_symbols(self.default_idx)
         # additional contracted indices
         k, l, c, d = get_symbols('klcd')
         # t2_1 class instance
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
+
+        itmd = S.Zero
 
         # (1 - P_ij)(1 - P_ab) <ic||ka> t_jk^bc
-        base = eri([i, c, k, a]) * t2.tensor(indices=[j, k, b, c])
-        itmd = (base.sympy - base.copy().permute((i, j)).sympy
-                - base.copy().permute((a, b)).sympy
-                + base.copy().permute((i, j), (a, b)).sympy)
+        ampl = t2.tensor(indices=[j, k, b, c])
+        assert isinstance(ampl, ExprContainer)
+        base = eri([i, c, k, a]) * ampl
+        itmd += Add(
+            base.inner,
+            -base.copy().permute((i, j)).inner,
+            -base.copy().permute((a, b)).inner,
+            base.copy().permute((i, j), (a, b)).inner
+        )
         # (1 - P_ab) f_ac t_ij^bc
-        base = fock([a, c]) * t2.tensor(indices=[i, j, b, c])
-        itmd += base.sympy - base.copy().permute((a, b)).sympy
+        ampl = t2.tensor(indices=[i, j, b, c])
+        assert isinstance(ampl, ExprContainer)
+        base = fock([a, c]) * ampl
+        itmd += Add(base.inner, -base.copy().permute((a, b)).inner)
         # (1 - P_ij) f_jk t_ik^ab
-        base = fock([j, k]) * t2.tensor(indices=[i, k, a, b])
-        itmd += base.sympy - base.copy().permute((i, j)).sympy
+        ampl = t2.tensor(indices=[i, k, a, b])
+        assert isinstance(ampl, ExprContainer)
+        base = fock([j, k]) * ampl
+        itmd += Add(base.inner, -base.copy().permute((i, j)).inner)
         # - 0.5 * <ab||cd> t_ij^cd
         itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
-                 t2.tensor(indices=(i, j, c, d), return_sympy=True))
+                 t2.tensor(indices=(i, j, c, d), wrap_result=False))
         # -0.5 * <ij||kl> t_kl^ab
         itmd -= (Rational(1, 2) * eri((i, j, k, l)) *
-                 t2.tensor(indices=(k, l, a, b), return_sympy=True))
+                 t2.tensor(indices=(k, l, a, b), wrap_result=False))
         # + <ij||ab>
         itmd += eri((i, j, a, b))
         target = (i, j, a, b)
         contracted = (k, l, c, d)
-        return base_expr(itmd, target, contracted)
+        return ItmdExpr(itmd, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         # placeholder for 0, will be replaced in factor_intermediate
         return AntiSymmetricTensor("Zero", indices[:2], indices[2:])
 
@@ -1023,41 +1035,54 @@ class t1_2_re_residual(RegisteredIntermediate):
     """
     Residual of the second order RE singles amplitudes.
     """
-    _itmd_type: str = 're_residual'
-    _order: int = 3  # according to MP the maximum order of the residual is 3
-    _default_idx: tuple[str] = ('i', 'a')
+    _itmd_type = "re_residual"
+    _order = 3  # according to MP the maximum order of the residual is 3
+    _default_idx = ("i", "a")
 
     @cached_member
     def _build_expanded_itmd(self, fully_expand: bool = True):
+        _ = fully_expand
         i, a = get_symbols(self.default_idx)
         # additional contracted indices
         j, k, b, c = get_symbols('jkbc')
 
         # t amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
-        ts2: t1_2 = self._registry['t_amplitude']['t1_2']
+        t2 = self._registry['t_amplitude']['t2_1']
+        ts2 = self._registry['t_amplitude']['t1_2']
+
+        itmd = S.Zero
 
         # - {V^{ib}_{ja}} {t2^{b}_{j}}
-        itmd = -eri([i, b, j, a]) * ts2.tensor(indices=[j, b],
-                                               return_sympy=True)
+        itmd += Mul(
+            -eri([i, b, j, a]),
+            ts2.tensor(indices=[j, b], wrap_result=False)
+        )
         # + {f^{a}_{b}} {t2^{b}_{i}}
-        itmd += fock([a, b]) * ts2.tensor(indices=[i, b], return_sympy=True)
+        itmd += Mul(
+            fock([a, b]),
+            ts2.tensor(indices=[i, b], wrap_result=False)
+        )
         # - {f^{i}_{j}} {t2^{a}_{j}}
-        itmd -= fock([i, j]) * ts2.tensor(indices=[j, a], return_sympy=True)
+        itmd -= Mul(
+            fock([i, j]),
+            ts2.tensor(indices=[j, a], wrap_result=False)
+        )
         # + \frac{{V^{ja}_{bc}} {t1^{bc}_{ij}}}{2}
         itmd += (Rational(1, 2) * eri([j, a, b, c])
-                 * t2.tensor(indices=[i, j, b, c], return_sympy=True))
+                 * t2.tensor(indices=[i, j, b, c], wrap_result=False))
         # + \frac{{V^{jk}_{ib}} {t1^{ab}_{jk}}}{2}
         itmd += (Rational(1, 2) * eri([j, k, i, b])
-                 * t2.tensor(indices=[j, k, a, b], return_sympy=True))
+                 * t2.tensor(indices=[j, k, a, b], wrap_result=False))
         # - {f^{j}_{b}} {t1^{ab}_{ij}}
-        itmd -= fock([j, b]) * t2.tensor(indices=[i, j, a, b],
-                                         return_sympy=True)
+        itmd -= Mul(
+            fock([j, b]),
+            t2.tensor(indices=[i, j, a, b], wrap_result=False)
+        )
         target = (i, a)
         contracted = (j, k, b, c)
-        return base_expr(itmd, target, contracted)
+        return ItmdExpr(itmd, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         # placeholder for 0, will be replaced in factor_intermediate
         return AntiSymmetricTensor("Zero", (indices[0],), (indices[1],))
 
@@ -1066,40 +1091,56 @@ class t2_2_re_residual(RegisteredIntermediate):
     """
     Residual of the second order RE doubles amplitudes.
     """
-    _itmd_type: str = 're_residual'
-    _order: int = 3  # according to MP the maximum order of the residual is 3
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = "re_residual"
+    _order = 3  # according to MP the maximum order of the residual is 3
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
+        _ = fully_expand
         i, j, a, b = get_symbols(self.default_idx)
         # additional contracted indices
         k, l, c, d = get_symbols('klcd')
         # t2_1 class instance
-        t2: t2_2 = self._registry['t_amplitude']['t2_2']
+        t2 = self._registry['t_amplitude']['t2_2']
+
+        itmd = S.Zero
 
         # (1 - P_ij)(1 - P_ab) <ic||ka> t_jk^bc
-        base = eri([i, c, k, a]) * t2.tensor(indices=[j, k, b, c])
-        itmd = (base.sympy - base.copy().permute((i, j)).sympy
-                - base.copy().permute((a, b)).sympy
-                + base.copy().permute((i, j), (a, b)).sympy)
+        ampl = t2.tensor(indices=[j, k, b, c])
+        assert isinstance(ampl, ExprContainer)
+        base = eri([i, c, k, a]) * ampl
+        itmd += Add(
+            base.inner,
+            -base.copy().permute((i, j)).inner,
+            -base.copy().permute((a, b)).inner,
+            base.copy().permute((i, j), (a, b)).inner
+        )
         # (1 - P_ab) f_ac t_ij^bc
-        base = fock([a, c]) * t2.tensor(indices=[i, j, b, c])
-        itmd += base.sympy - base.copy().permute((a, b)).sympy
+        ampl = t2.tensor(indices=[i, j, b, c])
+        assert isinstance(ampl, ExprContainer)
+        base = fock([a, c]) * ampl
+        itmd += Add(
+            base.inner, -base.copy().permute((a, b)).inner
+        )
         # (1 - P_ij) f_jk t_ik^ab
-        base = fock([j, k]) * t2.tensor(indices=[i, k, a, b])
-        itmd += base.sympy - base.copy().permute((i, j)).sympy
+        ampl = t2.tensor(indices=[i, k, a, b])
+        assert isinstance(ampl, ExprContainer)
+        base = fock([j, k]) * ampl
+        itmd += Add(
+            base.inner, -base.copy().permute((i, j)).inner
+        )
         # - 0.5 * <ab||cd> t_ij^cd
         itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
-                 t2.tensor(indices=(i, j, c, d), return_sympy=True))
+                 t2.tensor(indices=(i, j, c, d), wrap_result=False))
         # -0.5 * <ij||kl> t_kl^ab
         itmd -= (Rational(1, 2) * eri((i, j, k, l)) *
-                 t2.tensor(indices=(k, l, a, b), return_sympy=True))
+                 t2.tensor(indices=(k, l, a, b), wrap_result=False))
         target = (i, j, a, b)
         contracted = (k, l, c, d)
-        return base_expr(itmd, target, contracted)
+        return ItmdExpr(itmd, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         # placeholder for 0, will be replaced in factor_intermediate
         return AntiSymmetricTensor("Zero", indices[:2], indices[2:])
 
@@ -1109,25 +1150,25 @@ class p0_2_oo(RegisteredIntermediate):
     Second order contribution to the occupied occupied block of the MP
     one-particle density matrix.
     """
-    _itmd_type: str = 'mp_density'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j')
+    _itmd_type = "mp_density"
+    _order = 2
+    _default_idx = ("i", "j")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j = get_symbols(self.default_idx)
         # additional contracted indices (1o / 2v)
         k, a, b = get_symbols('kab')
         # t2_1 class instance
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the density
         p0 = (- Rational(1, 2) *
-              t2(indices=(i, k, a, b), return_sympy=True) *
-              t2(indices=(j, k, a, b), return_sympy=True))
-        return base_expr(p0, (i, j), (k, a, b))
+              t2(indices=(i, k, a, b), wrap_result=False) *
+              t2(indices=(j, k, a, b), wrap_result=False))
+        return ItmdExpr(p0, (i, j), (k, a, b))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor(
             f"{tensor_names.gs_density}2", (indices[0],), (indices[1],), 1
         )
@@ -1138,25 +1179,25 @@ class p0_2_vv(RegisteredIntermediate):
     Second order contribution to the virtual virtual block of the MP
     one-particle density matrix.
     """
-    _itmd_type: str = 'mp_density'
-    _order: int = 2
-    _default_idx: tuple[str] = ('a', 'b')
+    _itmd_type = "mp_density"
+    _order = 2
+    _default_idx = ("a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         a, b = get_symbols(self.default_idx)
         # additional contracted indices (2o / 1v)
         i, j, c = get_symbols('ijc')
         # t2_1 class instance
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the density
         p0 = (Rational(1, 2) *
-              t2(indices=(i, j, a, c), return_sympy=True) *
-              t2(indices=(i, j, b, c), return_sympy=True))
-        return base_expr(p0, (a, b), (i, j, c))
+              t2(indices=(i, j, a, c), wrap_result=False) *
+              t2(indices=(i, j, b, c), wrap_result=False))
+        return ItmdExpr(p0, (a, b), (i, j, c))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor(
             f"{tensor_names.gs_density}2", (indices[0],), (indices[1],), 1)
 
@@ -1166,38 +1207,40 @@ class p0_3_oo(RegisteredIntermediate):
     Third order contribution to the occupied occupied block of the MP
     one-particle density matrix.
     """
-    _itmd_type: str = 'mp_density'
-    _order: int = 3
-    _default_idx: tuple[str] = ('i', 'j')
+    _itmd_type = "mp_density"
+    _order = 3
+    _default_idx = ("i", "j")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 2v)
         k, a, b = get_symbols('kab')
         # t amplitude cls
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
-        td2: t2_2 = self._registry['t_amplitude']['t2_2']
+        t2 = self._registry['t_amplitude']['t2_1']
+        td2 = self._registry['t_amplitude']['t2_2']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         td2 = td2.expand_itmd if fully_expand else td2.tensor
         # build the density
         p0 = (- Rational(1, 2) *
-              t2(indices=(i, k, a, b), return_sympy=True) *
-              td2(indices=(j, k, a, b), return_sympy=True))
+              t2(indices=(i, k, a, b), wrap_result=False) *
+              td2(indices=(j, k, a, b), wrap_result=False))
         p0 += p0.subs({i: j, j: i}, simultaneous=True)
 
         target = (i, j)
         if fully_expand:
-            p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
+            p0 = ExprContainer(
+                p0, target_idx=target
+            ).substitute_contracted().inner
             contracted = tuple(sorted(
                 [s for s in p0.atoms(Index) if s not in target],
                 key=sort_idx_canonical
             ))
         else:
             contracted = (k, a, b)
-        return base_expr(p0, target, contracted)
+        return ItmdExpr(p0, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor(
             f"{tensor_names.gs_density}3", (indices[0],), (indices[1],), 1)
 
@@ -1207,20 +1250,20 @@ class p0_3_ov(RegisteredIntermediate):
     Third order contribution to the occupied virtual block of the MP
     one-particle density matrix.
     """
-    _itmd_type: str = 'mp_density'
-    _order: int = 3
-    _default_idx: tuple[str] = ('i', 'a')
+    _itmd_type = "mp_density"
+    _order = 3
+    _default_idx = ("i", "a")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, a = get_symbols(self.default_idx)
         # generate additional contracted indices (2o / 2v)
         j, k, b, c = get_symbols('jkbc')
         # t_amplitude cls instances
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
-        ts2: t1_2 = self._registry['t_amplitude']['t1_2']
-        tt2: t3_2 = self._registry['t_amplitude']['t3_2']
-        ts3: t1_3 = self._registry['t_amplitude']['t1_3']
+        t2 = self._registry['t_amplitude']['t2_1']
+        ts2 = self._registry['t_amplitude']['t1_2']
+        tt2 = self._registry['t_amplitude']['t3_2']
+        ts3 = self._registry['t_amplitude']['t1_3']
         if fully_expand:
             t2 = t2.expand_itmd
             ts2 = ts2.expand_itmd
@@ -1231,29 +1274,34 @@ class p0_3_ov(RegisteredIntermediate):
             ts2 = ts2.tensor
             tt2 = tt2.tensor
             ts3 = ts3.tensor
+        p0 = S.Zero
         # build the density
         # - t^ab_ij(1) t^b_j(2)
-        p0 = (- t2(indices=(i, j, a, b), return_sympy=True) *
-              ts2(indices=(j, b), return_sympy=True))
+        p0 += (
+            S.NegativeOne * t2(indices=(i, j, a, b), wrap_result=False) *
+            ts2(indices=(j, b), wrap_result=False)
+        )
         # - 0.25 * t^bc_jk(1) t^abc_ijk(2)
         p0 -= (Rational(1, 4) *
-               t2(indices=(j, k, b, c), return_sympy=True) *
-               tt2(indices=(i, j, k, a, b, c), return_sympy=True))
+               t2(indices=(j, k, b, c), wrap_result=False) *
+               tt2(indices=(i, j, k, a, b, c), wrap_result=False))
         # + t^a_i(3)
-        p0 += ts3(indices=(i, a), return_sympy=True)
+        p0 += ts3(indices=(i, a), wrap_result=False)
 
         target = (i, a)
         if fully_expand:
-            p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
+            p0 = ExprContainer(
+                p0, target_idx=target
+            ).substitute_contracted().inner
             contracted = tuple(sorted(
                 [s for s in p0.atoms(Index) if s not in target],
                 key=sort_idx_canonical
             ))
         else:
             contracted = (j, k, b, c)
-        return base_expr(p0, target, contracted)
+        return ItmdExpr(p0, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor(
             f"{tensor_names.gs_density}3", (indices[0],), (indices[1],), 1)
 
@@ -1263,288 +1311,312 @@ class p0_3_vv(RegisteredIntermediate):
     Third order contribution to the virtual virtual block of the MP
     one-particle density matrix.
     """
-    _itmd_type: str = 'mp_density'
-    _order: int = 3
-    _default_idx: tuple[str] = ('a', 'b')
+    _itmd_type = "mp_density"
+    _order = 3
+    _default_idx = ("a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         a, b = get_symbols(self.default_idx)
         # additional contracted indices (2o / 1v)
         i, j, c = get_symbols('ijc')
         # t_amplitude cls instances
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
-        td2: t2_2 = self._registry['t_amplitude']['t2_2']
+        t2 = self._registry['t_amplitude']['t2_1']
+        td2 = self._registry['t_amplitude']['t2_2']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         td2 = td2.expand_itmd if fully_expand else td2.tensor
         # build the density
         p0 = (Rational(1, 2) *
-              t2(indices=(i, j, a, c), return_sympy=True) *
-              td2(indices=(i, j, b, c), return_sympy=True))
+              t2(indices=(i, j, a, c), wrap_result=False) *
+              td2(indices=(i, j, b, c), wrap_result=False))
         p0 += p0.subs({a: b, b: a}, simultaneous=True)
 
         target = (a, b)
         if fully_expand:
-            p0 = e.Expr(p0, target_idx=target).substitute_contracted().sympy
+            p0 = ExprContainer(
+                p0, target_idx=target
+            ).substitute_contracted().inner
             contracted = tuple(sorted(
                 [s for s in p0.atoms(Index) if s not in target],
                 key=sort_idx_canonical
             ))
         else:
             contracted = (i, j, c)
-        return base_expr(p0, target, contracted)
+        return ItmdExpr(p0, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor(
             f"{tensor_names.gs_density}3", (indices[0],), (indices[1],), 1)
 
 
 class t2eri_1(RegisteredIntermediate):
     """t2eri1 in adcc / pi1 in libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "j", "k", "a")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, k, a = get_symbols(self.default_idx)
         # generate additional contracted indices (2v)
         b, c = get_symbols('bc')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2(indices=(i, j, b, c), return_sympy=True) *
-                 eri((k, a, b, c)))
-        return base_expr(t2eri, (i, j, k, a), (b, c))
+        t2eri = Mul(
+            t2(indices=(i, j, b, c), wrap_result=False),
+            eri((k, a, b, c))
+        )
+        return ItmdExpr(t2eri, (i, j, k, a), (b, c))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor('t2eri1', indices[:2], indices[2:])
 
 
 class t2eri_2(RegisteredIntermediate):
     """t2eri2 in adcc / pi2 in libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "j", "k", "a")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, k, a = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         b, l = get_symbols('bl')  # noqa E741
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2(indices=(i, l, a, b), return_sympy=True) *
-                 eri((l, k, j, b)))
-        return base_expr(t2eri, (i, j, k, a), (b, l))
+        t2eri = Mul(
+            t2(indices=(i, l, a, b), wrap_result=False),
+            eri((l, k, j, b))
+        )
+        return ItmdExpr(t2eri, (i, j, k, a), (b, l))
 
-    def _build_tensor(self, indices) -> NonSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> NonSymmetricTensor:
         return NonSymmetricTensor('t2eri2', indices)
 
 
 class t2eri_3(RegisteredIntermediate):
     """t2eri3 in adcc / pi3 in libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2o)
         k, l = get_symbols('kl')  # noqa E741
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2(indices=(k, l, a, b), return_sympy=True) *
-                 eri((i, j, k, l)))
-        return base_expr(t2eri, (i, j, a, b), (k, l))
+        t2eri = Mul(
+            t2(indices=(k, l, a, b), wrap_result=False),
+            eri((i, j, k, l))
+        )
+        return ItmdExpr(t2eri, (i, j, a, b), (k, l))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor('t2eri3', indices[:2], indices[2:])
 
 
 class t2eri_4(RegisteredIntermediate):
     """t2eri4 in adcc / pi4 in libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         k, c = get_symbols('kc')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2(indices=(j, k, a, c), return_sympy=True) *
-                 eri((k, b, i, c)))
-        return base_expr(t2eri, (i, j, a, b), (k, c))
+        t2eri = Mul(
+            t2(indices=(j, k, a, c), wrap_result=False),
+            eri((k, b, i, c))
+        )
+        return ItmdExpr(t2eri, (i, j, a, b), (k, c))
 
-    def _build_tensor(self, indices) -> NonSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> NonSymmetricTensor:
         return NonSymmetricTensor('t2eri4', indices)
 
 
 class t2eri_5(RegisteredIntermediate):
     """t2eri5 in adcc / pi5 in libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, a, b = get_symbols(self.default_idx)
         # generate additional contracted indices (2v)
         c, d = get_symbols('cd')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2(indices=(i, j, c, d), return_sympy=True) *
-                 eri((a, b, c, d)))
-        return base_expr(t2eri, (i, j, a, b), (c, d))
+        t2eri = Mul(
+            t2(indices=(i, j, c, d), wrap_result=False),
+            eri((a, b, c, d))
+        )
+        return ItmdExpr(t2eri, (i, j, a, b), (c, d))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor('t2eri5', indices[:2], indices[2:])
 
 
 class t2eri_6(RegisteredIntermediate):
     """t2eri6 in adcc / pi6 in libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "a", "b", "c")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (2o)
         j, k = get_symbols('jk')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2(indices=(j, k, b, c), return_sympy=True) *
-                 eri((j, k, i, a)))
-        return base_expr(t2eri, (i, a, b, c), (j, k))
+        t2eri = Mul(
+            t2(indices=(j, k, b, c), wrap_result=False),
+            eri((j, k, i, a))
+        )
+        return ItmdExpr(t2eri, (i, a, b, c), (j, k))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor('t2eri6', indices[:2], indices[2:])
 
 
 class t2eri_7(RegisteredIntermediate):
     """t2eri7 in adcc / pi7 in libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "a", "b", "c")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, a, b, c = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         j, d = get_symbols('jd')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = (t2(indices=(i, j, b, d), return_sympy=True) *
-                 eri((j, c, a, d)))
-        return base_expr(t2eri, (i, a, b, c), (j, d))
+        t2eri = Mul(
+            t2(indices=(i, j, b, d), wrap_result=False),
+            eri((j, c, a, d))
+        )
+        return ItmdExpr(t2eri, (i, a, b, c), (j, d))
 
-    def _build_tensor(self, indices) -> NonSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> NonSymmetricTensor:
         return NonSymmetricTensor('t2eri7', indices)
 
 
 class t2eri_A(RegisteredIntermediate):
     """pia intermediate in libadc"""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'j', 'k', 'a')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "j", "k", "a")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, j, k, a = get_symbols(self.default_idx)
         # t2eri cls instances for generating the itmd
-        pi1: t2eri_1 = self._registry['misc']['t2eri_1']
-        pi2: t2eri_2 = self._registry['misc']['t2eri_2']
+        pi1 = self._registry['misc']['t2eri_1']
+        pi2 = self._registry['misc']['t2eri_2']
         pi1 = pi1.expand_itmd if fully_expand else pi1.tensor
         pi2 = pi2.expand_itmd if fully_expand else pi2.tensor
         # build the itmd
-        pia = (0.5 * pi1(indices=(i, j, k, a), return_sympy=True)
-               + pi2(indices=(i, j, k, a), return_sympy=True)
-               - pi2(indices=(j, i, k, a), return_sympy=True))
+        pia = (
+            Rational(1, 2) * pi1(indices=(i, j, k, a), wrap_result=False)
+            + pi2(indices=(i, j, k, a), wrap_result=False)
+            + S.NegativeOne * pi2(indices=(j, i, k, a), wrap_result=False)
+        )
         target = (i, j, k, a)
         if fully_expand:
-            pia = e.Expr(pia, target_idx=target).substitute_contracted().sympy
+            pia = ExprContainer(
+                pia, target_idx=target
+            ).substitute_contracted().inner
             contracted = tuple(sorted(
                 [s for s in pia.atoms(Index) if s not in target],
                 key=sort_idx_canonical
             ))
         else:
             contracted = tuple()
-        return base_expr(pia, target, contracted)
+        return ItmdExpr(pia, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor('t2eriA', indices[:2], indices[2:])
 
 
 class t2eri_B(RegisteredIntermediate):
     """pib intermediate in libadc"""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'a', 'b', 'c')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "a", "b", "c")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, a, b, c = get_symbols(self.default_idx)
         # t2eri cls instances for generating the itmd
-        pi6: t2eri_6 = self._registry['misc']['t2eri_6']
-        pi7: t2eri_7 = self._registry['misc']['t2eri_7']
+        pi6 = self._registry['misc']['t2eri_6']
+        pi7 = self._registry['misc']['t2eri_7']
         pi6 = pi6.expand_itmd if fully_expand else pi6.tensor
         pi7 = pi7.expand_itmd if fully_expand else pi7.tensor
         # build the itmd
-        pib = (-0.5 * pi6(indices=(i, a, b, c), return_sympy=True)
-               + pi7(indices=(i, a, b, c), return_sympy=True)
-               - pi7(indices=(i, a, c, b), return_sympy=True))
+        pib = (-Rational(1, 2) * pi6(indices=(i, a, b, c), wrap_result=False)
+               + pi7(indices=(i, a, b, c), wrap_result=False)
+               + S.NegativeOne * pi7(indices=(i, a, c, b), wrap_result=False))
         target = (i, a, b, c)
         if fully_expand:
-            pib = e.Expr(pib, target_idx=target).substitute_contracted().sympy
+            pib = ExprContainer(
+                pib, target_idx=target
+            ).substitute_contracted().inner
             contracted = tuple(sorted(
                 [s for s in pib.atoms(Index) if s not in target],
                 key=sort_idx_canonical
             ))
         else:
             contracted = tuple()
-        return base_expr(pib, target, contracted)
+        return ItmdExpr(pib, target, contracted)
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor('t2eriB', indices[:2], indices[2:])
 
 
 class t2sq(RegisteredIntermediate):
     """t2sq intermediate from adcc and libadc."""
-    _itmd_type: str = 'misc'
-    _order: int = 2
-    _default_idx: tuple[str] = ('i', 'a', 'j', 'b')
+    _itmd_type = "misc"
+    _order = 2
+    _default_idx = ("i", "a", "j", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
         i, a, j, b = get_symbols(self.default_idx)
         # generate additional contracted indices (1o / 1v)
         c, k = get_symbols('ck')
         # t2_1 class instance for generating t2_1 amplitudes
-        t2: t2_1 = self._registry['t_amplitude']['t2_1']
+        t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        itmd = (t2(indices=(i, k, a, c), return_sympy=True) *
-                t2(indices=(j, k, b, c), return_sympy=True))
-        return base_expr(itmd, (i, a, j, b), (k, c))
+        itmd = Mul(
+            t2(indices=(i, k, a, c), wrap_result=False),
+            t2(indices=(j, k, b, c), wrap_result=False)
+        )
+        return ItmdExpr(itmd, (i, a, j, b), (k, c))
 
-    def _build_tensor(self, indices) -> AntiSymmetricTensor:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         return AntiSymmetricTensor('t2sq', indices[:2], indices[2:], 1)
 
 
