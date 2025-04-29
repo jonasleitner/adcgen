@@ -1,15 +1,16 @@
-from sympy import Rational, latex, sympify, S
-from sympy.physics.secondquant import NO, Dagger
 from math import factorial
 
-from .sympy_objects import Amplitude
-from .indices import Indices, n_ov_from_space
-from .misc import cached_member, Inputerror, validate_input
-from .simplify import simplify
+from sympy.physics.secondquant import NO, Dagger
+from sympy import Add, Expr, Mul, Rational, S, latex
+
+from .expression import ExprContainer
 from .func import gen_term_orders, wicks
-from .expr_container import Expr
-from .operators import Operators
+from .indices import Indices, n_ov_from_space
 from .logger import logger
+from .misc import cached_member, Inputerror, validate_input
+from .operators import Operators
+from .simplify import simplify
+from .sympy_objects import Amplitude
 from .tensor_names import tensor_names
 
 
@@ -29,14 +30,13 @@ class GroundState:
     """
     def __init__(self, hamiltonian: Operators,
                  first_order_singles: bool = False):
-        if not isinstance(hamiltonian, Operators):
-            raise Inputerror("Invalid hamiltonian.")
-        self.indices = Indices()
-        self.h = hamiltonian
-        self.singles = first_order_singles
+        assert isinstance(hamiltonian, Operators)
+        self.indices: Indices = Indices()
+        self.h: Operators = hamiltonian
+        self.singles: bool = first_order_singles
 
     @cached_member
-    def energy(self, order: int):
+    def energy(self, order: int) -> Expr:
         """
         Constructs an expression for the n'th-order ground state energy
         contribution.
@@ -62,11 +62,11 @@ class GroundState:
         # option 2: simplify the energy expression and replace the indices with
         #           new, generic indices
         # guess option 2 is nicer, because energy is more readable and shorter
-        e = simplify(Expr(e)).substitute_with_generic()
+        e = simplify(ExprContainer(e)).substitute_with_generic()
         logger.debug(f"E^({order}) = {e}")
-        return e.sympy
+        return e.inner
 
-    def psi(self, order: int, braket: str):
+    def psi(self, order: int, braket: str) -> Expr:
         """
         Constructs the n'th-order ground state wavefunction without inserting
         definitions of the respective ground state amplitudes.
@@ -93,7 +93,7 @@ class GroundState:
         # catch 0th order wavefunction
         if order == 0:
             logger.debug(f"gs({order}) {braket} = 1")
-            return sympify(1)
+            return S.One
 
         # generalized gs wavefunction generation
         tensor_name = f"{tensor_names.gs_amplitude}{order}"
@@ -102,7 +102,7 @@ class GroundState:
         idx = self.indices.get_generic_indices(occ=2*order, virt=2*order)
         virtual = idx[("virt", "")]
         occupied = idx[("occ", "")]
-        psi = 0
+        psi = S.Zero
         for excitation in range(1, order * 2 + 1):
             # skip singles for the first order wavefunction if
             # they are not requested
@@ -113,9 +113,9 @@ class GroundState:
             occ: list = occupied[:excitation]
             t = Amplitude(tensor_name, virt, occ)
             # build operators
-            operators = self.h.excitation_operator(creation=virt,
-                                                   annihilation=occ,
-                                                   reverse_annihilation=True)
+            operators = self.h.excitation_operator(
+                creation=virt, annihilation=occ, reverse_annihilation=True
+            )
             if braket == "bra":
                 operators = Dagger(operators)
             # prefactor for lifting index restrictions
@@ -129,10 +129,11 @@ class GroundState:
                 psi -= prefactor * t * NO(operators)
             else:
                 psi += prefactor * t * NO(operators)
+        assert isinstance(psi, Expr)
         logger.debug(f"gs({order}) {braket} = {latex(psi)}")
         return psi
 
-    def amplitude(self, order: int, space: str, indices: str):
+    def amplitude(self, order: int, space: str, indices: str) -> Expr:
         """
         Constructs the n'th-order expression for the ground state t-amplitudes.
 
@@ -156,7 +157,7 @@ class GroundState:
                                       f"{self.h._variant}")
 
     @cached_member
-    def mp_amplitude(self, order: int, space: str, indices: str):
+    def mp_amplitude(self, order: int, space: str, indices: str) -> Expr:
         """
         Constructs the closed n'th-order expression for the MP t-amplitudes.
 
@@ -180,7 +181,7 @@ class GroundState:
                              f"{space}.")
         # if the space is not present at the requested order return 0
         if n_ov["occ"] > 2 * order:
-            return 0
+            return S.Zero
 
         idx = self.indices.get_indices(indices)
         lower = idx.get(("occ", ""), [])
@@ -191,26 +192,31 @@ class GroundState:
 
         # build the denominator
         if len(lower) == 2:  # doubles amplitude: a+b-i-j
-            occ_factor = -1
-            virt_factor = +1
+            occ_factor = S.NegativeOne
+            virt_factor = S.One
         else:  # any other amplitude: i-a // i+j+k-a-b-c // ...
-            occ_factor = +1
-            virt_factor = -1
+            occ_factor = S.One
+            virt_factor = S.NegativeOne
 
-        denom = 0
+        denom = S.Zero
         for s in lower:
             denom += occ_factor * orb_energy(s)
         for s in upper:
             denom += virt_factor * orb_energy(s)
 
         # build the bra state: <k|
-        bra = self.h.excitation_operator(creation=lower, annihilation=upper,
-                                         reverse_annihilation=True)
+        bra = self.h.excitation_operator(
+            creation=lower, annihilation=upper, reverse_annihilation=True
+        )
+
+        numerator = S.Zero
 
         # construct <k|H1|psi^(n-1)>
         h1, rules = self.h.h1
-        ret = bra * h1 * self.psi(order-1, "ket")
-        ret = wicks(ret, simplify_kronecker_deltas=True, rules=rules)
+        contrib = bra * h1 * self.psi(order-1, "ket")
+        numerator += wicks(
+            contrib, simplify_kronecker_deltas=True, rules=rules
+        )
         # subtract: - sum_{m=1} E_0^(m) * t_k^(n-m)
         terms = gen_term_orders(order=order, term_length=2, min_order=1)
         for o1, o2 in terms:
@@ -220,17 +226,19 @@ class GroundState:
                     (n_ov["occ"] == 1 and o2 == 1 and not self.singles):
                 continue
             name = f"{tensor_names.gs_amplitude}{o2}"
-            contrib = (
-                self.energy(o1) * Amplitude(name, upper, lower)
+            contrib = Mul(
+                self.energy(o1), Amplitude(name, upper, lower)
             ).expand()
             if n_ov["occ"] == 2:  # doubles... special sign
-                ret += contrib
+                numerator += contrib
             else:
-                ret -= contrib
-        return ret / denom
+                numerator -= contrib
+        res = numerator / denom
+        assert isinstance(res, Expr)
+        return res
 
     @cached_member
-    def amplitude_residual(self, order: int, space: str, indices: str):
+    def amplitude_residual(self, order: int, space: str, indices: str) -> Expr:
         """
         Constructs the n'th-order residual for ground state amplitudes.
 
@@ -258,7 +266,7 @@ class GroundState:
         if n_ov["occ"] != n_ov["virt"]:
             raise Inputerror(f"Invalid space for a RE t-amplitude: {space}.")
         if n_ov["occ"] > 2 * order:  # space not present at the order
-            return 0
+            return S.Zero
 
         # get the target indices and validate
         idx = self.indices.get_indices(indices)
@@ -269,14 +277,16 @@ class GroundState:
                              f"{space}.")
 
         # - build <Phi_k|
-        bra = self.h.excitation_operator(creation=occupied,
-                                         annihilation=virtual,
-                                         reverse_annihilation=True)
+        bra = self.h.excitation_operator(
+            creation=occupied, annihilation=virtual, reverse_annihilation=True
+        )
+
+        res = S.Zero
 
         # - compute (<Phi_k|0|n> + <Phi_k|1|n-1>)
         h0, rule = self.h.h0
         term = bra * h0 * self.psi(order, 'ket')
-        res = wicks(term, rules=rule, simplify_kronecker_deltas=True)
+        res += wicks(term, rules=rule, simplify_kronecker_deltas=True)
 
         h1, rule = self.h.h1
         term = bra * h1 * self.psi(order - 1, 'ket')
@@ -290,16 +300,17 @@ class GroundState:
                     (n_ov["occ"] == 1 and t_order == 1 and not self.singles):
                 continue
             name = f"{tensor_names.gs_amplitude}{t_order}"
-            contrib = (
-                self.energy(e_order) * Amplitude(name, virtual, occupied)
+            contrib = Mul(
+                self.energy(e_order), Amplitude(name, virtual, occupied)
             ).expand()
             if n_ov["occ"] == 2:  # doubles -> different sign!
                 res += contrib
             else:
                 res -= contrib
+        assert isinstance(res, Expr)
         return res
 
-    def overlap(self, order: int):
+    def overlap(self, order: int) -> Expr:
         """
         Computes the n'th-order contribution to the ground state overlap
         matrix.
@@ -313,23 +324,25 @@ class GroundState:
 
         # catch zeroth order
         if order == 0:
-            return sympify(1)
+            return S.One
 
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = 0
+        res = S.Zero
         for term in orders:
             # each wfn is requested only once -> no need to precompute and
             # cache
-            i1 = self.psi(order=term[0], braket='bra') * \
+            i1 = Mul(
+                self.psi(order=term[0], braket='bra'),
                 self.psi(order=term[1], braket='ket')
+            )
             res += wicks(i1, simplify_kronecker_deltas=True)
         # simplify the result by permuting contracted indices
-        res = simplify(Expr(res))
+        res = simplify(ExprContainer(res))
         logger.debug(f"gs S^({order}) = {res}")
-        return res.sympy
+        return res.inner
 
     @cached_member
-    def expectation_value(self, order: int, n_particles: int):
+    def expectation_value(self, order: int, n_particles: int) -> Expr:
         """
         Constructs the n'th-order contribution to the expectation value for
         the given operator.
@@ -353,7 +366,7 @@ class GroundState:
 
         # better to generate twice orders for length 2 than once for length 3
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = 0
+        res = S.Zero
         # get the operator
         op, rules = self.h.operator(n_create=n_particles,
                                     n_annihilate=n_particles)
@@ -366,14 +379,14 @@ class GroundState:
             orders_d = gen_term_orders(
                 order=norm_term[1], term_length=2, min_order=0
             )
-            d = 0
+            d = S.Zero
             for term in orders_d:
                 i1 = wfn[term[0]]['bra'] * op * wfn[term[1]]['ket']
                 d += wicks(i1, simplify_kronecker_deltas=True, rules=rules)
             res += (norm * d).expand()
-        return simplify(Expr(res)).sympy
+        return simplify(ExprContainer(res)).inner
 
-    def norm_factor(self, order: int):
+    def norm_factor(self, order: int) -> Expr:
         """
         Constructs the n'th-order contribution of the factor
         that corrects the the norm of the ground state wavefunction:
@@ -398,19 +411,21 @@ class GroundState:
         validate_input(order=order)
 
         taylor_expansion = self.expand_norm_factor(order=order, min_order=2)
-        norm_factor = 0
+        norm_factor = S.Zero
         for pref, termlist in taylor_expansion:
             for term in termlist:
                 i1 = pref
                 for o in term:
-                    i1 *= self.overlap(o)
+                    i1 = Mul(i1, self.overlap(o))
                     if i1 is S.Zero:
                         break
                 norm_factor += i1.expand()
+        assert isinstance(norm_factor, Expr)
         logger.debug(f"norm_factor^({order}): {latex(norm_factor)}")
         return norm_factor
 
-    def expand_norm_factor(self, order, min_order=2) -> list:
+    def expand_norm_factor(self, order, min_order=2
+                           ) -> list[tuple[Expr, list[tuple[int, ...]]]]:
         """
         Constructs the taylor expansion of the n'th-order contribution to the
         normalization factor a
@@ -444,14 +459,16 @@ class GroundState:
         # only the zeroth order contribution should be 1
         # -> obtain 0 or 1 from the overlap function -> handled automatically
         if order < min_order:
-            return [(1, [(order,)])]
+            return [(S.One, [(order,)])]
 
         x = symbols('x')
         f = (1 + x) ** -1.0
-        ret = []
+        ret: list[tuple[Expr, list[tuple[int, ...]]]] = []
         for exp in range(1, order//min_order + 1):
             f = diff(f, x)
-            pref = nsimplify(f.subs(x, 0) / factorial(exp), rational=True)
+            pref = nsimplify(
+                f.subs(x, 0) * S.One / factorial(exp), rational=True
+            )
             orders = gen_term_orders(
                 order=order, term_length=exp, min_order=min_order
             )

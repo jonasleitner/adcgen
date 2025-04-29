@@ -370,7 +370,7 @@ def evaluate_deltas(expr: Expr,
 
 
 def wicks(expr: Expr, rules: Rules | None = None,
-          simplify_kronecker_deltas: bool = False):
+          simplify_kronecker_deltas: bool = False) -> Expr:
     """
     Evaluates Wicks theorem in the provided expression only returning fully
     contracted contributions.
