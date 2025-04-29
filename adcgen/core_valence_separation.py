@@ -181,7 +181,8 @@ def expand_contracted_indices(
 
 
 def allowed_cvs_blocks(
-        expr: ExprContainer, target_idx: str, spin: str | None = None,
+        expr: ExprContainer, target_idx: Sequence[str],
+        spin: str | None = None,
         cvs_approximation: Callable[[ObjectContainer, str], bool] | None = None
         ) -> tuple[str, ...]:
     """

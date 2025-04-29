@@ -1,5 +1,6 @@
 from collections import Counter
 from itertools import product
+from typing import Sequence
 
 from .expression import ExprContainer
 from .logger import logger
@@ -266,7 +267,7 @@ def integrate_spin(expr: ExprContainer, target_idx: str,
 
 
 def allowed_spin_blocks(expr: ExprContainer,
-                        target_idx: str) -> tuple[str, ...]:
+                        target_idx: Sequence[str]) -> tuple[str, ...]:
     """
     Determines the allowed spin blocks of an expression. Thereby, it is assumed
     that the allowed spin blocks of tensors in the expression are either known

@@ -1,24 +1,31 @@
-from collections.abc import Sequence
-from collections import namedtuple, Counter
-from itertools import product, chain
+from collections.abc import Sequence, Callable
+from collections import Counter
+from dataclasses import dataclass
+from functools import cached_property
+import itertools
 
-from sympy import S, Rational, Pow
+from sympy import Add, Expr, S, Rational, Pow, Min
 
+from .expression import ExprContainer, ObjectContainer
 from .core_valence_separation import allowed_cvs_blocks
-from .indices import get_symbols, order_substitutions, sort_idx_canonical
-from .indices import Indices
-from .indices import Index
+from .indices import (
+    Indices, Index,
+    get_symbols, order_substitutions, sort_idx_canonical,
+)
 from .logger import logger
-from .misc import Inputerror, Singleton, cached_property, cached_member
-from . import expr_container as e
+from .misc import Inputerror, Singleton, cached_member
 from .eri_orbenergy import EriOrbenergy
 from .sympy_objects import NonSymmetricTensor, AntiSymmetricTensor, Amplitude
-from .symmetry import LazyTermMap
+from .symmetry import LazyTermMap, Permutation
 from .spatial_orbitals import allowed_spin_blocks
 from .tensor_names import tensor_names
 
 
-base_expr = namedtuple('base_expr', ['expr', 'target', 'contracted'])
+@dataclass
+class ItmdExpr:
+    expr: Expr
+    target: tuple[Index, ...]
+    contracted: tuple[Index, ...] | None
 
 
 class Intermediates(metaclass=Singleton):
@@ -29,14 +36,16 @@ class Intermediates(metaclass=Singleton):
     """
 
     def __init__(self):
-        self._registered: dict = RegisteredIntermediate()._registry
-        self._available: dict = {
+        self._registered: dict[str, dict[str, RegisteredIntermediate]] = (
+            RegisteredIntermediate()._registry
+        )
+        self._available: dict[str, RegisteredIntermediate] = {
             name: obj for objects in self._registered.values()
             for name, obj in objects.items()
         }
 
     @property
-    def available(self) -> dict:
+    def available(self) -> dict[str, "RegisteredIntermediate"]:
         """
         Returns all available intermediates using their name as dict key.
         """
@@ -47,7 +56,7 @@ class Intermediates(metaclass=Singleton):
         """Returns all available types of intermediates."""
         return list(self._registered.keys())
 
-    def __getattr__(self, attr) -> dict:
+    def __getattr__(self, attr: str) -> dict[str, "RegisteredIntermediate"]:
         if attr in self._registered:  # is the attr an intermediate type?
             return self._registered[attr]
         elif attr in self._available:  # is the attr an intermediate name?
@@ -71,10 +80,15 @@ class RegisteredIntermediate:
       '_build_expanded_itmd'
     - a method that returns the itmd tensor '_build_tensor'
     """
-    _registry: dict[str, dict[str]] = {}
+    _registry: dict[str, dict[str, "RegisteredIntermediate"]] = {}
+    _itmd_type: str | None = None
+    _order: int | None = None
+    _default_idx: tuple[str, ...] | None = None
 
-    def __init_subclass__(cls):
-        if (itmd_type := cls._itmd_type) not in cls._registry:
+    def __init_subclass__(cls) -> None:
+        itmd_type = cls._itmd_type
+        assert itmd_type is not None
+        if itmd_type not in cls._registry:
             cls._registry[itmd_type] = {}
         if (name := cls.__name__) not in cls._registry[itmd_type]:
             cls._registry[itmd_type][name] = cls()
@@ -87,23 +101,23 @@ class RegisteredIntermediate:
     @property
     def order(self) -> int:
         """Perturbation theoretical order of the intermediate."""
-        if (order := getattr(self, '_order', None)) is None:
+        if not hasattr(self, "_order") or self._order is None:
             raise AttributeError(f"No order defined for {self.name}.")
-        return order
+        return self._order
 
     @property
-    def default_idx(self) -> tuple[str]:
+    def default_idx(self) -> tuple[str, ...]:
         """Names of the default indices of the intermediate."""
-        if (idx := getattr(self, '_default_idx', None)) is None:
+        if not hasattr(self, "_default_idx") or self._default_idx is None:
             raise AttributeError(f"No default indices defined for {self.name}")
-        return idx
+        return self._default_idx
 
     @property
     def itmd_type(self) -> str:
         """The type of the intermediate."""
-        if (itmd_type := getattr(self, '_itmd_type', None)) is None:
+        if not hasattr(self, "_itmd_type") or self._itmd_type is None:
             raise AttributeError(f"No itmd_type defined for {self.name}.")
-        return itmd_type
+        return self._itmd_type
 
     def validate_indices(self,
                          indices: Sequence[str] | Sequence[Index] | None = None
@@ -127,17 +141,19 @@ class RegisteredIntermediate:
 
     def expand_itmd(self,
                     indices: Sequence[str] | Sequence[Index] | None = None,
-                    return_sympy: bool = False, fully_expand: bool = True):
+                    wrap_result: bool = True, fully_expand: bool = True
+                    ) -> Expr | ExprContainer:
         """
         Expands the intermediate into orbital energies and ERI.
 
         Parameters
         ----------
-        indices : str, optional
+        indices : Sequence[str] | Sequence[Index], optional
             The names of the indices of the intermediate. By default the
             default indices (defined on the itmd class) will be used.
-        return_sympy : bool, optional
-            Whether to return the unwrapped sympy object (default: False).
+        wrap_result : bool, optional
+            Whether to wrap the result in an
+            :py:class:ExprContainer. (default: True)
         fully_expand : bool, optional
             True (default): The returned intermediate is recursively fully
               expanded into orbital energies and ERI (if possible).
@@ -162,7 +178,7 @@ class RegisteredIntermediate:
         expanded_itmd = self._build_expanded_itmd(fully_expand)
 
         # build the substitution dict
-        subs = {}
+        subs: dict[Index, Index] = {}
         # map target indices onto each other
         if (base_target := expanded_itmd.target) is not None:
             subs.update({o: n for o, n in zip(base_target, indices)})
@@ -183,18 +199,24 @@ class RegisteredIntermediate:
 
         # do some extra work with the substitutions to avoid using the
         # simultantous=True option for subs (very slow)
-        subs = order_substitutions(subs)
-        itmd = expanded_itmd.expr.subs(subs)
+        itmd = expanded_itmd.expr.subs(order_substitutions(subs))
+        assert isinstance(itmd, Expr)
 
         if itmd is S.Zero and expanded_itmd.expr is not S.Zero:
             raise ValueError(f"The substitutions {subs} are not valid for "
                              f"{expanded_itmd.expr}.")
 
-        if not return_sympy:
-            itmd = e.Expr(itmd, target_idx=indices)
+        if wrap_result:
+            itmd = ExprContainer(itmd, target_idx=indices)
         return itmd
 
-    def tensor(self, indices: str = None, return_sympy: bool = False):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
+        _ = fully_expand
+        raise NotImplementedError("Build expanded intermediate not implemented"
+                                  f" on {self.name}")
+
+    def tensor(self, indices: Sequence[str] | Sequence[Index] | None = None,
+               wrap_result: bool = True):
         """
         Returns the itmd tensor.
 
@@ -203,43 +225,57 @@ class RegisteredIntermediate:
         indices : str, optional
             The names of the indices of the intermediate. By default the
             default indices (defined on the itmd class) will be used.
-        return_sympy : bool, optional
-            Whether to return the unwrapped sympy object (default: False).
+        wrap_result : bool, optional
+            Whether to wrap the result in an
+            :py:class:ExprContainer. (default: True)
         """
         # check that the provided indices are sufficient for the itmd
         indices = self.validate_indices(indices)
 
         # build the tensor object
         tensor = self._build_tensor(indices=indices)
-        if return_sympy:
-            return tensor
-        else:
+        if wrap_result:
+            kwargs = {}
             if isinstance(tensor, AntiSymmetricTensor):
                 if tensor.bra_ket_sym is S.One:  # bra ket symmetry
-                    return e.Expr(tensor, sym_tensors=[tensor.name])
+                    kwargs["sym_tensors"] = (tensor.name,)
                 elif tensor.bra_ket_sym is S.NegativeOne:  # bra ket anisym
-                    return e.Expr(tensor, antisym_tensors=[tensor.name])
-            return e.Expr(tensor)
+                    kwargs["antisym_tensors"] = (tensor.name,)
+            return ExprContainer(tensor, **kwargs)
+        else:
+            return tensor
+
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
+        _ = indices
+        raise NotImplementedError("Build tensor not implemented on "
+                                  f"{self.name}")
 
     @cached_property
-    def tensor_symmetry(self) -> dict:
+    def tensor_symmetry(self) -> dict[tuple[Permutation, ...], int]:
         """
         Determines the symmetry of the itmd tensor object using the
         default indices, e.g., ijk/abc triples symmetry for t3_2.
         """
-        return self.tensor().terms[0].symmetry()
+        tensor = self.tensor(wrap_result=True)
+        assert isinstance(tensor, ExprContainer) and len(tensor) == 1
+        return tensor.terms[0].symmetry()
 
     @cached_property
-    def allowed_spin_blocks(self) -> tuple[str]:
+    def allowed_spin_blocks(self) -> tuple[str, ...]:
         """Determines all non-zero spin block of the intermediate."""
 
         target_idx = self.default_idx
-        itmd = self.expand_itmd(indices=target_idx, fully_expand=False)
+        itmd = self.expand_itmd(
+            indices=target_idx, wrap_result=True, fully_expand=False
+        )
+        assert isinstance(itmd, ExprContainer)
         return allowed_spin_blocks(itmd.expand(), target_idx)
 
     @cached_member
-    def allowed_cvs_blocks(self, cvs_approximation: callable = None
-                           ) -> tuple[str]:
+    def allowed_cvs_blocks(
+            self,
+            cvs_approximation: Callable[[ObjectContainer, str], bool] | None = None  # noqa E501
+            ) -> tuple[str, ...]:
         """
         Splits the occupied orbitals in core and valence orbitals and
         determines the valid blocks if the CVS approximation is applied.
@@ -256,13 +292,17 @@ class RegisteredIntermediate:
             10.1063/1.453424 and as implemented in adcman/adcc.
         """
         target_idx = self.default_idx
-        itmd = self.expand_itmd(indices=target_idx, fully_expand=False)
-        return allowed_cvs_blocks(itmd.expand(), target_idx,
-                                  cvs_approximation=cvs_approximation)
+        itmd = self.expand_itmd(
+            indices=target_idx, wrap_result=True, fully_expand=False
+        )
+        assert isinstance(itmd, ExprContainer)
+        return allowed_cvs_blocks(
+            itmd.expand(), target_idx, cvs_approximation=cvs_approximation
+        )
 
     @cached_member
-    def itmd_term_map(self,
-                      factored_itmds: tuple[str] = tuple()) -> LazyTermMap:
+    def itmd_term_map(self, factored_itmds: Sequence[str] = tuple()
+                      ) -> LazyTermMap:
         """
         Returns a map that lazily determines permutations of target indices
         that map terms in the intermediate definition onto each other.
@@ -280,7 +320,8 @@ class RegisteredIntermediate:
         return LazyTermMap(itmd)
 
     @cached_member
-    def _prepare_itmd(self, factored_itmds: tuple[str] = tuple()) -> e.Expr:
+    def _prepare_itmd(self, factored_itmds: Sequence[str] = tuple()
+                      ) -> ExprContainer:
         """"
         Generates a variant of the intermediate with default indices and
         simplifies it as much as possible.
@@ -307,11 +348,13 @@ class RegisteredIntermediate:
 
         # build the base version of the itmd and simplify it
         # - factor eri and denominator
-        itmd: e.Expr = self.expand_itmd().expand().make_real()
-        reduced = chain.from_iterable(
+        itmd = self.expand_itmd(wrap_result=True, fully_expand=True)
+        assert isinstance(itmd, ExprContainer)
+        itmd.expand().make_real()
+        reduced = itertools.chain.from_iterable(
             factor_denom(sub_expr) for sub_expr in factor_eri_parts(itmd)
         )
-        itmd = e.Expr(0, **itmd.assumptions)
+        itmd = ExprContainer(0, **itmd.assumptions)
         for term in reduced:
             itmd += term.factor()
 
@@ -339,9 +382,11 @@ class RegisteredIntermediate:
         ]))
         return itmd
 
-    def factor_itmd(self, expr: e.Expr, factored_itmds: tuple[str] = tuple(),
-                    max_order: int = None,
-                    allow_repeated_itmd_indices: bool = False) -> e.Expr:
+    def factor_itmd(self, expr: ExprContainer,
+                    factored_itmds: Sequence[str] = tuple(),
+                    max_order: int | None = None,
+                    allow_repeated_itmd_indices: bool = False
+                    ) -> ExprContainer:
         """
         Factors the intermediate in an expression assuming a real orbital
         basis.
@@ -350,7 +395,7 @@ class RegisteredIntermediate:
         ----------
         expr : Expr
             Expression in which to factor intermediates.
-        factored_itmds : tuple[str], optional
+        factored_itmds : Sequence[str], optional
             Names of other intermediates that have already been factored in
             the expression. It is necessary to factor those intermediates in
             the current intermediate definition as well, because the
@@ -369,22 +414,19 @@ class RegisteredIntermediate:
             currently.
         """
 
-        from .factor_intermediates import (_factor_long_intermediate,
-                                           _factor_short_intermediate,
-                                           FactorizationTermData)
+        from .factor_intermediates import (
+            _factor_long_intermediate, _factor_short_intermediate,
+            FactorizationTermData
+        )
 
-        if not isinstance(expr, e.Expr):
-            raise TypeError("Expr to factor needs to be provided as "
-                            f"{e.Expr} instance.")
+        assert isinstance(expr, ExprContainer)
         if not expr.real:
             raise NotImplementedError("Intermediates only implemented for "
                                       "a real orbital basis.")
 
         # ensure that the previously factored intermediates
         # are provided as tuple -> can use them as dict key
-        if factored_itmds is None:
-            factored_itmds = tuple()
-        elif not isinstance(factored_itmds, tuple):
+        if not isinstance(factored_itmds, tuple):
             factored_itmds = tuple(factored_itmds)
 
         # can not factor if the expr is just a number or the intermediate
@@ -392,7 +434,7 @@ class RegisteredIntermediate:
         # intermediate is to high.
         # also it does not make sense to factor t4_2 again, because of the
         # used factorized form.
-        if expr.sympy.is_number or self.name in factored_itmds or \
+        if expr.inner.is_number or self.name in factored_itmds or \
                 self.name == 't4_2' or \
                 (max_order is not None and max_order < self.order):
             return expr
@@ -405,11 +447,12 @@ class RegisteredIntermediate:
         # Also the pt order of the term needs to be high enough for the
         # current intermediate
         if self.itmd_type == 't_amplitude' and self.name != 't4_2':
-            term_is_relevant = [term.order >= self.order and
-                                any(o.exponent < 0 and
-                                    o.contains_only_orb_energies
-                                    for o in term.objects)
-                                for term in terms]
+            term_is_relevant = [
+                term.order >= self.order and
+                any(o.exponent < S.Zero and o.contains_only_orb_energies
+                    for o in term.objects)
+                for term in terms
+            ]
         else:
             term_is_relevant = [term.order >= self.order for term in terms]
         # no term has a denominator or a sufficient pt order
@@ -421,20 +464,23 @@ class RegisteredIntermediate:
         max_order = max(term.order for term in terms)
 
         # build a new expr that only contains the relevant terms
-        remainder = 0
-        to_factor = e.Expr(0, **expr.assumptions)
+        remainder = S.Zero
+        to_factor = ExprContainer(0, **expr.assumptions)
         for term, is_relevant in zip(terms, term_is_relevant):
             if is_relevant:
                 to_factor += term
             else:
-                remainder += term.sympy
+                remainder += term.inner
 
         # - prepare the itmd for factorization and extract data to speed
         #   up the later comparison
         itmd_expr = self._prepare_itmd(factored_itmds=factored_itmds)
-        itmd = tuple(EriOrbenergy(term).canonicalize_sign()
-                     for term in itmd_expr.terms)
-        itmd_data = tuple(FactorizationTermData(term) for term in itmd)
+        itmd: tuple[EriOrbenergy, ...] = tuple(
+            EriOrbenergy(term).canonicalize_sign() for term in itmd_expr.terms
+        )
+        itmd_data: tuple[FactorizationTermData, ...] = tuple(
+            FactorizationTermData(term) for term in itmd
+        )
 
         # factor the intermediate in the expr
         if len(itmd) == 1:  # short intermediate that consists of a single term
@@ -460,39 +506,47 @@ class RegisteredIntermediate:
 
 class t2_1(RegisteredIntermediate):
     """First order MP doubles amplitude."""
-    _itmd_type: str = 't_amplitude'  # type has to be a class variable
-    _order: int = 1
-    _default_idx: tuple[str] = ('i', 'j', 'a', 'b')
+    _itmd_type = 't_amplitude'  # type has to be a class variable
+    _order = 1
+    _default_idx = ("i", "j", "a", "b")
 
     @cached_member
-    def _build_expanded_itmd(self, fully_expand: bool = True):
+    def _build_expanded_itmd(self, fully_expand: bool = True) -> ItmdExpr:
+        _ = fully_expand
         # build a basic version of the intermediate using minimal indices
         # 'like on paper'
         i, j, a, b = get_symbols(self.default_idx)
-        denom = orb_energy(a) + orb_energy(b) - orb_energy(i) - orb_energy(j)
-        return base_expr(eri((a, b, i, j)) / denom, (i, j, a, b), None)
+        denom = Add(
+            orb_energy(a), orb_energy(b), -orb_energy(i), -orb_energy(j)
+        )
+        ampl = eri((a, b, i, j)) * S.One / denom
+        assert isinstance(ampl, Expr)
+        return ItmdExpr(ampl, (i, j, a, b), None)
 
-    def _build_tensor(self, indices) -> Amplitude:
+    def _build_tensor(self, indices: Sequence[Index]) -> Expr:
         # guess its not worth caching here. Maybe if used a lot.
         # build the tensor
+        assert len(indices) == 4
         return Amplitude(
             f"{tensor_names.gs_amplitude}1", indices[2:], indices[:2]
         )
 
-    def factor_itmd(self, expr: e.Expr, factored_itmds: list[str] = None,
-                    max_order: int = None,
-                    allow_repeated_itmd_indices: bool = False) -> e.Expr:
-        """Factors the t2_1 intermediate in an expression assuming a real
-           orbital basis."""
-
-        if not isinstance(expr, e.Expr):
-            raise Inputerror("Expr to factor needs to be an instance of "
-                             f"{e.Expr}.")
+    def factor_itmd(self, expr: ExprContainer,
+                    factored_itmds: Sequence[str] | None = None,
+                    max_order: int | None = None,
+                    allow_repeated_itmd_indices: bool = False
+                    ) -> ExprContainer:
+        """
+        Factors the t2_1 intermediate in an expression assuming a real
+        orbital basis.
+        """
+        _ = allow_repeated_itmd_indices
+        assert isinstance(expr, ExprContainer)
         if not expr.real:
             raise NotImplementedError("Intermediates only implemented for a "
                                       "real orbital basis.")
         # do we have something to factor? did we already factor the itmd?
-        if expr.sympy.is_number or \
+        if expr.inner.is_number or \
                 (factored_itmds and self.name in factored_itmds):
             return expr
 
@@ -501,35 +555,38 @@ class t2_1(RegisteredIntermediate):
             return expr
 
         # prepare the itmd and extract information
-        t2 = self.expand_itmd().make_real()
+        t2 = self.expand_itmd(wrap_result=True, fully_expand=True)
+        assert isinstance(t2, ExprContainer)
+        t2.make_real()
         t2 = EriOrbenergy(t2).canonicalize_sign()
-        t2_eri: e.Obj = t2.eri.objects[0]
+        t2_eri: ObjectContainer = t2.eri.objects[0]
         t2_eri_descr: str = t2_eri.description(include_exponent=False,
-                                               include_target_idx=False)
-        t2_denom = t2.denom.sympy
-        t2_eri_idx: tuple = t2_eri.idx
+                                               target_idx=None)
+        t2_denom = t2.denom.inner
+        t2_eri_idx: tuple[Index, ...] = t2_eri.idx
 
         expr = expr.expand()
 
-        factored = 0
+        factored = ExprContainer(0, **expr.assumptions)
         for term in expr.terms:
             term = EriOrbenergy(term)  # split the term
 
-            if term.denom.sympy.is_number:  # term needs to have a denominator
+            if term.denom.inner.is_number:  # term needs to have a denominator
                 factored += term.expr
                 continue
             term = term.canonicalize_sign()  # fix the sign of the denominator
 
             brackets = term.denom_brackets
-            removed_brackets = set()
-            factored_term = 1
-            eri_obj_to_remove = []
-            denom_brackets_to_remove = []
+            removed_brackets: set[int] = set()
+            factored_term = ExprContainer(1, **expr.assumptions)
+            eri_obj_to_remove: list[int] = []
+            denom_brackets_to_remove: list[int] = []
             for eri_idx, eri in enumerate(term.eri.objects):
                 # - compare the eri objects (check if we have a oovv eri)
                 #   coupling is not relevant for t2_1 (only a single object)
-                descr = eri.description(include_exponent=False,
-                                        include_target_idx=False)
+                descr: str = eri.description(
+                    include_exponent=False, target_idx=None
+                )
                 if descr != t2_eri_descr:
                     continue
                 # repeated indices on t2_1 make no sense since
@@ -548,32 +605,33 @@ class t2_1(RegisteredIntermediate):
                     # was the braket already removed?
                     if bk_idx in removed_brackets:
                         continue
-                    if isinstance(bk, e.Expr):
-                        bk_exponent = 1
-                        bk = bk.sympy
+                    if isinstance(bk, ExprContainer):
+                        bk_exponent = S.One
+                        bk = bk.inner
                     else:
                         bk, bk_exponent = bk.base_and_exponent
                     # found matching bracket in denominator
                     if bk == sub_t2_denom:
                         # can possibly factor multiple times, depending
                         # on the exponent of the eri and the denominator
-                        min_exp = min(eri_exp, bk_exponent)
+                        min_exp = Min(eri_exp, bk_exponent)
                         # are we removing the bracket completely?
                         if min_exp == bk_exponent:
                             removed_brackets.add(bk_idx)
                         # found matching eri and denominator
                         # replace eri and bracket by a t2_1 tensor
+                        assert min_exp.is_Integer
                         denom_brackets_to_remove.extend(
-                            bk_idx for _ in range(min_exp)
+                            bk_idx for _ in range(int(min_exp))
                         )
                         eri_obj_to_remove.extend(
-                            eri_idx for _ in range(min_exp)
+                            eri_idx for _ in range(int(min_exp))
                         )
                         # can simply use the indices of the eri as target
                         # indices for the tensor
                         factored_term *= Pow(
-                            self.tensor(indices=eri.idx, return_sympy=True) /
-                            t2.pref,
+                            self.tensor(indices=eri.idx, wrap_result=False) *
+                            S.One / t2.pref,
                             min_exp
                         )
             # - remove the matched eri and denominator objects
@@ -1451,7 +1509,7 @@ class t2sq(RegisteredIntermediate):
         return AntiSymmetricTensor('t2sq', indices[:2], indices[2:], 1)
 
 
-def eri(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
+def eri(idx: Sequence[str] | Sequence[Index]) -> Expr:
     """
     Builds an antisymmetric electron repulsion integral.
     Indices may be provided as list of sympy symbols or as string.
@@ -1462,7 +1520,7 @@ def eri(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
     return AntiSymmetricTensor(tensor_names.eri, idx[:2], idx[2:])
 
 
-def fock(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
+def fock(idx: Sequence[Index] | Sequence[str]) -> Expr:
     """
     Builds a fock matrix element.
     Indices may be provided as list of sympy symbols or as string.
@@ -1474,7 +1532,8 @@ def fock(idx: str | list[Index] | list[str]) -> AntiSymmetricTensor:
     return AntiSymmetricTensor(tensor_names.fock, idx[:1], idx[1:])
 
 
-def orb_energy(idx: str | Index) -> NonSymmetricTensor:
+def orb_energy(idx: Index | Sequence[str] | Sequence[Index]
+               ) -> NonSymmetricTensor:
     """
     Builds an orbital energy.
     Indices may be provided as list of sympy symbols or as string.
