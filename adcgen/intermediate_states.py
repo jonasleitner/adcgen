@@ -1,18 +1,20 @@
-from sympy import latex, Rational, S, sympify
-from sympy.physics.secondquant import NO, Dagger
-
+from collections.abc import Sequence
 from math import factorial
 
+from sympy.physics.secondquant import NO, Dagger
+from sympy import Expr, Mul, Rational, S, latex, nsimplify, diff, symbols
+
+from adcgen.expression.expr_container import ExprContainer
+
+from .func import gen_term_orders, wicks, evaluate_deltas
+from .groundstate import GroundState
 from .indices import (
     n_ov_from_space, repeated_indices, Indices, generic_indices_from_space
 )
+from .logger import logger
 from .misc import cached_member, Inputerror, transform_to_tuple, validate_input
 from .simplify import simplify
-from .func import gen_term_orders, wicks, evaluate_deltas
-from .groundstate import GroundState
-from .expr_container import Expr
 from .sympy_objects import Amplitude
-from .logger import logger
 from .tensor_names import tensor_names
 
 
@@ -30,28 +32,28 @@ class IntermediateStates:
         'pp', 'ip' or 'ea' for PP-, IP- or EA-ADC expressions, respectively
         (default: 'pp').
     """
-    def __init__(self, mp, variant="pp"):
-        if not isinstance(mp, GroundState):
-            raise Inputerror("Invalid ground state object.")
-        self.gs = mp
-        self.indices = Indices()
+    def __init__(self, mp: GroundState, variant: str = "pp"):
+        assert isinstance(mp, GroundState)
+        self.gs: GroundState = mp
+        self.indices: Indices = Indices()
 
-        variants = {
-            "pp": ["ph", "hp"],
-            "ea": ["p"],
-            "ip": ["h"],
-            "dip": ["hh"],
-            "dea": ["pp"],
+        variants: dict[str, tuple[str, ...]] = {
+            "pp": ("ph", "hp"),
+            "ea": ("p",),
+            "ip": ("h",),
+            "dip": ("hh",),
+            "dea": ("pp",),
         }
         if variant not in variants.keys():
             raise Inputerror(f"The ADC variant {variant} is not valid. "
                              "Supported variants are "
                              f"{list(variants.keys())}.")
-        self.variant = variant
-        self.min_space = variants[variant]
+        self.variant: str = variant
+        self.min_space: tuple[str, ...] = variants[variant]
 
     @cached_member
-    def precursor(self, order: int, space: str, braket: str, indices: str):
+    def precursor(self, order: int, space: str, braket: str, indices: str
+                  ) -> Expr:
         """
         Constructs expressions for precursor states.
 
@@ -98,11 +100,13 @@ class IntermediateStates:
         # in contrast to the gs, here the operators are ordered as
         # abij instead of abji in order to stay consistent with the
         # ADC literature.
-        operators = self.gs.h.excitation_operator(creation=virtual,
-                                                  annihilation=occupied,
-                                                  reverse_annihilation=False)
+        operators = self.gs.h.excitation_operator(
+            creation=virtual, annihilation=occupied, reverse_annihilation=False
+        )
         if braket == "bra":
             operators = Dagger(operators)
+
+        res = S.Zero
 
         # leading term:
         # no need to differentiate bra/ket here, because
@@ -110,7 +114,7 @@ class IntermediateStates:
         # p/h operators in mp that needs to be moved to the other side.
         # Will always give +.)
         max_gs = self.gs.psi(order=order, braket=braket)
-        res = (NO(operators) * max_gs).expand()
+        res += Mul(NO(operators), max_gs).expand()
 
         # get all terms of a*b of the desired order (ground state norm)
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
@@ -120,15 +124,17 @@ class IntermediateStates:
         if self.variant == "pp":
             # import all ground state wave functions that may not appear twice
             # in |a><b|c>, i.e. all of: order > int(order/2)
-            gs_psi = {'bra': {}, 'ket': {}}
+            gs_psi: dict[str, dict[int, Expr]] = {'bra': {}, 'ket': {}}
             gs_psi[braket][order] = max_gs
             for o in range(order//2 + 1, order+1):
                 if not gs_psi['bra'].get(o):
                     gs_psi['bra'][o] = self.gs.psi(order=o, braket='bra')
                 if not gs_psi['ket'].get(o):
                     gs_psi['ket'][o] = self.gs.psi(order=o, braket='ket')
+
             def get_gs_wfn(o, bk): return gs_psi[bk][o] if o > order//2 else \
                 self.gs.psi(order=o, braket=bk)
+
             # 1) iterate through all combinations of norm_factor*projector
             for norm_term in orders:
                 norm = self.gs.norm_factor(norm_term[0])
@@ -140,30 +146,35 @@ class IntermediateStates:
                 orders_projection = gen_term_orders(
                     order=norm_term[1], term_length=3, min_order=0
                 )
-                projection = sympify(0)
+                projection = S.Zero
                 for term in orders_projection:
                     # |Y>  <--  -|X><X|Y>
                     if braket == "ket":
-                        i1 = (get_gs_wfn(term[1], 'bra') * NO(operators) *
-                              get_gs_wfn(term[2], 'ket'))
+                        i1 = Mul(
+                            get_gs_wfn(term[1], 'bra'), NO(operators),
+                            get_gs_wfn(term[2], 'ket')
+                        )
                         state = get_gs_wfn(term[0], 'ket')
                     # <Y|  <--  -<Y|X><X|
-                    elif braket == "bra":
-                        i1 = (get_gs_wfn(term[0], 'bra') * NO(operators) *
-                              get_gs_wfn(term[1], 'ket'))
+                    else:
+                        assert braket == "bra"
+                        i1 = Mul(
+                            get_gs_wfn(term[0], 'bra'), NO(operators),
+                            get_gs_wfn(term[1], 'ket')
+                        )
                         state = get_gs_wfn(term[2], 'bra')
                     # wicks automatically expands the passed expression
                     i1 = wicks(i1, simplify_kronecker_deltas=True)
-                    projection += (state * i1).expand()
+                    projection += Mul(state, i1).expand()
                 projection = evaluate_deltas(projection)
-                res -= (norm * projection).expand()
+                res -= Mul(norm, projection).expand()
             gs_psi.clear()
 
         # iterate over lower excitated spaces
         lower_spaces = self._generate_lower_spaces(space)
         for lower_space in lower_spaces:
             # get generic unique indices to generate the lower_isr_states.
-            idx_isr = "".join(
+            idx_isr: str = "".join(
                 s.name for s in generic_indices_from_space(lower_space)
             )
 
@@ -172,6 +183,7 @@ class IntermediateStates:
             prefactor = Rational(
                 1, factorial(n_ov["occ"]) * factorial(n_ov["virt"])
             )
+            del n_ov
 
             # orthogonalise with respsect to the lower excited ISR state
             # 1) iterate through all combinations of norm_factor*projector
@@ -185,30 +197,33 @@ class IntermediateStates:
                 orders_projection = gen_term_orders(
                     norm_term[1], term_length=3, min_order=0
                 )
-                projection = sympify(0)
+                projection = S.Zero
                 for term in orders_projection:
                     # |Y#>  <--  -|X><X|Y>
                     if braket == "ket":
-                        i1 = (self.intermediate_state(order=term[1],
-                                                      space=lower_space,
-                                                      braket="bra",
-                                                      indices=idx_isr) *
-                              NO(operators) * self.gs.psi(order=term[2],
-                                                          braket="ket")
-                              )
+                        i1 = Mul(
+                            self.intermediate_state(order=term[1],
+                                                    space=lower_space,
+                                                    braket="bra",
+                                                    indices=idx_isr),
+                            NO(operators),
+                            self.gs.psi(order=term[2], braket="ket")
+                        )
                         state = self.intermediate_state(
                             order=term[0], space=lower_space, braket="ket",
                             indices=idx_isr
                         )
                     # <Y#|  <--  -<Y|X><X|
-                    elif braket == "bra":
-                        i1 = (self.gs.psi(order=term[0], braket="bra") *
-                              NO(operators) *
-                              self.intermediate_state(order=term[1],
-                                                      space=lower_space,
-                                                      braket="ket",
-                                                      indices=idx_isr)
-                              )
+                    else:
+                        assert braket == "bra"
+                        i1 = Mul(
+                            self.gs.psi(order=term[0], braket="bra"),
+                            NO(operators),
+                            self.intermediate_state(order=term[1],
+                                                    space=lower_space,
+                                                    braket="ket",
+                                                    indices=idx_isr)
+                        )
                         state = self.intermediate_state(
                             order=term[2], space=lower_space, braket="bra",
                             indices=idx_isr
@@ -216,14 +231,15 @@ class IntermediateStates:
                     i1 = wicks(i1, simplify_kronecker_deltas=True)
                     projection += (prefactor * state * i1).expand()
                 projection = evaluate_deltas(projection)
-                res -= (norm * projection).expand()
-
+                res -= Mul(norm, projection).expand()
+        assert isinstance(res, Expr)
         logger.debug(f"precursor {space}_({indices})^({order}) {braket} = "
                      f"{latex(res)}")
         return res
 
     @cached_member
-    def overlap_precursor(self, order: int, block: str, indices: str):
+    def overlap_precursor(self, order: int, block: Sequence[str],
+                          indices: Sequence[str]) -> Expr:
         """
         Constructs expressions for elements of the overlap matrix of the
         precursor states.
@@ -232,29 +248,29 @@ class IntermediateStates:
         ----------
         order : int
             The perturbation theoretical order.
-        block : str
+        block : Sequence[str]
             The block of the overlap matrix, e.g., 'ph,ph' for an element of
             the 1p-1h/1p-1h block.
-        indices : str
+        indices : Sequence[str]
             The indices of the overlap matrix element, e.g., 'ia,jb' for
             S_{ia,jb}.
         """
 
         # no need to do more validation here -> will be done in precursor
-        block = transform_to_tuple(block)
-        indices = transform_to_tuple(indices)
-        validate_input(order=order, block=block, indices=indices)
-        if len(indices) != 2:
+        block_tpl: tuple[str, ...] = transform_to_tuple(block)
+        indices_tpl: tuple[str, ...] = transform_to_tuple(indices)
+        validate_input(order=order, block=block_tpl, indices=indices_tpl)
+        if len(indices_tpl) != 2:
             raise Inputerror("2 index strings required for an overlap matrix "
                              f"block. Got: {indices}.")
 
-        if repeated_indices(indices[0], indices[1]):
+        if repeated_indices(indices_tpl[0], indices_tpl[1]):
             raise Inputerror("Repeated index found in indices of precursor "
                              f"overlap matrix: {indices}.")
 
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
 
-        res = 0
+        res = S.Zero
         # 1) iterate through all combinations of norm_factor*S
         for norm_term in orders:
             norm = self.gs.norm_factor(norm_term[0])
@@ -265,24 +281,27 @@ class IntermediateStates:
             orders_overlap = gen_term_orders(
                 order=norm_term[1], term_length=2, min_order=0
             )
-            overlap = sympify(0)
+            overlap = S.Zero
             for term in orders_overlap:
-                i1 = (self.precursor(order=term[0], space=block[0],
-                                     braket="bra", indices=indices[0]) *
-                      self.precursor(order=term[1], space=block[1],
-                                     braket="ket", indices=indices[1]))
+                i1 = Mul(
+                    self.precursor(order=term[0], space=block_tpl[0],
+                                   braket="bra", indices=indices_tpl[0]),
+                    self.precursor(order=term[1], space=block_tpl[1],
+                                   braket="ket", indices=indices_tpl[1])
+                )
                 i1 = wicks(i1, simplify_kronecker_deltas=True)
                 overlap += i1
             res += (norm * overlap).expand()
         # It should be valid to simplifiy the result by permuting contracted
         # indices before returning -> should lower the overall size of the
         # final expression
-        res = simplify(Expr(res))
+        res = simplify(ExprContainer(res))
         logger.debug(f"overlap {block} S_{indices}^({order}) = {res}")
-        return res.sympy
+        return res.inner
 
     @cached_member
-    def s_root(self, order: int, block: str, indices: str):
+    def s_root(self, order: int, block: Sequence[str],
+               indices: Sequence[str]) -> Expr:
         """
         Constructs expression for elements of the inverse square root of the
         precursor overlap matrix (S^{-0.5})_{I,J} by expanding
@@ -292,24 +311,24 @@ class IntermediateStates:
         ----------
         order : int
             The perturbation theoretical order.
-        block : str
+        block : Sequence[str]
             The desired matrix block, e.g., 'ph,pphh' for an element of the
             1p-1h/2p-2h block.
-        indices : str
+        indices : Sequence[str]
             The indices of the matrix element, e.g., 'ia,jkcd' for
             (S^{-0.5})_{ia,jkcd}.
         """
 
-        block = transform_to_tuple(block)
-        indices = transform_to_tuple(indices)
-        validate_input(order=order, block=block, indices=indices)
-        if len(indices) != 2:
+        block_tpl: tuple[str, ...] = transform_to_tuple(block)
+        indices_tpl: tuple[str, ...] = transform_to_tuple(indices)
+        validate_input(order=order, block=block_tpl, indices=indices_tpl)
+        if len(indices_tpl) != 2:
             raise Inputerror("2 index strings required for a block of the "
                              "inverse suqare root of the overlap matrix. "
                              f"Got: {indices}.")
-        if repeated_indices(indices[0], indices[1]):
+        if repeated_indices(indices_tpl[0], indices_tpl[1]):
             raise Inputerror(f"Repeated index found in indices {indices}.")
-        if block[0] != block[1]:
+        if block_tpl[0] != block_tpl[1]:
             raise NotImplementedError("Off diagonal blocks of the overlap "
                                       "matrix should be 0 by definition. "
                                       "Simply don't know how to handle the "
@@ -318,40 +337,47 @@ class IntermediateStates:
         taylor_expansion = self.expand_S_taylor(order, min_order=2)
         # create an index list: first and last element are the two provided
         # idx strings
-        idx = list(indices)
+        idx: list[str] = list(indices_tpl)
         # create more indices: exponent-1 or len(taylor_expansion)-1 indices
         #  - x*x 1 additional index 'pair' is required: I,I' = I,I'' * I'',I'
         #  - x^3: I,I' = I,I'' * I'',I''' * I''',I'
         for _ in range(len(taylor_expansion) - 1):
-            new_idx = "".join(
-                s.name for s in generic_indices_from_space(block[0])
+            new_idx: str = "".join(
+                s.name for s in generic_indices_from_space(block_tpl[0])
             )
             idx.insert(-1, new_idx)
         # iterate over exponents and terms, starting with the lowest exponent
-        res = sympify(0)
+        res = S.Zero
         for pref, termlist in taylor_expansion:
             # all terms in the list should have the same length, i.e.
             # all originate from x*x or x^3 etc.
             for term in termlist:
                 relevant_idx = idx[:len(term)] + [idx[-1]]
-                i1 = pref
+                i1 = S.One * pref
                 for o in term:
                     i1 *= self.overlap_precursor(
-                        order=o, block=block, indices=tuple(relevant_idx[:2])
+                        order=o, block=block_tpl,
+                        indices=tuple(relevant_idx[:2])
                     )
                     del relevant_idx[0]
                     if i1 is S.Zero:
                         break
-                assert len(relevant_idx) == 1 and relevant_idx[0] == indices[1]
+                assert (
+                    len(relevant_idx) == 1 and
+                    relevant_idx[0] == indices_tpl[1]
+                )
                 # in squared or higher terms S*S*... delta evaluation might
                 # be necessary
                 res += evaluate_deltas(i1.expand())
-        logger.debug(f"{block} S_root_{indices}^({order}) = {latex(res)}")
+        assert isinstance(res, Expr)
+        logger.debug(
+            f"{block} S_root_{indices}^({order}) = {latex(res)}"
+        )
         return res
 
     @cached_member
     def intermediate_state(self, order: int, space: str, braket: str,
-                           indices: str):
+                           indices: str) -> Expr:
         """
         Constructs expressions for intermediate states.
 
@@ -367,21 +393,24 @@ class IntermediateStates:
         indices : str
             The indices of the intermediate state.
         """
-        indices = transform_to_tuple(indices)
+        indices_tpl: tuple[str, ...] = transform_to_tuple(indices)
         validate_input(order=order, space=space, braket=braket,
-                       indices=indices)
-        if len(indices) != 1:
+                       indices=indices_tpl)
+        if len(indices_tpl) != 1:
             raise Inputerror(f"{indices} are not valid for "
                              "constructing an intermediate state.")
         indices = indices[0]
 
         # generate additional indices for the precursor state
-        idx_pre = "".join(s.name for s in generic_indices_from_space(space))
+        idx_pre: str = "".join(
+            s.name for s in generic_indices_from_space(space)
+        )
 
         n_ov = n_ov_from_space(space)
         prefactor = Rational(
             1, factorial(n_ov["occ"]) * factorial(n_ov["virt"])
         )
+        del n_ov
 
         # sandwich the IS and precursor indices together
         s_indices = {
@@ -390,20 +419,24 @@ class IntermediateStates:
         }
 
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = sympify(0)
+        res = S.Zero
         for term in orders:
-            i1 = (prefactor *
-                  self.s_root(order=term[0], block=(space, space),
-                              indices=s_indices[braket]) *
-                  self.precursor(order=term[1], space=space, braket=braket,
-                                 indices=idx_pre))
+            i1 = Mul(
+                prefactor,
+                self.s_root(order=term[0], block=(space, space),
+                            indices=s_indices[braket]),
+                self.precursor(order=term[1], space=space, braket=braket,
+                               indices=idx_pre)
+            )
             res += evaluate_deltas(i1.expand())
+        assert isinstance(res, Expr)
         logger.debug(f"{space} ISR_({indices}^({order}) {braket} = "
                      f"{latex(res)}")
         return res
 
     @cached_member
-    def overlap_isr(self, order: int, block: str, indices: str):
+    def overlap_isr(self, order: int, block: Sequence[str],
+                    indices: Sequence[str]) -> Expr:
         """
         Computes a block of the overlap matrix in the basis of intermediate
         states.
@@ -412,21 +445,21 @@ class IntermediateStates:
         ----------
         order : int
             The perturbation theoretical order.
-        block : str
+        block : Sequence[str]
             The desired matrix block.
-        indices : str
+        indices : Sequence[str]
             The indices of the matrix element.
         """
 
-        block = transform_to_tuple(block)
-        indices = transform_to_tuple(indices)
-        validate_input(order=order, block=block, indices=indices)
-        if len(indices) != 2:
+        block_tpl = transform_to_tuple(block)
+        indices_tpl = transform_to_tuple(indices)
+        validate_input(order=order, block=block_tpl, indices=indices_tpl)
+        if len(indices_tpl) != 2:
             raise Inputerror("Constructing a ISR overlap matrix block requires"
                              f" 2 index strings. Provided: {indices}.")
 
         orders = gen_term_orders(order=order, term_length=2, min_order=0)
-        res = sympify(0)
+        res = S.Zero
         # 1) iterate through all combinations of norm_factor*S
         for norm_term in orders:
             norm = self.gs.norm_factor(norm_term[0])
@@ -437,23 +470,26 @@ class IntermediateStates:
             orders_overlap = gen_term_orders(
                 order=norm_term[1], term_length=2, min_order=0
             )
-            overlap = sympify(0)
+            overlap = S.Zero
             for term in orders_overlap:
-                i1 = (self.intermediate_state(order=term[0], space=block[0],
-                                              braket="bra",
-                                              indices=indices[0]) *
-                      self.intermediate_state(order=term[1], space=block[1],
-                                              braket="ket",
-                                              indices=indices[1]))
+                i1 = Mul(
+                    self.intermediate_state(order=term[0], space=block_tpl[0],
+                                            braket="bra",
+                                            indices=indices_tpl[0]),
+                    self.intermediate_state(order=term[1], space=block_tpl[1],
+                                            braket="ket",
+                                            indices=indices_tpl[1])
+                )
                 i1 = wicks(i1, simplify_kronecker_deltas=True)
                 overlap += i1
             res += (norm * overlap).expand()
+        assert isinstance(res, Expr)
         logger.debug(f"ISR overlap {block} S_{indices}^({order}) = "
                      f"{latex(res)}")
         return res
 
     @cached_member
-    def amplitude_vector(self, indices: str, lr: str = "right"):
+    def amplitude_vector(self, indices: str, lr: str = "right") -> Expr:
         """
         Constructs an amplitude vector with the provided indices.
 
@@ -475,7 +511,8 @@ class IntermediateStates:
         name = getattr(tensor_names, f"{lr}_adc_amplitude")
         return Amplitude(name, virt, occ)
 
-    def expand_S_taylor(self, order: int, min_order=2) -> list:
+    def expand_S_taylor(self, order: int, min_order: int = 2
+                        ) -> list[tuple[Expr, list[tuple[int, ...]]]]:
         """
         Performs a Taylor expansion of the inverse square root of the
         overlap matrix
@@ -499,8 +536,6 @@ class IntermediateStates:
             5'th order contributions read
             [(-1/2, [(5,)]), (3/8, [(2, 3), (3, 2)])].
         """
-        from sympy import diff, nsimplify, symbols
-
         validate_input(order=order, min_order=min_order)
         if min_order == 0:
             raise Inputerror("A minimum order of 0 does not make sense here.")
@@ -509,21 +544,24 @@ class IntermediateStates:
         # should be zero. Should be handled automatically if the corresponding
         # orders are forwarded to the overlap method.
         if order < min_order:
-            return [(1, [(order,)])]
+            return [(S.One, [(order,)])]
 
         x = symbols('x')
         f = (1 + x) ** -0.5
-        ret = []
+        ret: list[tuple[Expr, list[tuple[int, ...]]]] = []
         for exp in range(1, order//min_order + 1):
             f = diff(f, x)
-            pref = nsimplify(f.subs(x, 0) / factorial(exp), rational=True)
+            pref = nsimplify(
+                f.subs(x, 0) * S.One / factorial(exp), rational=True
+            )
             orders = gen_term_orders(
                 order=order, term_length=exp, min_order=min_order
             )
+            assert isinstance(pref, Expr)
             ret.append((pref, orders))
         return ret
 
-    def _generate_lower_spaces(self, space_str: str) -> list:
+    def _generate_lower_spaces(self, space_str: str) -> list[str]:
         """
         Generates all strings of lower excited configurations for a given
         excitation space.
@@ -534,7 +572,7 @@ class IntermediateStates:
             The space for which to construct lower excitation spaces, e.g.,
             ['ph'] for 'pphh'.
         """
-        lower_spaces = []
+        lower_spaces: list[str] = []
         for _ in range(min(space_str.count('p'), space_str.count('h'))):
             space_str = space_str.replace('p', '', 1).replace('h', '', 1)
             if not space_str:
