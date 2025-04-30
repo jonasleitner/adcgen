@@ -149,7 +149,8 @@ class LazyTermMap:
             self[sym]
         return self._term_map
 
-    def __getitem__(self, symmetry: tuple[tuple[Permutation, ...], int]):
+    def __getitem__(self, symmetry: tuple[tuple[Permutation, ...], int]
+                    ) -> dict[int, int]:
         """
         Checks whether a given symmetry as already been evaluated and probes
         the expression for the symmetry if this is not the case.

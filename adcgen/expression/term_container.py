@@ -100,7 +100,7 @@ class TermContainer(Container):
         return sum(obj.order for obj in self.objects)
 
     @cached_property
-    def prefactor(self):
+    def prefactor(self) -> Expr:
         """Returns the (numeric) prefactor of the term."""
         return nsimplify(
             Mul(*(o.inner for o in self.objects if o.inner.is_number)),
@@ -110,7 +110,7 @@ class TermContainer(Container):
     @property
     def sign(self) -> str:
         """Returns the sign of the term."""
-        return "minus" if self.prefactor < 0 else "plus"
+        return "minus" if self.prefactor < S.Zero else "plus"
 
     @property
     def contracted(self) -> tuple[Index, ...]:
@@ -743,7 +743,7 @@ class TermContainer(Container):
         """
         # - sign and prefactor
         pref = self.prefactor
-        tex_str = "+ " if pref >= 0 else "- "
+        tex_str = "+ " if pref >= S.Zero else "- "
         # term only consists of a number (only pref)
         if self.inner.is_number:
             return tex_str + f"{latex(abs(pref))}"
