@@ -55,7 +55,7 @@ class EriOrbenergy:
         #       definition of the prefactor (only the sign might be ambiguous
         #       +0.5 vs -0.5)
         self._pref: Expr = min(
-            [t.prefactor for t in splitted['num'].terms], key=abs
+            [t.prefactor for t in splitted["num"].terms], key=abs
         )
 
         # only possiblity to extract 0 should be if the numerator is 0

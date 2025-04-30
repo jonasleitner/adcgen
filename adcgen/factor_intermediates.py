@@ -121,7 +121,7 @@ def _factor_long_intermediate(expr: ExprContainer,
                               itmd: Sequence[EriOrbenergy],
                               itmd_data: Sequence["FactorizationTermData"],
                               itmd_term_map: LazyTermMap,
-                              itmd_cls: RegisteredIntermediate,
+                              itmd_cls: "RegisteredIntermediate",
                               allow_repeated_itmd_indices: bool = False
                               ) -> ExprContainer:
     """

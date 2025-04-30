@@ -1,7 +1,7 @@
 from .core_valence_separation import apply_cvs_approximation
 from .derivative import derivative
 from .eri_orbenergy import EriOrbenergy
-from .expr_container import Expr
+from .expression import ExprContainer
 from .factor_intermediates import factor_intermediates
 from .func import import_from_sympy_latex, evaluate_deltas, wicks
 from .generate_code import (generate_code, optimize_contractions, Contraction,
@@ -28,7 +28,7 @@ __all__ = ["AntiSymmetricTensor", "SymmetricTensor", "NonSymmetricTensor",
            "Operators", "GroundState", "IntermediateStates",
            "SecularMatrix", "Properties",
            "Indices", "get_symbols",
-           "Expr", "EriOrbenergy", "import_from_sympy_latex",
+           "ExprContainer", "EriOrbenergy", "import_from_sympy_latex",
            "evaluate_deltas", "wicks",
            "simplify", "simplify_unitary", "remove_tensor",
            "derivative",
