@@ -280,7 +280,9 @@ class ObjectContainer(Container):
                 if ext:
                     return int(ext)
             # all intermediates
-            itmd_cls = Intermediates().available.get(self.longname(True), None)
+            longname = self.longname(True)
+            assert longname is not None
+            itmd_cls = Intermediates().available.get(longname, None)
             if itmd_cls is not None:
                 return itmd_cls.order
         return 0
@@ -469,7 +471,9 @@ class ObjectContainer(Container):
             return ("a", "b")
         # the known allowed spin blocks of eri, t-amplitudes and deltas
         # may be used to generate the spin blocks of other intermediates
-        itmd = Intermediates().available.get(self.longname(True), None)
+        longname = self.longname(True)
+        assert longname is not None
+        itmd = Intermediates().available.get(longname, None)
         if itmd is None:
             logger.warning(
                 f"Could not determine valid spin blocks for {self}."
@@ -811,22 +815,23 @@ class ObjectContainer(Container):
                 ret = ExprContainer(ret, **assumptions)
             return ret
 
-        itmd = Intermediates().available.get(
-            self.longname(use_default_names=True), None
-        )
+        longname = self.longname(use_default_names=True)
+        assert longname is not None
+        itmd = Intermediates().available.get(longname, None)
         expanded = self.inner
         if itmd is not None:
             assert isinstance(itmd, RegisteredIntermediate)
             # Use a for loop to obtain different contracted itmd indices
             # for each x in: x * x * ...
             expanded = S.One
-            exponent = int(self.exponent)
-            for _ in range(abs(exponent)):
+            exponent = self.exponent
+            assert exponent.is_Integer
+            for _ in range(abs(int(exponent))):
                 expanded *= itmd.expand_itmd(
-                    indices=self.idx, return_sympy=True,
+                    indices=self.idx, wrap_result=False,
                     fully_expand=fully_expand
                 )
-            if exponent < 0:
+            if exponent < S.Zero:
                 expanded = Pow(expanded, -1)
         if wrap_result:
             assumptions = self.assumptions

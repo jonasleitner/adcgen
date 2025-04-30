@@ -54,8 +54,9 @@ class EriOrbenergy:
         #       But if we keep it like it is, we should have a more clear
         #       definition of the prefactor (only the sign might be ambiguous
         #       +0.5 vs -0.5)
-        self._pref: Expr = min(
-            [t.prefactor for t in splitted["num"].terms], key=abs
+        self._pref: Expr = min(  # type: ignore
+            [t.prefactor for t in splitted["num"].terms],
+            key=abs  # type: ignore
         )
 
         # only possiblity to extract 0 should be if the numerator is 0
@@ -331,7 +332,9 @@ class EriOrbenergy:
         num.expand()
         # this possibly introduced prefactors in the numerator again
         # -> extract the smallest prefactor and shift to self.pref
-        additional_pref = min([t.prefactor for t in num.terms], key=abs)
+        additional_pref = min(  # type: ignore
+            [t.prefactor for t in num.terms], key=abs  # type: ignore
+        )
         self._pref *= additional_pref
         if additional_pref is S.Zero:  # permuted num = 0
             if not num.inner.is_number:
@@ -470,7 +473,7 @@ class EriOrbenergy:
                 #    in the new numerator
                 # -> can only cancel each bracket at most 1 time
                 # -> no need to recurse just iterate through the list
-                min_pref = min(relevant_prefs, key=abs)
+                min_pref = min(relevant_prefs, key=abs)  # type: ignore
                 # the sign in the numerator has been fixed before entering this
                 # function -> dont change it!
                 if min_pref < 0:

@@ -296,7 +296,9 @@ def is_allowed_cvs_block(obj: ObjectContainer, cvs_block: str) -> bool:
         return True
 
     # check if the obj is a known intermediate
-    itmd = Intermediates().available.get(obj.longname(True), None)
+    longname = obj.longname(use_default_names=True)
+    assert longname is not None
+    itmd = Intermediates().available.get(longname, None)
     if itmd is None:
         # the object is no intermediate
         # assume that all blocks are valid in this case
