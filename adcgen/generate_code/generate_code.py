@@ -1,7 +1,11 @@
-from ..expr_container import Expr, Term
+from collections.abc import Sequence
+from collections import Counter
+
+from sympy import Expr, Symbol, Rational, Pow, Mul, S
+
+from ..expression import ExprContainer, TermContainer
 from ..indices import Index, Indices
 from ..logger import logger
-from ..misc import Inputerror
 from ..sort_expr import exploit_perm_sym
 from ..symmetry import Permutation
 from ..tensor_names import tensor_names
@@ -11,11 +15,8 @@ from .optimize_contractions import (
     optimize_contractions, unoptimized_contraction
 )
 
-from sympy import Symbol, Rational, Pow, Mul
-from collections import Counter
 
-
-def generate_code(expr: Expr, target_indices: str,
+def generate_code(expr: ExprContainer, target_indices: str,
                   target_spin: str | None = None,
                   bra_ket_sym: int = 0,
                   antisymmetric_result_tensor: bool = True,
@@ -29,7 +30,7 @@ def generate_code(expr: Expr, target_indices: str,
 
     Parameters
     ----------
-    expr: Expr
+    expr: ExprContainer
         The expression to generate contractions for.
     target_indices: str
         String of target indices. A ',' might be inserted to indicate where
@@ -64,9 +65,7 @@ def generate_code(expr: Expr, target_indices: str,
         contractions. If not provided, the sizes from "config.json" will be
         used.
     """
-    if not isinstance(expr, Expr):
-        raise Inputerror("The expression needs to be provided as 'Expr'.")
-
+    assert isinstance(expr, ExprContainer)
     # try to reduce the number of terms by exploiting permutational symmetry
     expr_with_perm_sym = exploit_perm_sym(
         expr=expr, target_indices=target_indices, target_spin=target_spin,
@@ -131,7 +130,7 @@ def generate_code(expr: Expr, target_indices: str,
             # contraction), because even if an inner contraction gives a
             # number, the contraction is still kept in the pool of objects,
             # i.e., contractions might contain objects without indices!
-            contraction_cache = {}
+            contraction_cache: dict[str, str] = {}
             for contr in inner:
                 contr_str = format_contraction(contr, contraction_cache,
                                                backend=backend)
@@ -151,7 +150,7 @@ def generate_code(expr: Expr, target_indices: str,
 
 
 def format_contraction(contraction: Contraction,
-                       contraction_cache: dict[int, str],
+                       contraction_cache: dict[str, str],
                        backend: str) -> str:
     """
     Builds a backend specific string for the given contraction.
@@ -228,7 +227,8 @@ def format_einsum_contraction(tensors: list[str], factors: list[str],
 
 
 def format_libtensor_contraction(tensors: list[str], factors: list[str],
-                                 target: str, contracted: tuple[Index]) -> str:
+                                 target: str, contracted: Sequence[Index]
+                                 ) -> str:
     """
     Builds a contraction string for the given contraction using libtensor
     C++ syntax.
@@ -256,7 +256,7 @@ def format_libtensor_contraction(tensors: list[str], factors: list[str],
     return " * ".join(components)
 
 
-def translate_adcc_names(name: str, indices: tuple[Index]) -> str:
+def translate_adcc_names(name: str, indices: Sequence[Index]) -> str:
     """Translates tensor names specifically for adcc."""
     if name.startswith(tensor_names.eri):
         space = "".join(s.space[0] for s in indices)
@@ -267,7 +267,7 @@ def translate_adcc_names(name: str, indices: tuple[Index]) -> str:
     return name
 
 
-def translate_libadc_names(name: str, indices: tuple[Index]) -> str:
+def translate_libadc_names(name: str, indices: Sequence[Index]) -> str:
     if name.startswith(tensor_names.eri):
         space = "".join(s.space[0] for s in indices)
         return f"i_{space}"
@@ -277,7 +277,8 @@ def translate_libadc_names(name: str, indices: tuple[Index]) -> str:
     return name
 
 
-def format_scaling_comment(term: Term, contractions: list[Contraction],
+def format_scaling_comment(term: TermContainer,
+                           contractions: list[Contraction],
                            backend: str) -> str:
     """
     Builds a backend specific comment describing the scaling of the
@@ -304,18 +305,18 @@ def format_scaling_comment(term: Term, contractions: list[Contraction],
     return f"{comment_token} {''.join(comp)} / {''.join(mem)}"
 
 
-def format_prefactor(term: Term, backend: str) -> str:
+def format_prefactor(term: TermContainer, backend: str) -> str:
     """Formats the prefactor for Python (einsum) or C++ (libtensor)."""
     # extract number and symbolic prefactor
     number_pref = term.prefactor
     symbol_pref = " * ".join(
-        [obj.name for obj in term.objects if isinstance(obj.base, Symbol)
-         for _ in range(obj.exponent)]
+        [obj.base.name for obj in term.objects if isinstance(obj.base, Symbol)
+         for _ in range(int(obj.exponent))]
     )
     # extract the sign
-    if number_pref < 0:
+    if number_pref < S.Zero:
         sign = "-"
-        number_pref *= -1
+        number_pref *= S.NegativeOne
     else:
         sign = "+"
     # format the number prefactor (depends on the backend)
@@ -333,7 +334,7 @@ def format_prefactor(term: Term, backend: str) -> str:
         return f"{sign} {number_pref}"
 
 
-def _format_python_prefactor(prefactor) -> str:
+def _format_python_prefactor(prefactor: Expr) -> str:
     """Formats a prefactor using Python syntax."""
 
     if prefactor == int(prefactor):  # natural number
@@ -354,7 +355,7 @@ def _format_python_prefactor(prefactor) -> str:
     )
 
 
-def _format_cpp_prefactor(prefactor) -> str:
+def _format_cpp_prefactor(prefactor: Expr) -> str:
     """Formats a prefactor using C++ syntax."""
 
     if prefactor == int(prefactor) or \
@@ -374,7 +375,8 @@ def _format_cpp_prefactor(prefactor) -> str:
     )
 
 
-def format_perm_symmetry(perm_symmetry: tuple[Permutation]):
+def format_perm_symmetry(
+        perm_symmetry: tuple[tuple[tuple[Permutation, ...], int], ...]) -> str:
     """Formats the permutational symmetry."""
     perm_sym = ["1"]
     for permutations, factor in perm_symmetry:

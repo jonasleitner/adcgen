@@ -1,11 +1,13 @@
-from ..expr_container import Term
-from ..indices import Index, Indices, sort_idx_canonical
-
+from collections.abc import Sequence
 from collections import Counter
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Any
 import itertools
 import json
+
+from ..expression import TermContainer
+from ..indices import Index, Indices, sort_idx_canonical
 
 
 _config_file = "config.json"
@@ -23,7 +25,7 @@ class Sizes:
     general: int = 0
 
     @staticmethod
-    def from_dict(input: dict[str, int]):
+    def from_dict(input: dict[str, int]) -> "Sizes":
         """
         Construct an instance from dictionary. The size of the "general" space
         is evaluated on the fly as sum of the sizes of the other spaces
@@ -34,7 +36,7 @@ class Sizes:
         return Sizes(**input)
 
     @staticmethod
-    def from_config():
+    def from_config() -> "Sizes":
         """
         Construct an instance using the values in the config file
         (by default: "config.json"). The size of the "general" space is
@@ -42,7 +44,7 @@ class Sizes:
         present in the config file.
         """
         config_file = Path(__file__).parent.resolve() / _config_file
-        sizes: dict[str, str] = (
+        sizes: dict[str, int] | None = (
             json.load(open(config_file, "r")).get("sizes", None)
         )
         if sizes is None:
@@ -74,16 +76,21 @@ class Contraction:
     # fallback sizes to estimate the costs of a contraction
     _sizes = Sizes.from_config()
 
-    def __init__(self, indices: tuple[tuple[Index]],
-                 names: tuple[str],
-                 term_target_indices: tuple[Index]) -> None:
-        self.indices: tuple[tuple[Index]] = indices
-        self.names: tuple[str] = names
-        self.contracted: tuple[Index] = None
-        self.target: tuple[Index] = None
-        self.scaling: Scaling = None
+    def __init__(self, indices: Sequence[tuple[Index, ...]],
+                 names: Sequence[str],
+                 term_target_indices: Sequence[Index]) -> None:
+        if not isinstance(indices, tuple):
+            indices = tuple(indices)
+        if not isinstance(names, tuple):
+            names = tuple(names)
+
+        self.indices: tuple[tuple[Index, ...], ...] = indices
+        self.names: tuple[str, ...] = names
+        self.contracted: tuple[Index, ...] = tuple()
+        self.target: tuple[Index, ...] = tuple()
+        self.scaling: Scaling
         self.id: int = next(self._instance_counter)
-        self.contraction_name = f"{self._base_name}_{self.id}"
+        self.contraction_name: str = f"{self._base_name}_{self.id}"
         self._determine_contracted_and_target(term_target_indices)
         self._determine_scaling()
 
@@ -97,7 +104,7 @@ class Contraction:
         return self.__str__()
 
     def _determine_contracted_and_target(self,
-                                         term_target_indices: tuple[Index]
+                                         term_target_indices: Sequence[Index]
                                          ) -> None:
         """
         Determines and sets the contracted and target indices on the
@@ -121,8 +128,8 @@ class Contraction:
         self.target = tuple(target)
 
     @staticmethod
-    def _split_contracted_and_target(indices: tuple[tuple[Index]],
-                                     term_target_indices: tuple[Index]
+    def _split_contracted_and_target(indices: Sequence[tuple[Index, ...]],
+                                     term_target_indices: Sequence[Index]
                                      ) -> tuple[list[Index], list[Index]]:
         """
         Splits the given indices in contracted and target indices using
@@ -130,8 +137,8 @@ class Contraction:
         part of.
         """
         idx_counter = Counter(itertools.chain.from_iterable(indices))
-        contracted = []
-        target = []
+        contracted: list[Index] = []
+        target: list[Index] = []
         for idx, count in idx_counter.items():
             if count == 1 or idx in term_target_indices:
                 target.append(idx)
@@ -175,7 +182,7 @@ class Contraction:
             sizes = self._sizes
         return self.scaling.evaluate_costs(sizes)
 
-    def __eq__(self, other: "Contraction"):
+    def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Contraction):
             return False
         return (self.indices == other.indices and
@@ -184,13 +191,13 @@ class Contraction:
                 self.target == other.target and self.scaling == other.scaling)
 
     @staticmethod
-    def is_contraction(name: str):
+    def is_contraction(name: str) -> bool:
         return name.startswith(Contraction._base_name)
 
 
-def term_memory_requirements(term: Term) -> "ScalingComponent":
+def term_memory_requirements(term: TermContainer) -> "ScalingComponent":
     """Determines the maximum memory requirements for the given term."""
-    mem_scaling = []
+    mem_scaling: list[ScalingComponent] = []
     for obj in term.objects:
         space = obj.space
         scaling = {"total": len(space)}

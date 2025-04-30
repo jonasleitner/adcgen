@@ -21,7 +21,7 @@ from .spatial_orbitals import allowed_spin_blocks
 from .tensor_names import tensor_names
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ItmdExpr:
     expr: Expr
     target: tuple[Index, ...]
