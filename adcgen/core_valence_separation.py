@@ -194,7 +194,7 @@ def allowed_cvs_blocks(
     ----------
     expr: Expr
         The expression in which the allowed cvs blocks should be determined.
-    target_idx: str
+    target_idx: Sequence[str] | Sequence[Index]
         The target indices of the expression.
     cvs_approximation : callable, optional
         Callable that takes an ObjectContainer instance and a space string

@@ -315,7 +315,7 @@ class RegisteredIntermediate:
 
         Parameters
         ----------
-        factored_itmds : tuple[str], optional
+        factored_itmds : Sequence[str], optional
             Names of other intermediates to factor in the fully expanded
             definition of the current intermediate which (if factorization is
             successful) changes the form of the intermediate.
@@ -432,7 +432,9 @@ class RegisteredIntermediate:
 
         # ensure that the previously factored intermediates
         # are provided as tuple -> can use them as dict key
-        if not isinstance(factored_itmds, tuple):
+        if isinstance(factored_itmds, str):
+            factored_itmds = (factored_itmds,)
+        elif not isinstance(factored_itmds, tuple):
             factored_itmds = tuple(factored_itmds)
 
         # can not factor if the expr is just a number or the intermediate

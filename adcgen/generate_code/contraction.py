@@ -81,7 +81,9 @@ class Contraction:
                  term_target_indices: Sequence[Index]) -> None:
         if not isinstance(indices, tuple):
             indices = tuple(indices)
-        if not isinstance(names, tuple):
+        if isinstance(names, str):
+            names = (names,)
+        elif not isinstance(names, tuple):
             names = tuple(names)
 
         self.indices: tuple[tuple[Index, ...], ...] = indices

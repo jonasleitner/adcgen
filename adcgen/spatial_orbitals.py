@@ -278,7 +278,7 @@ def allowed_spin_blocks(expr: ExprContainer,
     ----------
     expr : ExprContainer
         The expression to check.
-    target_idx : str
+    target_idx : Sequence[str]
         The target indices of the expression.
     """
 
