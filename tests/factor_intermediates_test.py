@@ -1,9 +1,10 @@
+from adcgen.expression import ExprContainer
 from adcgen.factor_intermediates import factor_intermediates
 from adcgen.func import import_from_sympy_latex
 from adcgen.intermediates import t2eri_2, p0_3_oo
 from adcgen.simplify import simplify
 
-from sympy import S
+from sympy import Add, S
 
 
 class TestFactorIntermediates:
@@ -26,7 +27,7 @@ class TestFactorIntermediates:
         test.set_target_idx([])
         res = factor_intermediates(test, types_or_names='t2_1')
         ref = t * remainder / 2
-        assert (res.sympy - ref.sympy) is S.Zero
+        assert Add(res.inner, -ref.inner) is S.Zero
 
         # factor it twice
         eri2 = import_from_sympy_latex(
@@ -43,7 +44,7 @@ class TestFactorIntermediates:
         test.set_target_idx('jk')
         res = factor_intermediates(test, types_or_names='t2_1')
         ref = t * t2 * 2 * remainder
-        assert (res.sympy - ref.sympy) is S.Zero
+        assert Add(res.inner, -ref.inner) is S.Zero
 
         # factor with exponent > 1
         test = eri * eri * eri2 / (denom * denom * denom2).expand() * \
@@ -51,7 +52,7 @@ class TestFactorIntermediates:
         test.set_target_idx('jk')
         res = factor_intermediates(test, types_or_names='t2_1')
         ref = t * t * t2 * remainder * 2
-        assert (res.sympy - ref.sympy) is S.Zero
+        assert Add(res.inner, -ref.inner) is S.Zero
 
     def test_long_intermediate_complete(self):
         # rather easy, but also fast example: eri * t2_2 amplitude
@@ -74,14 +75,14 @@ class TestFactorIntermediates:
         res2 = factor_intermediates(test, types_or_names=['t2_1', 't2_2'])
         res3 = factor_intermediates(test,
                                     types_or_names=['t2_1', 't1_2', 't2_2'])
-        assert simplify(res - res2).sympy is S.Zero
-        assert simplify(res - res3).sympy is S.Zero
+        assert simplify(res - res2).inner is S.Zero
+        assert simplify(res - res3).inner is S.Zero
 
         ref = "{V^{ab}_{ij}} {t2^{cd}_{kl}}"
         ref = import_from_sympy_latex(ref, convert_default_names=True)
         ref.make_real()
         ref.set_target_idx('ijklabcd')
-        assert simplify(res - ref).sympy is S.Zero
+        assert simplify(res - ref).inner is S.Zero
 
         # - occupied indices intersect -> t2_2 consists of 4 terms
         test = (
@@ -100,7 +101,7 @@ class TestFactorIntermediates:
         ref.set_target_idx('abcd')
 
         res = factor_intermediates(test, types_or_names='t2_2')
-        assert simplify(res - ref).sympy is S.Zero
+        assert simplify(res - ref).inner is S.Zero
 
         # - occ and virt intersect -> t2_2 consists of 3 terms
         test = (
@@ -118,7 +119,7 @@ class TestFactorIntermediates:
         ref.set_target_idx([])
 
         res = factor_intermediates(test, types_or_names='t2_2')
-        assert simplify(res - ref).sympy is S.Zero
+        assert simplify(res - ref).inner is S.Zero
 
     def test_long_intermediate_mixed_prefs(self):
         # test expression to factor the re_t2_1_residual
@@ -143,38 +144,52 @@ class TestFactorIntermediates:
         ref = import_from_sympy_latex(ref, convert_default_names=True)
         ref.make_real()
 
-        assert (res.sympy - ref.sympy) is S.Zero
+        assert Add(res.inner, -ref.inner) is S.Zero
 
     def test_repeated_indices(self):
         # Short intermediate
         pi2 = t2eri_2()
         # check that factorization works at all
-        test = pi2.expand_itmd("ijka", fully_expand=False).make_real()
+        test = pi2.expand_itmd("ijka", fully_expand=False)
+        assert isinstance(test, ExprContainer)
+        test.make_real()
         res = factor_intermediates(test, ["t2_1", "t2eri_2"])
-        assert res.sympy - pi2.tensor(indices="ijka").sympy is S.Zero
+        ref = pi2.tensor(indices="ijka")
+        assert isinstance(ref, ExprContainer)
+        assert Add(res.inner, -ref.inner) is S.Zero
         # allow repeated indices
-        test = pi2.expand_itmd("ijia", fully_expand=False).make_real()
+        test = pi2.expand_itmd("ijia", fully_expand=False)
+        assert isinstance(test, ExprContainer)
+        test.make_real()
         res = factor_intermediates(test, ["t2_1", "t2eri_2"],
                                    allow_repeated_itmd_indices=True)
-        assert res.sympy - pi2.tensor(indices="ijia").sympy is S.Zero
+        ref = pi2.tensor(indices="ijia")
+        assert isinstance(ref, ExprContainer)
+        assert Add(res.inner, -ref.inner) is S.Zero
         # don't allow repeated indices
         res = factor_intermediates(test, ["t2_1", "t2eri_2"],
                                    allow_repeated_itmd_indices=False)
-        assert simplify(res - test).sympy is S.Zero
+        assert simplify(res - test).inner is S.Zero
         # Long intermediate
         # not working, because the number of terms of e.g., p0_3_oo is reduced
         # from 2 to 1.
         p0_oo = p0_3_oo()
         # check that factorization works at all
-        test = p0_oo.expand_itmd("ij", fully_expand=False).make_real()
+        test = p0_oo.expand_itmd("ij", fully_expand=False)
+        assert isinstance(test, ExprContainer)
+        test.make_real()
         res = factor_intermediates(test, ["t2_1", "t2_2", "p0_3_oo"])
-        assert res.sympy - p0_oo.tensor(indices="ij").sympy is S.Zero
+        ref = p0_oo.tensor(indices="ij")
+        assert isinstance(ref, ExprContainer)
+        assert Add(res.inner, -ref.inner) is S.Zero
         # allow repeated indices -> does not work anyway
-        test = p0_oo.expand_itmd("ii", fully_expand=False).make_real()
+        test = p0_oo.expand_itmd("ii", fully_expand=False)
+        assert isinstance(test, ExprContainer)
+        test.make_real()
         res = factor_intermediates(test, ["t2_1", "t2_2", "p0_3_oo"],
                                    allow_repeated_itmd_indices=True)
         # don't allow repeated indices
-        assert simplify(res - test).sympy is S.Zero
+        assert simplify(res - test).inner is S.Zero
         res = factor_intermediates(test, ["t2_1", "t2_2", "p0_3_oo"],
                                    allow_repeated_itmd_indices=False)
-        assert simplify(res - test).sympy is S.Zero
+        assert simplify(res - test).inner is S.Zero

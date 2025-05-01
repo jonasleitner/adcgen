@@ -285,9 +285,10 @@ def import_from_sympy_latex(expr_string: str,
     return ExprContainer(sympy_expr)
 
 
-def evaluate_deltas(expr: Expr,
-                    target_idx: Sequence[str] | Sequence[Index] | None = None
-                    ) -> Expr:
+def evaluate_deltas(
+        expr: Expr,
+        target_idx: Sequence[str] | Index | Sequence[Index] | None = None
+        ) -> Expr:
     """
     Evaluates the KroneckerDeltas in an expression.
     The function only removes contracted indices from the expression and
@@ -448,21 +449,18 @@ def _contract_operator_string(op_string: list[FermionicOperator]) -> Expr:
     if not _has_fully_contracted_contribution(op_string):
         return S.Zero
 
-    result: list[Expr] = []
+    result = []
     for i in range(1, len(op_string)):
         c = _contraction(op_string[0], op_string[i])
         if c is S.Zero:
             continue
         if not i % 2:  # introduce -1 for swapping operators
             c *= S.NegativeOne
-        assert isinstance(c, Expr)
 
         if len(op_string) - 2 > 0:  # at least one operator left
             # remove the contracted operators from the string and recurse
             remaining = op_string[1:i] + op_string[i+1:]
-            result.append(Mul(
-                c, _contract_operator_string(remaining)
-            ))
+            result.append(Mul(c, _contract_operator_string(remaining)))
         else:  # no operators left
             result.append(c)
     return Add(*result)

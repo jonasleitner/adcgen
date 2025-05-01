@@ -1,4 +1,4 @@
-from adcgen.expr_container import Expr
+from adcgen.expression import ExprContainer
 from adcgen.simplify import simplify
 
 from sympy import S
@@ -23,19 +23,19 @@ class TestIntermediateStates:
         ref = reference[space][order]
 
         # build precursor state with mp ground state
-        ket = Expr(isr_mp.precursor(order, space, 'ket', indices))
-        bra = Expr(isr_mp.precursor(order, space, 'bra', indices))
+        ket = ExprContainer(isr_mp.precursor(order, space, 'ket', indices))
+        bra = ExprContainer(isr_mp.precursor(order, space, 'bra', indices))
 
         # build precursor states with re ground state
-        ket_re = Expr(isr_re.precursor(order, space, 'ket', indices))
-        bra_re = Expr(isr_re.precursor(order, space, 'bra', indices))
+        ket_re = ExprContainer(isr_re.precursor(order, space, 'ket', indices))
+        bra_re = ExprContainer(isr_re.precursor(order, space, 'bra', indices))
         # ensure that the ground state does not influence the
         # precursor states (and therefore also not the IS)
-        assert (ket - ket_re).substitute_contracted().sympy is S.Zero
-        assert (bra - bra_re).substitute_contracted().sympy is S.Zero
+        assert (ket - ket_re).substitute_contracted().inner is S.Zero
+        assert (bra - bra_re).substitute_contracted().inner is S.Zero
 
-        assert (ket - ref['ket']).substitute_contracted().sympy is S.Zero
-        assert (bra - ref['bra']).substitute_contracted().sympy is S.Zero
+        assert (ket - ref['ket']).substitute_contracted().inner is S.Zero
+        assert (bra - ref['bra']).substitute_contracted().inner is S.Zero
 
     @pytest.mark.parametrize('variant,block,indices',
                              [("pp", "ph,ph", "ia,jb")])
@@ -52,4 +52,4 @@ class TestIntermediateStates:
 
         # build the overlap and compare to the stored reference
         overlap = isr.overlap_precursor(order, block, indices)
-        assert simplify(overlap - ref).sympy is S.Zero
+        assert simplify(overlap - ref).inner is S.Zero

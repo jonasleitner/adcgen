@@ -1,5 +1,5 @@
 from adcgen.core_valence_separation import apply_cvs_approximation
-from adcgen.expr_container import Expr
+from adcgen.expression import ExprContainer
 from adcgen.factor_intermediates import factor_intermediates
 from adcgen.groundstate import GroundState
 from adcgen.intermediate_states import IntermediateStates
@@ -59,16 +59,16 @@ class Generator:
             results[variant] = {}
             op = self.op[variant]
             results[variant]['h0'] = str(
-                Expr(op.h0[0]).substitute_contracted()
+                ExprContainer(op.h0[0]).substitute_contracted()
             )
             results[variant]['h1'] = str(
-                Expr(op.h1[0]).substitute_contracted()
+                ExprContainer(op.h1[0]).substitute_contracted()
             )
         # general operators
         for n_create in range(1, 4):
             for n_annihilate in range(1, 4):
                 op = self.op["mp"]
-                res = Expr(op.operator(n_create, n_annihilate)[0])
+                res = ExprContainer(op.operator(n_create, n_annihilate)[0])
                 res.substitute_contracted()
                 results[f"{n_create}_{n_annihilate}"] = str(res)
         # excitation operators
@@ -81,11 +81,11 @@ class Generator:
             res = self.op["mp"].excitation_operator(creation=creation,
                                                     annihilation=annihilation,
                                                     reverse_annihilation=True)
-            results["excitation"][key][True] = str(Expr(res))
+            results["excitation"][key][True] = str(ExprContainer(res))
             res = self.op["mp"].excitation_operator(creation=creation,
                                                     annihilation=annihilation,
                                                     reverse_annihilation=False)
-            results["excitation"][key][False] = str(Expr(res))
+            results["excitation"][key][False] = str(ExprContainer(res))
         write_json(results, outfile)
 
     def gen_gs_energy(self):
@@ -97,7 +97,7 @@ class Generator:
             gs = self.gs[variant]
             for order in [0, 1, 2]:
                 results[variant][order] = str(
-                    Expr(gs.energy(order)).substitute_contracted()
+                    ExprContainer(gs.energy(order)).substitute_contracted()
                 )
         write_json(results, outfile)
 
@@ -113,17 +113,17 @@ class Generator:
                     # first order with singles
                     mp = self.gs['mp_with_singles']
                     results[order][braket]['with_singles'] = str(
-                        Expr(mp.psi(order, braket)).substitute_contracted()
+                        ExprContainer(mp.psi(order, braket)).substitute_contracted()  # noqa E501
                     )
                     # first order without singles
                     mp = self.gs['mp']
                     results[order][braket]['no_singles'] = str(
-                        Expr(mp.psi(order, braket)).substitute_contracted()
+                        ExprContainer(mp.psi(order, braket)).substitute_contracted()  # noqa E501
                     )
                 else:
                     mp = self.gs['mp']
                     results[order][braket] = str(
-                        Expr(mp.psi(order, braket)).substitute_contracted()
+                        ExprContainer(mp.psi(order, braket)).substitute_contracted()  # noqa E501
                     )
         write_json(results, outfile)
 
@@ -141,7 +141,7 @@ class Generator:
                     dump: dict = results[variant][n_particles][order]
 
                     # complex non symmetric expec value
-                    res = Expr(gs.expectation_value(
+                    res = ExprContainer(gs.expectation_value(
                         order=order, n_particles=n_particles
                     ))
                     res.substitute_contracted()
@@ -149,7 +149,7 @@ class Generator:
                     dump["expectation_value"] = str(res)
                     # dump the real symmetric expec value
                     res.make_real()
-                    res.set_sym_tensors([tensor_names.operator])
+                    res.sym_tensors = [tensor_names.operator]
                     res = simplify(res)
                     dump["real_symmetric_expectation_value"] = str(res)
                     # dump the real symmetric density matrix
@@ -187,7 +187,9 @@ class Generator:
                         continue
                     ampl = self.gs[variant].amplitude(order, sp, idx)
                     # no einstein sum convention -> need to set target idx!
-                    ampl = Expr(ampl, target_idx=idx).substitute_contracted()
+                    ampl = ExprContainer(
+                        ampl, target_idx=idx
+                    ).substitute_contracted()
                     if variant == 'mp':
                         ampl = simplify_mp(ampl)
                     else:
@@ -209,8 +211,8 @@ class Generator:
                 results[variant][sp] = {}
                 for o in orders:
                     results[variant][sp][o] = {}
-                    bra = Expr(isr.precursor(o, sp, 'bra', indices))
-                    ket = Expr(isr.precursor(o, sp, 'ket', indices))
+                    bra = ExprContainer(isr.precursor(o, sp, 'bra', indices))
+                    ket = ExprContainer(isr.precursor(o, sp, 'ket', indices))
                     results[variant][sp][o]['bra'] = str(bra)
                     results[variant][sp][o]['ket'] = str(ket)
         write_json(results, outfile)
@@ -227,7 +229,7 @@ class Generator:
             for (b, indices), orders in blocks.items():
                 results[variant][b] = {}
                 for o in orders:
-                    res = Expr(isr.overlap_precursor(o, b, indices))
+                    res = ExprContainer(isr.overlap_precursor(o, b, indices))
                     results[variant][b][o] = str(res)
         write_json(results, outfile)
 
@@ -245,7 +247,7 @@ class Generator:
                     results[adc_variant][block][order] = {}
                     dump = results[adc_variant][block][order]
                     # dump the complex result
-                    res = Expr(sec_mat.isr_matrix_block(
+                    res = ExprContainer(sec_mat.isr_matrix_block(
                         order, block=block, indices=indices, subtract_gs=True
                     ))
                     res.substitute_contracted()
@@ -292,7 +294,7 @@ class Generator:
                     results[adc_variant][n_particles][adc_order] = {}
                     dump = results[adc_variant][n_particles][adc_order]
                     # dump the complex non symmetric result
-                    res = Expr(prop.expectation_value(
+                    res = ExprContainer(prop.expectation_value(
                         adc_order=adc_order, n_particles=n_particles
                     ))
                     res.substitute_contracted()
@@ -301,7 +303,7 @@ class Generator:
                     # dump the real result for a symmetric operator
                     # for a single state
                     res.make_real()
-                    res.set_sym_tensors([tensor_names.operator])
+                    res.sym_tensors = [tensor_names.operator]
                     res.rename_tensor(tensor_names.left_adc_amplitude,
                                       tensor_names.right_adc_amplitude)
                     res = simplify(res)
@@ -334,7 +336,7 @@ class Generator:
                     results[adc_variant][op_key][adc_order] = {}
                     dump = results[adc_variant][op_key][adc_order]
                     # dump the complex non symmetric result
-                    res = Expr(prop.trans_moment(
+                    res = ExprContainer(prop.trans_moment(
                         adc_order=adc_order, n_create=n_create,
                         n_annihilate=n_annihilate
                     ))

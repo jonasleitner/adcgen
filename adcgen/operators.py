@@ -120,7 +120,7 @@ class Operators:
         if annihilation is not None:
             symbols = get_symbols(annihilation)
             if reverse_annihilation:
-                symbols.reverse()
+                symbols = reversed(symbols)
             res.extend(F(s) for s in symbols)
         expr = Mul(*res)
         assert isinstance(expr, Expr)

@@ -577,7 +577,7 @@ class t2_1(RegisteredIntermediate):
             term = EriOrbenergy(term)  # split the term
 
             if term.denom.inner.is_number:  # term needs to have a denominator
-                factored += term.expr
+                factored += term.expr.inner
                 continue
             term = term.canonicalize_sign()  # fix the sign of the denominator
 

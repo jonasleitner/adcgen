@@ -13,7 +13,7 @@ class TestOperators:
 
         h, rules = cls_instances[variant]['op'].h0
         # need to substitute the contracted indices in the operators
-        assert (ref - h).substitute_contracted().sympy is S.Zero
+        assert (ref - h).substitute_contracted().inner is S.Zero
 
         if variant == 'mp':
             assert rules is None
@@ -31,7 +31,7 @@ class TestOperators:
 
         h, rules = cls_instances[variant]['op'].h1
         # need to substitute the contracted indices in the operators
-        assert (ref - h).substitute_contracted().sympy is S.Zero
+        assert (ref - h).substitute_contracted().inner is S.Zero
 
         if variant == 'mp':
             assert rules is None
@@ -56,7 +56,7 @@ class TestOperators:
             n_create=n_create, n_annihilate=n_annihilate
         )
         # need to substitute the contracted indices
-        assert (ref - op).substitute_contracted().sympy is S.Zero
+        assert (ref - op).substitute_contracted().inner is S.Zero
 
         assert rules is None
 
@@ -72,9 +72,9 @@ class TestOperators:
             creation=creation, annihilation=annihilation,
             reverse_annihilation=True
         )
-        assert op - ref["true"].sympy is S.Zero
+        assert op - ref["true"].inner is S.Zero
         op = cls_instances[variant]["op"].excitation_operator(
             creation=creation, annihilation=annihilation,
             reverse_annihilation=False
         )
-        assert op - ref["false"].sympy is S.Zero
+        assert op - ref["false"].inner is S.Zero

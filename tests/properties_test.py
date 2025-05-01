@@ -1,5 +1,6 @@
 from adcgen import (
-    Expr, simplify, remove_tensor, factor_intermediates, tensor_names
+    ExprContainer, simplify, remove_tensor, factor_intermediates,
+    tensor_names
 )
 
 from sympy import S
@@ -21,9 +22,9 @@ class TestProperties():
 
         # compute the complex non-symmetric s2s expec value
         res = prop.expectation_value(adc_order=adc_order, n_particles=1)
-        res = Expr(res).substitute_contracted()
+        res = ExprContainer(res).substitute_contracted()
         ref_expec = ref["expectation_value"]
-        assert simplify(res - ref_expec).sympy is S.Zero
+        assert simplify(res - ref_expec).inner is S.Zero
 
         # build the result by only computing contributions of a specific order
         res_by_order = 0
@@ -31,16 +32,16 @@ class TestProperties():
             res_by_order += prop.expectation_value(
                 adc_order=adc_order, n_particles=1, order=order
             )
-        assert simplify(res - res_by_order).sympy is S.Zero
+        assert simplify(res - res_by_order).inner is S.Zero
 
         # real state expectation value for a symmetric operator matrix
         res.make_real()
-        res.set_sym_tensors([tensor_names.operator])
+        res.sym_tensors = [tensor_names.operator]
         res.rename_tensor(tensor_names.left_adc_amplitude,
                           tensor_names.right_adc_amplitude)
         res = simplify(res)
         ref_expec = ref["real_symmetric_state_expectation_value"]
-        assert simplify(res - ref_expec.sympy).sympy is S.Zero
+        assert simplify(res - ref_expec.inner).inner is S.Zero
 
         ref = ref["real_symmetric_state_dm"]
         # extract the state density matrix and factor intermediates
@@ -53,7 +54,7 @@ class TestProperties():
             assert block in ref
 
             ref_block = ref[block]
-            assert simplify(block_expr - ref_block.sympy).sympy is S.Zero
+            assert simplify(block_expr - ref_block.inner).inner is S.Zero
 
     @pytest.mark.parametrize('n_create,n_annihilate', [(1, 1)])
     @pytest.mark.parametrize('adc_order', [0, 1, 2])
@@ -69,9 +70,9 @@ class TestProperties():
         res = prop.trans_moment(
             adc_order=adc_order, n_create=n_create, n_annihilate=n_annihilate
         )
-        res = Expr(res).substitute_contracted()
+        res = ExprContainer(res).substitute_contracted()
         ref_expec = ref["expectation_value"]
-        assert simplify(res - ref_expec).sympy is S.Zero
+        assert simplify(res - ref_expec).inner is S.Zero
 
         # build the result by only computing contributions of a specific order
         res_by_order = 0
@@ -80,13 +81,13 @@ class TestProperties():
                 adc_order=adc_order, n_create=n_create,
                 n_annihilate=n_annihilate, order=order
             )
-        assert simplify(res - res_by_order).sympy is S.Zero
+        assert simplify(res - res_by_order).inner is S.Zero
 
         # real expectation value (non-symmetric oeprator)
         res.make_real()
         res = simplify(res)
         ref_expec = ref["real_expectation_value"]
-        assert simplify(res - ref_expec.sympy).sympy is S.Zero
+        assert simplify(res - ref_expec.inner).inner is S.Zero
 
         ref = ref["real_transition_dm"]
         # extract the transition dm and factor intermediates
@@ -99,4 +100,4 @@ class TestProperties():
             assert block in ref
 
             ref_tdm = ref[block]
-            assert simplify(block_expr - ref_tdm.sympy).sympy is S.Zero
+            assert simplify(block_expr - ref_tdm.inner).inner is S.Zero

@@ -408,7 +408,7 @@ def _factor_long_intermediate(expr: ExprContainer,
     for term_i, term in enumerate(terms):
         if term_i not in factored_terms:
             factored_terms.add(term_i)
-            result += term
+            result += term.inner
     assert len(factored_terms) == len(terms)
 
     # if we factored the itmd successfully it might be necessary to adjust
@@ -478,18 +478,18 @@ def _factor_short_intermediate(expr: ExprContainer, itmd: EriOrbenergy,
         obj_descr = data.eri_obj_descriptions
         if any(obj_descr[descr] < n for descr, n in
                itmd_data.eri_obj_descriptions.items()):
-            factored += term.expr
+            factored += term.expr.inner
             continue
         # - check if brackets of the correct length occur in the denominator
         if itmd_data.denom_bracket_lengths is not None:  # itmd has a denom
             bracket_lengths = data.denom_bracket_lengths
             if bracket_lengths is None:  # term has no denom
-                factored += term.expr
+                factored += term.expr.inner
                 continue
             else:  # term also has a denom
                 if any(bracket_lengths[length] < n for length, n in
                        itmd_data.denom_bracket_lengths.items()):
-                    factored += term.expr
+                    factored += term.expr.inner
                     continue
         # ok, the term seems to be a possible match -> try to factor
 
@@ -497,7 +497,7 @@ def _factor_short_intermediate(expr: ExprContainer, itmd: EriOrbenergy,
         variants = _compare_terms(term, itmd, data, itmd_data)
 
         if variants is None:
-            factored += term.expr
+            factored += term.expr.inner
             continue
 
         # filter out variants, where repeated indices appear on the
@@ -510,7 +510,7 @@ def _factor_short_intermediate(expr: ExprContainer, itmd: EriOrbenergy,
                                for s in itmd_default_symbols).values())
             ]
             if not variants:
-                factored += term.expr
+                factored += term.expr.inner
                 continue
 
         # choose the variant with the lowest overlap to other variants
@@ -607,7 +607,7 @@ def _factor_short_intermediate(expr: ExprContainer, itmd: EriOrbenergy,
         factored_sucessfully = True
         logger.info(f"\nFactoring {itmd_cls.name} in:\n{term}\n"
                     f"result:\n{EriOrbenergy(factored_term)}")
-        factored += factored_term
+        factored += factored_term.inner
     # if we factored the itmd sucessfully it might be necessary to add
     # the itmd tensor to the sym or antisym tensors
     if factored_sucessfully:
@@ -674,7 +674,7 @@ def _factor_complete(result: ExprContainer,
                     rem, pref, itmd_cls, itmd_indices
                 )
                 logger.info(f"result:\n{EriOrbenergy(new_term)}")
-                result += new_term
+                result += new_term.inner
 
                 # remove the used terms from the pool of available terms
                 # and add the terms to the already factored terms
@@ -757,7 +757,7 @@ def _factor_mixed_prefactors(result: ExprContainer,
                     extension_pref = Add(term.pref, -desired_pref)
                     term = extension_pref * term.num * term.eri / term.denom
                     logger.info(EriOrbenergy(term))
-                    result += term
+                    result += term.inner
 
                 logger.info(f"\nFactoring {itmd_cls.name} with mixed "
                             "prefactors in:")
@@ -768,7 +768,7 @@ def _factor_mixed_prefactors(result: ExprContainer,
                     rem, most_common_pref, itmd_cls, itmd_indices
                 )
                 logger.info(f"result:\n{EriOrbenergy(new_term)}")
-                result += new_term
+                result += new_term.inner
 
                 # remove the used terms from the pool of available terms
                 # and add the terms to the already factored terms

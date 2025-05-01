@@ -3,7 +3,10 @@ from typing import Any
 
 from sympy import Add, Basic, Expr, Mul, Pow, S, Symbol, factor, nsimplify
 
-from ..indices import Index, get_symbols, sort_idx_canonical
+from ..indices import (
+    Index, get_symbols, sort_idx_canonical,
+    _is_str_sequence, _is_index_sequence
+)
 from ..tensor_names import tensor_names
 from .container import Container
 from .term_container import TermContainer
@@ -38,7 +41,18 @@ class ExprContainer(Container):
                  real: bool = False,
                  sym_tensors: Iterable[str] = tuple(),
                  antisym_tensors: Iterable[str] = tuple(),
-                 target_idx: Iterable[Index] | None = None) -> None:
+                 target_idx: Iterable[Index] | Iterable[str] | None = None
+                 ) -> None:
+        # import target index strings
+        if target_idx is not None:
+            if isinstance(target_idx, str) or isinstance(target_idx, Sequence):
+                target_idx = get_symbols(target_idx)
+            else:
+                target_tpl = tuple(target_idx)
+                assert (_is_str_sequence(target_tpl) or
+                        _is_index_sequence(target_tpl))
+                target_idx = get_symbols(target_tpl)
+                del target_tpl
         # set the class attributes and import the inner expression
         super().__init__(
             inner=inner, real=real, sym_tensors=sym_tensors,
@@ -65,7 +79,7 @@ class ExprContainer(Container):
                 )))
             self._apply_tensor_braket_sym()
         if self._real:
-            self.make_real()
+            self.make_real(force=True)
 
     def __len__(self) -> int:
         # ExprContainer(0) also has length 1!
@@ -132,8 +146,12 @@ class ExprContainer(Container):
         a tensor d^{p}_{q} it is not knwon whether it's original state was
         d^{q}_{p} or d^{p}_{q}.
         """
-        assert all(isinstance(t, str) for t in tensors)
-        tensors = set(tensors)
+        if isinstance(tensors, str):
+            tensors = {tensors, }
+        else:
+            assert all(isinstance(t, str) for t in tensors)
+            tensors = set(tensors)
+
         if self.real:
             tensors.update([tensor_names.fock, tensor_names.eri])
         tensors = tuple(sorted(tensors))
@@ -141,7 +159,7 @@ class ExprContainer(Container):
             self._sym_tensors = tensors
             self._apply_tensor_braket_sym()
 
-    @Container.sym_tensors.setter
+    @Container.antisym_tensors.setter
     def antisym_tensors(self, tensors: Iterable[str]) -> None:
         """
         Add bra-ket-antisymmetry to tensors according to their name.
@@ -151,8 +169,12 @@ class ExprContainer(Container):
         added to a tensor d^{p}_{q} it is not knwon whether it's original
         state was d^{q}_{p} or d^{p}_{q}.
         """
-        assert all(isinstance(t, str) for t in tensors)
-        tensors = tuple(sorted(set(tensors)))
+        if isinstance(tensors, str):
+            tensors = (tensors,)
+        else:
+            assert all(isinstance(t, str) for t in tensors)
+            tensors = tuple(sorted(set(tensors)))
+
         if tensors != self._antisym_tensors:
             self._antisym_tensors = tensors
             self._apply_tensor_braket_sym()
@@ -299,6 +321,7 @@ class ExprContainer(Container):
         Tries to substitute all contracted indices with pretty indices, i.e.
         i, j, k instad of i3, n4, o42 etc.
         """
+        self.expand()
         res = Add(*(
             term.substitute_contracted(wrap_result=False)
             for term in self.terms
@@ -311,6 +334,7 @@ class ExprContainer(Container):
         """
         Subsitutes all contracted indices with new, unused generic indices.
         """
+        self.expand()
         res = Add(*(
             term.substitute_with_generic(wrap_result=False)
             for term in self.terms

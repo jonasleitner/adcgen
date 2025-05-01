@@ -51,10 +51,16 @@ class Container:
         self._inner: Expr = inner
         # set the assumptions
         self._real: bool = real
-        if not isinstance(sym_tensors, tuple):
+
+        if isinstance(sym_tensors, str):
+            sym_tensors = (sym_tensors,)
+        elif not isinstance(sym_tensors, tuple):
             sym_tensors = tuple(sym_tensors)
         self._sym_tensors: tuple[str, ...] = sym_tensors
-        if not isinstance(antisym_tensors, tuple):
+
+        if isinstance(antisym_tensors, str):
+            antisym_tensors = (antisym_tensors,)
+        elif not isinstance(antisym_tensors, tuple):
             antisym_tensors = tuple(antisym_tensors)
         self._antisym_tensors: tuple[str, ...] = antisym_tensors
         if target_idx is not None and not isinstance(target_idx, tuple):

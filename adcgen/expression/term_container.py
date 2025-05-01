@@ -97,7 +97,10 @@ class TermContainer(Container):
     ###############################################
     @cached_property
     def order(self) -> int:
-        return sum(obj.order for obj in self.objects)
+        return sum(
+            obj.order for obj in self.objects
+            if not isinstance(obj, PolynomContainer)
+        )
 
     @cached_property
     def prefactor(self) -> Expr:
@@ -149,6 +152,8 @@ class TermContainer(Container):
     def _idx_counter(self) -> tuple[tuple[Index, int], ...]:
         idx: dict[Index, int] = {}
         for o in self.objects:
+            if o.inner.is_number:
+                continue
             n = abs(o.exponent)  # abs value for denominators
             assert n.is_Integer
             n = int(n)
@@ -439,6 +444,8 @@ class TermContainer(Container):
             In both cases fock matrix elements will be replaced by orbital
             energie elements, e.g., f_ij will be replaced by e_i.
         """
+        from .expr_container import ExprContainer
+
         if target is None:
             target = self.target
 

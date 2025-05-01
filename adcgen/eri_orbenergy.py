@@ -426,7 +426,6 @@ class EriOrbenergy:
                     assert exponent.is_Integer
                     if int(exponent) % 2:
                         self._pref *= S.NegativeOne
-                        assert isinstance(self._pref, Expr)
                     bracket = ExprContainer(
                         Pow(S.NegativeOne*base, exponent),
                         **bracket.assumptions

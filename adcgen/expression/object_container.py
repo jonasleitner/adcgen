@@ -454,7 +454,7 @@ class ObjectContainer(Container):
             # in upper and lower
             elif is_t_amplitude(name):
                 idx = obj.idx
-                assert len(idx) % 2
+                assert not len(idx) % 2
                 n = len(idx)//2
                 return tuple(sorted([
                     "".join(block) for block in

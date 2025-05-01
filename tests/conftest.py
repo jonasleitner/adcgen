@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 import pathlib
 import json
@@ -6,7 +7,7 @@ from adcgen.func import import_from_sympy_latex
 
 
 @pytest.fixture(scope='session')
-def cls_instances():
+def cls_instances() -> dict[str, dict[str, Any]]:
     from adcgen.groundstate import Operators, GroundState
     from adcgen.intermediate_states import IntermediateStates
     from adcgen.secular_matrix import SecularMatrix

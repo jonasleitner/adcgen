@@ -1,4 +1,4 @@
-from adcgen.expr_container import Expr
+from adcgen.expression import ExprContainer
 from adcgen.simplify import simplify
 import adcgen.sort_expr as sort
 from adcgen.reduce_expr import reduce_expr
@@ -21,14 +21,14 @@ class TestSecularMatrix():
 
         # compute the raw matrix block
         m = cls_instances['mp']['m'].isr_matrix_block(order, block, indices)
-        m = Expr(m)
+        m = ExprContainer(m)
         ref_m = ref["complex"]
-        assert simplify(m - ref_m).sympy is S.Zero
+        assert simplify(m - ref_m).inner is S.Zero
 
         # assume a real orbital basis
-        m = Expr(m.sympy, real=True).substitute_contracted()
+        m = ExprContainer(m.inner, real=True).substitute_contracted()
         ref_m = ref['real'].make_real()
-        assert simplify(m - ref_m).sympy is S.Zero
+        assert simplify(m - ref_m).inner is S.Zero
 
         # expand itmds, cancel orbital energy fractions
         # and collect matching terms
@@ -36,19 +36,21 @@ class TestSecularMatrix():
         # check that we cancelled all orbital energy numerators
         for term in m.terms:
             term = EriOrbenergy(term)
-            assert term.num.sympy in [S.One, S.Zero]
+            assert term.num.inner in [S.One, S.Zero]
         # factor intermediates
         m = factor_intermediates(m, max_order=order-1)
         # check that we removed all denominators
         for term in m.terms:
             term = EriOrbenergy(term)
-            assert term.denom.sympy is S.One
+            assert term.denom.inner is S.One
         # split according to the delta space and compare to reference data
         for delta_sp, sub_expr in sort.by_delta_types(m).items():
             # compare to reference
             ref_sub_expr = ref["real_factored"]["-".join(delta_sp)]
-            ref_sub_expr = Expr(ref_sub_expr.sympy, **sub_expr.assumptions)
-            assert simplify(sub_expr - ref_sub_expr).sympy is S.Zero
+            ref_sub_expr = ExprContainer(
+                ref_sub_expr.inner, **sub_expr.assumptions
+            )
+            assert simplify(sub_expr - ref_sub_expr).inner is S.Zero
             # exploit permutational symmetry and test that the result is
             # still identical
             # if we dont have a diagonal block we need to set
@@ -58,11 +60,11 @@ class TestSecularMatrix():
             exploited_perm_sym = sort.exploit_perm_sym(
                 sub_expr, target_indices=indices, bra_ket_sym=bra_ket_sym
             )
-            re_expanded_block = Expr(0, **sub_expr.assumptions)
+            re_expanded_block = ExprContainer(0, **sub_expr.assumptions)
             for perm_sym, sub_sub_expr in exploited_perm_sym.items():
                 # ensure that we can reexpand to the original expr
                 re_expanded_block += sub_sub_expr.copy()
                 for perms, factor in perm_sym:
                     re_expanded_block += \
                         sub_sub_expr.copy().permute(*perms) * factor
-            assert simplify(re_expanded_block - sub_expr).sympy is S.Zero
+            assert simplify(re_expanded_block - sub_expr).inner is S.Zero
