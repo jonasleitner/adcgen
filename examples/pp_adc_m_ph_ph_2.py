@@ -1,6 +1,6 @@
 from adcgen import (
-    Operators, GroundState, IntermediateStates, SecularMatrix, Expr, simplify,
-    sort, reduce_expr, factor_intermediates, generate_code
+    Operators, GroundState, IntermediateStates, SecularMatrix, ExprContainer,
+    simplify, sort, reduce_expr, factor_intermediates, generate_code
 )
 
 # Initialize the class hierarchy to to generate the secular matrix
@@ -16,7 +16,7 @@ matrix = m.isr_matrix_block(order=2, block="ph,ph", indices="ia,jb")
 # Add assumptions to the raw result: real orbital basis
 #  -> fock matrix f and ERI V have bra-ket-symmetry
 #  -> MP t-amplitudes are real t1cc -> t1
-matrix = Expr(matrix, real=True)
+matrix = ExprContainer(matrix, real=True)
 
 # simplify the result:
 # - use the lowest available contracted indices (way more readable!)
@@ -50,6 +50,6 @@ matrix = factor_intermediates(matrix, max_order=1)
 # through 'adcgen/generate_code/config.json' or by providing a dict with
 # the desired sizes to the 'generate_code' function.
 code = generate_code(matrix, target_indices="ia,jb", backend="einsum",
-                     bra_ket_sym=1, max_tensor_dim=4,
-                     optimize_contractions=True)
+                     bra_ket_sym=1, max_itmd_dim=4,
+                     optimize_contraction_scheme=True)
 print(f"\n\nGenerated code:\n{code}")

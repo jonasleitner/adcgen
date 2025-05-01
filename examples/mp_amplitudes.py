@@ -1,4 +1,6 @@
-from adcgen import Operators, GroundState, simplify, Expr, EriOrbenergy
+from adcgen import (
+    Operators, GroundState, simplify, ExprContainer, EriOrbenergy
+)
 from sympy import S
 
 order = 2
@@ -14,7 +16,7 @@ ampl = mp.amplitude(order=order, space=space, indices=indices)
 # - Add assumptions and simplify the result.
 #   For the mp amplitudes we have to provide the target indices, because they
 #   can not be determined with the Einstein sum convention.
-ampl = Expr(ampl, real=True, target_idx=indices)
+ampl = ExprContainer(ampl, real=True, target_idx=indices)
 ampl.expand().substitute_contracted()
 ampl.use_symbolic_denominators()
 ampl = simplify(ampl)
@@ -30,7 +32,7 @@ for term in ampl.terms:
     if common_denom is None:
         common_denom = term.denom
     else:
-        assert (common_denom - term.denom).sympy is S.Zero
+        assert (common_denom - term.denom).inner is S.Zero
     ampl_without_denom += term.pref * term.num * term.eri
 
 print("\n", "#"*80, sep="")

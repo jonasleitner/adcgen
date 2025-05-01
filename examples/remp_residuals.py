@@ -1,4 +1,4 @@
-from adcgen import Operators, GroundState, Expr, simplify, sort
+from adcgen import Operators, GroundState, ExprContainer, simplify, sort
 from sympy import Symbol
 
 
@@ -22,8 +22,8 @@ re_residual = re.amplitude_residual(order=order, space=space, indices=indices)
 remp_A = Symbol("A")
 
 # build and simplify the remp residual (assuming a real orbital basis)
-remp_residual = remp_A * mp_residual + (1 - remp_A) * re_residual
-remp_residual = Expr(remp_residual, real=True)
+remp_residual = remp_A * mp_residual + (1 - remp_A) * re_residual  # type: ignore  # noqa E501
+remp_residual = ExprContainer(remp_residual, real=True)
 remp_residual.substitute_contracted()
 remp_residual = simplify(remp_residual)
 

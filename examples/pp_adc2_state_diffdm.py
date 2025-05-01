@@ -1,6 +1,6 @@
 from adcgen import (
-    Operators, GroundState, IntermediateStates, Properties, Expr, simplify,
-    factor_intermediates, remove_tensor, tensor_names
+    Operators, GroundState, IntermediateStates, Properties, ExprContainer,
+    simplify, factor_intermediates, remove_tensor, tensor_names
 )
 
 # Initialize the class hierarchy to to generate the ADC properties
@@ -16,7 +16,7 @@ expec = prop.expectation_value(adc_order=2, n_particles=1)
 # Add assumptions:
 # - real orbital basis
 # - a symmetric operator matrix d (with bra-ket-symmetry)
-expec = Expr(expec, real=True, sym_tensors=[tensor_names.operator])
+expec = ExprContainer(expec, real=True, sym_tensors=[tensor_names.operator])
 # for the state_diff_dm we have the same eigenvector in the bra (X) and ket (Y)
 expec.rename_tensor(current=tensor_names.left_adc_amplitude,
                     new=tensor_names.right_adc_amplitude)

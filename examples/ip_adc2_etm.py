@@ -1,6 +1,6 @@
 from adcgen import (
     Operators, GroundState, IntermediateStates, Properties, simplify,
-    remove_tensor, Expr, tensor_names
+    remove_tensor, ExprContainer, tensor_names
 )
 
 # init the class structure.
@@ -12,7 +12,7 @@ prop = Properties(isr)
 # compute the transition moment X_I <I|p^+ q|0> d^p_q
 expec = prop.trans_moment(adc_order=2)
 # in a real orbital basis and simplify the expression
-expec = Expr(expec, real=True).substitute_contracted()
+expec = ExprContainer(expec, real=True).substitute_contracted()
 expec = simplify(expec)
 
 # remove the operator matrix to obtain the transition dm

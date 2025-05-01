@@ -1,5 +1,5 @@
 from adcgen import (
-    Operators, GroundState, remove_tensor, Expr, simplify,
+    Operators, GroundState, remove_tensor, ExprContainer, simplify,
     transform_to_spatial_orbitals, reduce_expr, tensor_names
 )
 
@@ -10,7 +10,7 @@ mp = GroundState(h)
 expec = mp.expectation_value(order=2, n_particles=1)
 # in a real orbital basis and for a symmetric operator matrix as the density
 # is symmetric.
-expec = Expr(expec, real=True, sym_tensors=[tensor_names.operator])
+expec = ExprContainer(expec, real=True, sym_tensors=[tensor_names.operator])
 expec.substitute_contracted()
 expec = simplify(expec)
 
