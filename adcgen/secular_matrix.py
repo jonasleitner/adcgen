@@ -208,10 +208,11 @@ class SecularMatrix:
         indices_tpl = transform_to_tuple(indices)
         validate_input(order=order, space=space_tpl, block=block,
                        indices=indices_tpl)
-        if len(indices) != 1:
+        if len(indices_tpl) != 1:
             raise Inputerror(f"Invalid index input for MVP: {indices}")
-        space = space[0]
-        indices = indices[0]
+        space = space_tpl[0]
+        indices = indices_tpl[0]
+        del space_tpl, indices_tpl
         if space != block[0]:
             raise Inputerror(f"The desired MVP space {space} has to match "
                              f"the bra space of the secular matrix block: "
@@ -290,9 +291,10 @@ class SecularMatrix:
         )
         if order is not None:
             validate_input(order=order)
-        if len(indices) != 1:
+        if len(indices_tpl) != 1:
             raise Inputerror(f"Invalid indices for MVP: {indices}")
-        space, indices = space[0], indices[0]
+        space, indices = space_tpl[0], indices_tpl[0]
+        del space_tpl, indices_tpl
         # check that the space is valid for the current adc variant
         if not self.isr.validate_space(space):
             raise Inputerror(f"The space {space} is not valid for the given "
