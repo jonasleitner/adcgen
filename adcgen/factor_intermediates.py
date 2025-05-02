@@ -1307,7 +1307,7 @@ class LongItmdVariants(
 
     def _complete_base_variants(
             self, pool: dict[tuple[int, ...], list[tuple[int, Expr, Expr]]]
-            ) -> Generator[tuple[Expr, list[int | None]]]:
+            ) -> Generator[tuple[Expr, list[int | None]], None, None]:
         """Iterator over the base variants for complete intermediates."""
 
         def sort_matches(
@@ -1508,7 +1508,7 @@ class LongItmdVariants(
 
     def _mixed_pref_base_variants(
             self, pool: dict[tuple[int, ...], list[tuple[int, Expr, Expr]]]
-            ) -> Generator[tuple[list[Expr | None], list[int | None], dict[int, Expr]]]:  # noqa E501
+            ) -> Generator[tuple[list[Expr | None], list[int | None], dict[int, Expr]], None, None]:  # noqa E501
         """
         Iterator over the base variants for intermediates with mixed prefactors
         """

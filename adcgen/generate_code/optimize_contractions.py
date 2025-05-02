@@ -134,7 +134,7 @@ def _optimize_contractions(relevant_obj_names: Sequence[str],
                            target_indices: Sequence[Index],
                            max_itmd_dim: int | None = None,
                            max_n_simultaneous_contracted: int | None = None,
-                           ) -> Generator[list[Contraction]]:
+                           ) -> Generator[list[Contraction], None, None]:
     """
     Find the optimal contractions for the given relevant objects of a term.
     """
