@@ -1,0 +1,2 @@
+recursive-include tests *.py *.json
+recursive-exclude __pycache__ *

@@ -6,8 +6,7 @@ readme = "README.md"
 authors = [
 	{"name" = "Jonas Leitner, Linus Bjarne Dittmer"}
 ]
-license = "GPL-3.0"
-license-files = ["LICENSE"]
+license = {"file" = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
 	"sympy>=1.11"
@@ -24,3 +23,10 @@ test = [
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+# include the json config files for the dist
+adcgen = ["**/*.json"]
