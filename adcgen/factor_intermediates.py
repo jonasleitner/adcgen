@@ -755,7 +755,7 @@ def _factor_mixed_prefactors(result: ExprContainer,
                     desired_pref = Mul(most_common_pref, unit_factors[term_i])
                     term = EriOrbenergy(terms[term_i]).canonicalize_sign()
                     extension_pref = Add(term.pref, -desired_pref)
-                    term = extension_pref * term.num * term.eri / term.denom
+                    term = term.num * extension_pref * term.eri / term.denom
                     logger.info(EriOrbenergy(term))
                     result += term.inner
 
