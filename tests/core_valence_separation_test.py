@@ -62,7 +62,8 @@ class TestCoreValenceSeparation:
         # Coulomb
         coulomb = SymmetricTensor(tensor_names.coulomb, (i, j), (k, l))
         res = allowed_cvs_blocks(
-            ExprContainer(coulomb), "ijkl", cvs_approximation=is_allowed_cvs_block
+            ExprContainer(coulomb), "ijkl",
+            cvs_approximation=is_allowed_cvs_block
         )
         assert res == ("oooo", "oocc", "ccoo", "cccc")
         # ERI

@@ -1,11 +1,11 @@
 from collections.abc import Sequence
-from typing import Any
 
 from sympy.physics.secondquant import (
     _sort_anticommuting_fermions, ViolationOfPauliPrinciple
 )
 from sympy.core.logic import fuzzy_not
-from sympy import sympify, Add, Tuple, Symbol, S, Number, Expr, Function
+from sympy.core.function import DefinedFunction
+from sympy import sympify, Tuple, Symbol, S, Number, Expr
 
 from .misc import Inputerror
 from .indices import Index, _is_index_tuple, sort_idx_canonical
@@ -71,15 +71,15 @@ class AntiSymmetricTensor(SymbolicTensor):
             return S.Zero
         # additionally account for the bra ket symmetry
         # add the Index check for subs to work correctly
-        bra_ket_sym = sympify(bra_ket_sym)
-        if bra_ket_sym is not S.Zero and \
+        bra_ket_sym_imported = sympify(bra_ket_sym)
+        if bra_ket_sym_imported is not S.Zero and \
                 all(isinstance(s, Index) for s in upper_sorted+lower_sorted):
-            if bra_ket_sym not in [S.One, S.NegativeOne]:
+            if bra_ket_sym_imported not in [S.One, S.NegativeOne]:
                 raise Inputerror("Invalid bra ket symmetry given "
                                  f"{bra_ket_sym}. Valid are 0, 1 or -1.")
             if cls._need_bra_ket_swap(upper_sorted, lower_sorted):
                 upper_sorted, lower_sorted = lower_sorted, upper_sorted  # swap
-                if bra_ket_sym is S.NegativeOne:  # add another -1
+                if bra_ket_sym_imported is S.NegativeOne:  # add another -1
                     sign_u += 1
         # import all quantities
         name_imported = sympify(name)
@@ -88,11 +88,13 @@ class AntiSymmetricTensor(SymbolicTensor):
         # attach -1 if necessary
         if (sign_u + sign_l) % 2:
             return - super().__new__(
-                cls, name_imported, upper_imported, lower_imported, bra_ket_sym
+                cls, name_imported, upper_imported, lower_imported,
+                bra_ket_sym_imported
             )
         else:
             return super().__new__(
-                cls, name_imported, upper_imported, lower_imported, bra_ket_sym
+                cls, name_imported, upper_imported, lower_imported,
+                bra_ket_sym_imported
             )
 
     @classmethod
@@ -227,15 +229,15 @@ class SymmetricTensor(AntiSymmetricTensor):
         # account for the bra ket symmetry
         # add the Index check for subs to work correctly
         negative_sign = False
-        bra_ket_sym = sympify(bra_ket_sym)
-        if bra_ket_sym is not S.Zero and \
+        bra_ket_sym_imported = sympify(bra_ket_sym)
+        if bra_ket_sym_imported is not S.Zero and \
                 all(isinstance(s, Index) for s in upper+lower):
-            if bra_ket_sym not in [S.One, S.NegativeOne]:
+            if bra_ket_sym_imported not in [S.One, S.NegativeOne]:
                 raise Inputerror("Invalid bra ket symmetry given "
                                  f"{bra_ket_sym}. Valid are 0, 1 or -1.")
             if cls._need_bra_ket_swap(upper, lower):
                 upper, lower = lower, upper  # swap
-                if bra_ket_sym is S.NegativeOne:
+                if bra_ket_sym_imported is S.NegativeOne:
                     negative_sign = True
         # import all quantities to sympy
         name_imported = sympify(name)
@@ -243,11 +245,13 @@ class SymmetricTensor(AntiSymmetricTensor):
         # attach -1 if necessary
         if negative_sign:
             return - super(AntiSymmetricTensor, cls).__new__(
-                cls, name_imported, upper_imported, lower_imported, bra_ket_sym
+                cls, name_imported, upper_imported, lower_imported,
+                bra_ket_sym_imported
             )
         else:
             return super(AntiSymmetricTensor, cls).__new__(
-                cls, name_imported, upper_imported, lower_imported, bra_ket_sym
+                cls, name_imported, upper_imported, lower_imported,
+                bra_ket_sym_imported
             )
 
 
@@ -294,14 +298,14 @@ class NonSymmetricTensor(SymbolicTensor):
         return idx
 
 
-class KroneckerDelta(Function):
+class KroneckerDelta(DefinedFunction):
     """
     Represents a Kronecker delta.
     Based on the implementation in 'sympy.functions.special.tensor_functions'.
     """
 
     @classmethod
-    def eval(cls, i: Any, j: Any) -> Expr | None:  # type: ignore[override]
+    def eval(cls, i: Expr, j: Expr) -> Expr | None:  # type: ignore[override]
         """
         Evaluates the KroneckerDelta. Adapted from sympy to also cover Spin.
         """
@@ -309,9 +313,11 @@ class KroneckerDelta(Function):
         if not isinstance(i, Index) or not isinstance(j, Index):
             return None
 
-        diff = Add(i, -j)
-        if diff.is_zero or fuzzy_not(diff.is_zero):  # same index
+        diff = i - j
+        if diff.is_zero:
             return S.One
+        elif fuzzy_not(diff.is_zero):
+            return S.Zero
 
         spi, spj = i.space[0], j.space[0]
         valid_spaces = ["o", "v", "g", "c"]
@@ -327,14 +333,14 @@ class KroneckerDelta(Function):
             return cls(j, i)
         return None
 
-    def _eval_power(self, exp):  # type: ignore[override]
+    def _eval_power(self, exp) -> Expr:  # type: ignore[override]
         # we don't want exponents > 1 on deltas!
         if exp.is_positive:
             return self
         elif exp.is_negative and exp is not S.NegativeOne:
             return S.One / self
 
-    def _latex(self, printer):
+    def _latex(self, printer) -> str:
         return (
             "\\delta_{" + " ".join(s._latex(printer) for s in self.idx) + "}"
         )

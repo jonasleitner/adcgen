@@ -1,0 +1,32 @@
+[project]
+name = "adcgen"
+version = "0.0.5"
+description = "Library for deriving ADC equations."
+readme = "README.md"
+authors = [
+	{"name" = "Jonas Leitner, Linus Bjarne Dittmer"}
+]
+license = {"file" = "LICENSE"}
+requires-python = ">=3.10"
+dependencies = [
+	"sympy>=1.11"
+]
+
+[project.urls]
+"Source" = "https://github.com/jonasleitner/adcgen"
+
+[project.optional-dependencies]
+test = [
+	"pytest"
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+# include the json config files for the dist
+adcgen = ["**/*.json"]

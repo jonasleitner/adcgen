@@ -367,10 +367,9 @@ class TermContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        term = Mul(*(
-            obj._apply_tensor_braket_sym(wrap_result=False)
-            for obj in self.objects
-        ))
+        term = S.One
+        for obj in self.objects:
+            term *= obj._apply_tensor_braket_sym(wrap_result=False)
         if wrap_result:
             term = ExprContainer(inner=term, **self.assumptions)
         return term
@@ -390,9 +389,10 @@ class TermContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        real_term = Mul(*(
-            obj.make_real(wrap_result=False) for obj in self.objects
-        ))
+        real_term = S.One
+        for obj in self.objects:
+            real_term *= obj.make_real(wrap_result=False)
+
         if wrap_result:
             kwargs = self.assumptions
             kwargs["real"] = True
@@ -411,10 +411,10 @@ class TermContainer(Container):
             If this is set the result will be wrapped with an
             :py:class:`ExprContainer`.
         """
-        bl_diag = Mul(*(
-            o.block_diagonalize_fock(wrap_result=False)
-            for o in self.objects
-        ))
+        bl_diag = S.One
+        for obj in self.objects:
+            bl_diag *= obj.block_diagonalize_fock(wrap_result=False)
+
         if wrap_result:
             bl_diag = ExprContainer(bl_diag, **self.assumptions)
         return bl_diag
@@ -586,10 +586,12 @@ class TermContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        renamed = Mul(*(
-            o.rename_tensor(current=current, new=new, wrap_result=False)
-            for o in self.objects
-        ))
+        renamed = S.One
+        for obj in self.objects:
+            renamed *= obj.rename_tensor(
+                current=current, new=new, wrap_result=False
+            )
+
         if wrap_result:
             renamed = ExprContainer(renamed, **self.assumptions)
         return renamed
@@ -605,10 +607,10 @@ class TermContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        expanded = Mul(*(
-            o.expand_antisym_eri(wrap_result=False)
-            for o in self.objects
-        ))
+        expanded = S.One
+        for obj in self.objects:
+            expanded *= obj.expand_antisym_eri(wrap_result=False)
+
         if wrap_result:
             assumptions = self.assumptions
             if Symbol(tensor_names.coulomb) in expanded.atoms(Symbol):
@@ -645,11 +647,13 @@ class TermContainer(Container):
 
         if target is None:
             target = self.target
-        expanded = Mul(*(
-            o.expand_intermediates(target, wrap_result=False,
-                                   fully_expand=fully_expand)
-            for o in self.objects
-        ))
+
+        expanded = S.One
+        for obj in self.objects:
+            expanded *= obj.expand_intermediates(
+                target, wrap_result=False, fully_expand=fully_expand
+            )
+
         if wrap_result:
             assumptions = self.assumptions
             assumptions["target_idx"] = target
@@ -675,10 +679,10 @@ class TermContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        explicit_denom = Mul(*(
-            obj.use_explicit_denominators(wrap_result=False)
-            for obj in self.objects
-        ))
+        explicit_denom = S.One
+        for obj in self.objects:
+            explicit_denom *= obj.use_explicit_denominators(wrap_result=False)
+
         if wrap_result:
             assumptions = self.assumptions
             # remove the tensor from the assumptions

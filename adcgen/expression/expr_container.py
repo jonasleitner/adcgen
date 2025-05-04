@@ -191,10 +191,9 @@ class ExprContainer(Container):
         if self.inner.is_number:
             return self
         # actually do something
-        res = Add(*(
-            term._apply_tensor_braket_sym(wrap_result=False)
-            for term in self.terms
-        ))
+        res = S.Zero
+        for term in self.terms:
+            res += term._apply_tensor_braket_sym(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         return self
@@ -225,9 +224,9 @@ class ExprContainer(Container):
         if self.inner.is_number:
             return self
         # and then adjust the tensor names
-        res = Add(*(
-            t.make_real(wrap_result=False) for t in self.terms
-        ))
+        res = S.Zero
+        for term in self.terms:
+            res += term.make_real(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         return self
@@ -238,10 +237,9 @@ class ExprContainer(Container):
         diagonal Fock matrix blocks (f_ov/f_vo) are set to 0.
         """
         self.expand()
-        res = Add(*(
-            t.block_diagonalize_fock(wrap_result=False)
-            for t in self.terms
-        ))
+        res = S.Zero
+        for term in self.terms:
+            res += term.block_diagonalize_fock(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         return self
@@ -258,7 +256,9 @@ class ExprContainer(Container):
         self.expand()
         diag = S.Zero
         for term in self.terms:
-            diag += term.diagonalize_fock()
+            contrib = term.diagonalize_fock(wrap_result=True)
+            assert isinstance(contrib, ExprContainer)
+            diag += contrib
         assert isinstance(diag, ExprContainer)
         self._inner = diag.inner
         self._target_idx = diag.provided_target_idx
@@ -268,10 +268,9 @@ class ExprContainer(Container):
         """Changes the name of a tensor from current to new."""
         assert isinstance(current, str) and isinstance(new, str)
 
-        renamed = Add(*(
-            term.rename_tensor(current, new, wrap_result=False)
-            for term in self.terms
-        ))
+        renamed = S.Zero
+        for term in self.terms:
+            renamed += term.rename_tensor(current, new, wrap_result=False)
         assert isinstance(renamed, Expr)
         self._inner = renamed
         return self
@@ -283,10 +282,9 @@ class ExprContainer(Container):
         ERI's in chemists notation are by default denoted as 'v'.
         Currently this only works for real orbitals, i.e.,
         for symmetric ERI's <pq||rs> = <rs||pq>."""
-        res = Add(*(
-            term.expand_antisym_eri(wrap_result=False)
-            for term in self.terms
-        ))
+        res = S.Zero
+        for term in self.terms:
+            res += term.expand_antisym_eri(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         # only update the assumptions if there was an eri to expand
@@ -302,10 +300,9 @@ class ExprContainer(Container):
         replacing all symbolic denominators by their explicit counter part,
         i.e., D^{ij}_{ab} -> (e_i + e_j - e_a - e_b)^{-1}.
         """
-        res = Add(*(
-            term.use_explicit_denominators(wrap_result=False)
-            for term in self.terms
-        ))
+        res = S.Zero
+        for term in self.terms:
+            res += term.use_explicit_denominators(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         # remove the symbolic denom from the assumptions if necessary
@@ -322,11 +319,11 @@ class ExprContainer(Container):
         i, j, k instad of i3, n4, o42 etc.
         """
         self.expand()
-        res = Add(*(
-            term.substitute_contracted(wrap_result=False)
-            for term in self.terms
-        ))
-        assert isinstance(res, Expr)
+        res = S.Zero
+        for term in self.terms:
+            contrib = term.substitute_contracted(wrap_result=False)
+            assert isinstance(contrib, Expr)
+            res += contrib
         self._inner = res
         return self
 
@@ -335,10 +332,9 @@ class ExprContainer(Container):
         Subsitutes all contracted indices with new, unused generic indices.
         """
         self.expand()
-        res = Add(*(
-            term.substitute_with_generic(wrap_result=False)
-            for term in self.terms
-        ))
+        res = S.Zero
+        for term in self.terms:
+            res += term.substitute_with_generic(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         return self

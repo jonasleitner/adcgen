@@ -2,7 +2,7 @@ from collections.abc import Iterable, Sequence
 from functools import cached_property
 from typing import Any, TYPE_CHECKING
 
-from sympy import Add, Expr, Pow, Symbol
+from sympy import Add, Expr, Pow, Symbol, S
 
 from ..indices import Index, sort_idx_canonical
 from ..tensor_names import tensor_names
@@ -121,11 +121,12 @@ class PolynomContainer(ObjectContainer):
         """
         from .expr_container import ExprContainer
 
-        with_sym = Add(*(
-            t._apply_tensor_braket_sym(wrap_result=False)
-            for t in self.terms
-        ))
+        with_sym = S.Zero
+        for term in self.terms:
+            with_sym += term._apply_tensor_braket_sym(wrap_result=False)
+        assert isinstance(with_sym, Expr)
         with_sym = Pow(with_sym, self.exponent)
+
         if wrap_result:
             with_sym = ExprContainer(inner=with_sym, **self.assumptions)
         return with_sym
@@ -144,10 +145,12 @@ class PolynomContainer(ObjectContainer):
         """
         from .expr_container import ExprContainer
 
-        real = Add(*(
-            t.make_real(wrap_result=False) for t in self.terms
-        ))
+        real = S.Zero
+        for term in self.terms:
+            real += term.make_real(wrap_result=False)
+        assert isinstance(real, Expr)
         real = Pow(real, self.exponent)
+
         if wrap_result:
             assumptions = self.assumptions
             assumptions["real"] = True
@@ -162,11 +165,12 @@ class PolynomContainer(ObjectContainer):
         """
         from .expr_container import ExprContainer
 
-        bl_diag = Add(*(
-            t.block_diagonalize_fock(wrap_result=False)
-            for t in self.terms
-        ))
+        bl_diag = S.Zero
+        for term in self.terms:
+            bl_diag += term.block_diagonalize_fock(wrap_result=False)
+        assert isinstance(bl_diag, Expr)
         bl_diag = Pow(bl_diag, self.exponent)
+
         if wrap_result:
             bl_diag = ExprContainer(inner=bl_diag, **self.assumptions)
         return bl_diag
@@ -184,11 +188,12 @@ class PolynomContainer(ObjectContainer):
         """Rename a tensor from current to new."""
         from .expr_container import ExprContainer
 
-        renamed = Add(*(
-            term.rename_tensor(current, new, wrap_result=False)
-            for term in self.terms
-        ))
+        renamed = S.Zero
+        for term in self.terms:
+            renamed += term.rename_tensor(current, new, wrap_result=False)
+        assert isinstance(renamed, Expr)
         renamed = Pow(renamed, self.exponent)
+
         if wrap_result:
             renamed = ExprContainer(inner=renamed, **self.assumptions)
         return renamed
@@ -203,10 +208,12 @@ class PolynomContainer(ObjectContainer):
         """
         from .expr_container import ExprContainer
 
-        expanded = Add(*(
-            term.expand_antisym_eri(wrap_result=False) for term in self.terms
-        ))
+        expanded = S.Zero
+        for term in self.terms:
+            expanded += term.expand_antisym_eri(wrap_result=False)
+        assert isinstance(expanded, Expr)
         expanded = Pow(expanded, self.exponent)
+
         if wrap_result:
             assumptions = self.assumptions
             # add the coulomb tensor to sym_tensors if necessary
@@ -222,12 +229,14 @@ class PolynomContainer(ObjectContainer):
         """Expands all known intermediates in the polynom."""
         from .expr_container import ExprContainer
 
-        expanded = Add(*(
-            t.expand_intermediates(target, wrap_result=False,
-                                   fully_expand=fully_expand)
-            for t in self.terms
-        ))
+        expanded = S.Zero
+        for term in self.terms:
+            expanded += term.expand_intermediates(
+                target, wrap_result=False, fully_expand=fully_expand
+            )
+        assert isinstance(expanded, Expr)
         expanded = Pow(expanded, self.exponent)
+
         if wrap_result:
             assumptions = self.assumptions
             assumptions["target_idx"] = target
@@ -243,10 +252,12 @@ class PolynomContainer(ObjectContainer):
         """
         from .expr_container import ExprContainer
 
-        explicit_denom = Add(*(
-            t.use_explicit_denominators(wrap_result=False) for t in self.terms
-        ))
+        explicit_denom = S.Zero
+        for term in self.terms:
+            explicit_denom += term.use_explicit_denominators(wrap_result=False)
+        assert isinstance(explicit_denom, Expr)
         explicit_denom = Pow(explicit_denom, self.exponent)
+
         if wrap_result:
             assumptions = self.assumptions
             if tensor_names.sym_orb_denom in self.antisym_tensors:

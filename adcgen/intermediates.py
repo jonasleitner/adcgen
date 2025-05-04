@@ -636,9 +636,12 @@ class t2_1(RegisteredIntermediate):
                         )
                         # can simply use the indices of the eri as target
                         # indices for the tensor
+                        amplitude = self.tensor(
+                            indices=eri.idx, wrap_result=False
+                        )
+                        assert isinstance(amplitude, Expr)
                         factored_term *= Pow(
-                            self.tensor(indices=eri.idx, wrap_result=False) *
-                            S.One / t2.pref,
+                            amplitude / t2.pref,
                             min_exp
                         )
             # - remove the matched eri and denominator objects
@@ -846,14 +849,13 @@ class t1_3(RegisteredIntermediate):
             t3 = t3.tensor
         # build the amplitude
         denom = Add(orb_energy(i), -orb_energy(a))
-        itmd = S.Zero
-        itmd += (Rational(1, 2) * eri([j, a, b, c]) *
-                 t2(indices=(i, j, b, c), wrap_result=False))
+        itmd = (Rational(1, 2) * eri([j, a, b, c]) *
+                t2(indices=(i, j, b, c), wrap_result=False))
         itmd += (Rational(1, 2) * eri([j, k, i, b]) *
                  t2(indices=(j, k, a, b), wrap_result=False))
-        itmd -= Mul(
-            t1(indices=(j, b), wrap_result=False), eri([i, b, j, a])
-        )
+        amplitude = t1(indices=(j, b), wrap_result=False)
+        assert isinstance(amplitude, Expr)
+        itmd -= amplitude * eri([i, b, j, a])
         itmd += (Rational(1, 4) * eri([j, k, b, c]) *
                  t3(indices=(i, j, k, a, b, c), wrap_result=False))
         # need to keep track of all contracted indices... also contracted
@@ -999,7 +1001,7 @@ class t2_1_re_residual(RegisteredIntermediate):
         # (1 - P_ij)(1 - P_ab) <ic||ka> t_jk^bc
         ampl = t2.tensor(indices=[j, k, b, c])
         assert isinstance(ampl, ExprContainer)
-        base = eri([i, c, k, a]) * ampl
+        base = ampl * eri([i, c, k, a])
         itmd += Add(
             base.inner,
             -base.copy().permute((i, j)).inner,
@@ -1009,12 +1011,12 @@ class t2_1_re_residual(RegisteredIntermediate):
         # (1 - P_ab) f_ac t_ij^bc
         ampl = t2.tensor(indices=[i, j, b, c])
         assert isinstance(ampl, ExprContainer)
-        base = fock([a, c]) * ampl
+        base = ampl * fock([a, c])
         itmd += Add(base.inner, -base.copy().permute((a, b)).inner)
         # (1 - P_ij) f_jk t_ik^ab
         ampl = t2.tensor(indices=[i, k, a, b])
         assert isinstance(ampl, ExprContainer)
-        base = fock([j, k]) * ampl
+        base = ampl * fock([j, k])
         itmd += Add(base.inner, -base.copy().permute((i, j)).inner)
         # - 0.5 * <ab||cd> t_ij^cd
         itmd -= (Rational(1, 2) * eri((a, b, c, d)) *
@@ -1052,22 +1054,17 @@ class t1_2_re_residual(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         ts2 = self._registry['t_amplitude']['t1_2']
 
-        itmd = S.Zero
-
         # - {V^{ib}_{ja}} {t2^{b}_{j}}
-        itmd += Mul(
-            -eri([i, b, j, a]),
-            ts2.tensor(indices=[j, b], wrap_result=False)
+        itmd = (
+            -eri([i, b, j, a]) * ts2.tensor(indices=[j, b], wrap_result=False)
         )
         # + {f^{a}_{b}} {t2^{b}_{i}}
-        itmd += Mul(
-            fock([a, b]),
-            ts2.tensor(indices=[i, b], wrap_result=False)
+        itmd += (
+            fock([a, b]) * ts2.tensor(indices=[i, b], wrap_result=False)
         )
         # - {f^{i}_{j}} {t2^{a}_{j}}
-        itmd -= Mul(
-            fock([i, j]),
-            ts2.tensor(indices=[j, a], wrap_result=False)
+        itmd -= (
+            fock([i, j]) * ts2.tensor(indices=[j, a], wrap_result=False)
         )
         # + \frac{{V^{ja}_{bc}} {t1^{bc}_{ij}}}{2}
         itmd += (Rational(1, 2) * eri([j, a, b, c])
@@ -1076,9 +1073,8 @@ class t1_2_re_residual(RegisteredIntermediate):
         itmd += (Rational(1, 2) * eri([j, k, i, b])
                  * t2.tensor(indices=[j, k, a, b], wrap_result=False))
         # - {f^{j}_{b}} {t1^{ab}_{ij}}
-        itmd -= Mul(
-            fock([j, b]),
-            t2.tensor(indices=[i, j, a, b], wrap_result=False)
+        itmd -= (
+            fock([j, b]) * t2.tensor(indices=[i, j, a, b], wrap_result=False)
         )
         target = (i, a)
         contracted = (j, k, b, c)
@@ -1111,7 +1107,7 @@ class t2_2_re_residual(RegisteredIntermediate):
         # (1 - P_ij)(1 - P_ab) <ic||ka> t_jk^bc
         ampl = t2.tensor(indices=[j, k, b, c])
         assert isinstance(ampl, ExprContainer)
-        base = eri([i, c, k, a]) * ampl
+        base = ampl * eri([i, c, k, a])
         itmd += Add(
             base.inner,
             -base.copy().permute((i, j)).inner,
@@ -1121,14 +1117,14 @@ class t2_2_re_residual(RegisteredIntermediate):
         # (1 - P_ab) f_ac t_ij^bc
         ampl = t2.tensor(indices=[i, j, b, c])
         assert isinstance(ampl, ExprContainer)
-        base = fock([a, c]) * ampl
+        base = ampl * fock([a, c])
         itmd += Add(
             base.inner, -base.copy().permute((a, b)).inner
         )
         # (1 - P_ij) f_jk t_ik^ab
         ampl = t2.tensor(indices=[i, k, a, b])
         assert isinstance(ampl, ExprContainer)
-        base = fock([j, k]) * ampl
+        base = ampl * fock([j, k])
         itmd += Add(
             base.inner, -base.copy().permute((i, j)).inner
         )
@@ -1301,6 +1297,7 @@ class p0_3_ov(RegisteredIntermediate):
             ))
         else:
             contracted = (j, k, b, c)
+        assert isinstance(p0, Expr)
         return ItmdExpr(p0, target, contracted)
 
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
@@ -1366,10 +1363,11 @@ class t2eri_1(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = Mul(
-            t2(indices=(i, j, b, c), wrap_result=False),
+        t2eri = (
+            t2(indices=(i, j, b, c), wrap_result=False) *
             eri((k, a, b, c))
         )
+        assert isinstance(t2eri, Expr)
         return ItmdExpr(t2eri, (i, j, k, a), (b, c))
 
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
@@ -1390,10 +1388,11 @@ class t2eri_2(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = Mul(
-            t2(indices=(i, l, a, b), wrap_result=False),
+        t2eri = (
+            t2(indices=(i, l, a, b), wrap_result=False) *
             eri((l, k, j, b))
         )
+        assert isinstance(t2eri, Expr)
         return ItmdExpr(t2eri, (i, j, k, a), (b, l))
 
     def _build_tensor(self, indices: Sequence[Index]) -> NonSymmetricTensor:
@@ -1415,10 +1414,11 @@ class t2eri_3(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = Mul(
-            t2(indices=(k, l, a, b), wrap_result=False),
+        t2eri = (
+            t2(indices=(k, l, a, b), wrap_result=False) *
             eri((i, j, k, l))
         )
+        assert isinstance(t2eri, Expr)
         return ItmdExpr(t2eri, (i, j, a, b), (k, l))
 
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
@@ -1440,10 +1440,11 @@ class t2eri_4(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = Mul(
-            t2(indices=(j, k, a, c), wrap_result=False),
+        t2eri = (
+            t2(indices=(j, k, a, c), wrap_result=False) *
             eri((k, b, i, c))
         )
+        assert isinstance(t2eri, Expr)
         return ItmdExpr(t2eri, (i, j, a, b), (k, c))
 
     def _build_tensor(self, indices: Sequence[Index]) -> NonSymmetricTensor:
@@ -1465,10 +1466,11 @@ class t2eri_5(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = Mul(
-            t2(indices=(i, j, c, d), wrap_result=False),
+        t2eri = (
+            t2(indices=(i, j, c, d), wrap_result=False) *
             eri((a, b, c, d))
         )
+        assert isinstance(t2eri, Expr)
         return ItmdExpr(t2eri, (i, j, a, b), (c, d))
 
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
@@ -1490,10 +1492,11 @@ class t2eri_6(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = Mul(
-            t2(indices=(j, k, b, c), wrap_result=False),
+        t2eri = (
+            t2(indices=(j, k, b, c), wrap_result=False) *
             eri((j, k, i, a))
         )
+        assert isinstance(t2eri, Expr)
         return ItmdExpr(t2eri, (i, a, b, c), (j, k))
 
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
@@ -1515,10 +1518,11 @@ class t2eri_7(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        t2eri = Mul(
-            t2(indices=(i, j, b, d), wrap_result=False),
+        t2eri = (
+            t2(indices=(i, j, b, d), wrap_result=False) *
             eri((j, c, a, d))
         )
+        assert isinstance(t2eri, Expr)
         return ItmdExpr(t2eri, (i, a, b, c), (j, d))
 
     def _build_tensor(self, indices: Sequence[Index]) -> NonSymmetricTensor:
@@ -1612,10 +1616,11 @@ class t2sq(RegisteredIntermediate):
         t2 = self._registry['t_amplitude']['t2_1']
         t2 = t2.expand_itmd if fully_expand else t2.tensor
         # build the intermediate
-        itmd = Mul(
-            t2(indices=(i, k, a, c), wrap_result=False),
+        itmd = (
+            t2(indices=(i, k, a, c), wrap_result=False) *
             t2(indices=(j, k, b, c), wrap_result=False)
         )
+        assert isinstance(itmd, Expr)
         return ItmdExpr(itmd, (i, a, j, b), (k, c))
 
     def _build_tensor(self, indices: Sequence[Index]) -> Expr:
