@@ -1,0 +1,66 @@
+{
+  "mp": {
+    "0": {
+      "r": {
+        "sym": "2 {f^{i_{\\alpha}}_{i_{\\alpha}}}",
+        "asym": "2 {f^{i_{\\alpha}}_{i_{\\alpha}}}"
+      },
+      "u": {
+        "sym": "{f^{i_{\\alpha}}_{i_{\\alpha}}} + {f^{i_{\\beta}}_{i_{\\beta}}}",
+        "asym": "{f^{i_{\\alpha}}_{i_{\\alpha}}} + {f^{i_{\\beta}}_{i_{\\beta}}}"
+      }
+    },
+    "1": {
+      "r": {
+        "sym": "- 2 {B^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}} + {B^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}^{2}",
+        "asym": "- 2 {C^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}} + {C^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}"
+      },
+      "u": {
+        "sym": "- {B^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} - \\frac{{B^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}}}{2} + \\frac{{B^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}^{2}}{2} - \\frac{{B^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} {B^{P_{\\alpha}}_{j_{\\beta}j_{\\beta}}}}{2} + \\frac{{B^{P_{\\alpha}}_{i_{\\beta}j_{\\beta}}}^{2}}{2}",
+        "asym": "- {C^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} - \\frac{{C^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}}}{2} + \\frac{{C^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}}{2} - \\frac{{C^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} {G^{P_{\\alpha}}_{j_{\\beta}j_{\\beta}}}}{2} + \\frac{{C^{P_{\\alpha}}_{i_{\\beta}j_{\\beta}}} {G^{P_{\\alpha}}_{i_{\\beta}j_{\\beta}}}}{2}"
+      }
+    },
+    "2": {
+      "r": {
+        "sym": "- \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{2} + \\frac{3 {t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{2}",
+        "asym": "- \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{2} + \\frac{3 {t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{2}"
+      },
+      "u": {
+        "sym": "- {t1^{a_{\\alpha}a_{\\beta}}_{i_{\\alpha}i_{\\beta}}} {B^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} - \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{4} + \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{4} - \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {B^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} {B^{P_{\\alpha}}_{j_{\\beta}b_{\\beta}}}}{4} + \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {B^{P_{\\alpha}}_{i_{\\beta}b_{\\beta}}} {B^{P_{\\alpha}}_{j_{\\beta}a_{\\beta}}}}{4}",
+        "asym": "- {t1^{a_{\\alpha}a_{\\beta}}_{i_{\\alpha}i_{\\beta}}} {C^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} - \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{4} + \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{4} - \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {C^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} {G^{P_{\\alpha}}_{j_{\\beta}b_{\\beta}}}}{4} + \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {C^{P_{\\alpha}}_{i_{\\beta}b_{\\beta}}} {G^{P_{\\alpha}}_{j_{\\beta}a_{\\beta}}}}{4}"
+      }
+    }
+  },
+  "re": {
+    "0": {
+      "r": {
+        "sym": "2 {f^{i_{\\alpha}}_{i_{\\alpha}}} - 2 {B^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}} + {B^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}^{2}",
+        "asym": "2 {f^{i_{\\alpha}}_{i_{\\alpha}}} - 2 {C^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}} + {C^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}"
+      },
+      "u": {
+        "sym": "{f^{i_{\\alpha}}_{i_{\\alpha}}} + {f^{i_{\\beta}}_{i_{\\beta}}} - {B^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} - \\frac{{B^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}}}{2} + \\frac{{B^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}^{2}}{2} - \\frac{{B^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} {B^{P_{\\alpha}}_{j_{\\beta}j_{\\beta}}}}{2} + \\frac{{B^{P_{\\alpha}}_{i_{\\beta}j_{\\beta}}}^{2}}{2}",
+        "asym": "{f^{i_{\\alpha}}_{i_{\\alpha}}} + {f^{i_{\\beta}}_{i_{\\beta}}} - {C^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} - \\frac{{C^{P_{\\alpha}}_{i_{\\alpha}i_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}j_{\\alpha}}}}{2} + \\frac{{C^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}}}{2} - \\frac{{C^{P_{\\alpha}}_{i_{\\beta}i_{\\beta}}} {G^{P_{\\alpha}}_{j_{\\beta}j_{\\beta}}}}{2} + \\frac{{C^{P_{\\alpha}}_{i_{\\beta}j_{\\beta}}} {G^{P_{\\alpha}}_{i_{\\beta}j_{\\beta}}}}{2}"
+      }
+    },
+    "1": {
+      "r": {
+        "sym": "0",
+        "asym": "0"
+      },
+      "u": {
+        "sym": "0",
+        "asym": "0"
+      }
+    },
+    "2": {
+      "r": {
+        "sym": "- \\frac{3 {t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{2} + \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{2}",
+        "asym": "- \\frac{3 {t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{2} + \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{2}"
+      },
+      "u": {
+        "sym": "- {t1^{a_{\\alpha}a_{\\beta}}_{i_{\\alpha}i_{\\beta}}} {B^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} - \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{4} + \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {B^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {B^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{4} - \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {B^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} {B^{P_{\\alpha}}_{j_{\\beta}b_{\\beta}}}}{4} + \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {B^{P_{\\alpha}}_{i_{\\beta}b_{\\beta}}} {B^{P_{\\alpha}}_{j_{\\beta}a_{\\beta}}}}{4}",
+        "asym": "- {t1^{a_{\\alpha}a_{\\beta}}_{i_{\\alpha}i_{\\beta}}} {C^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {G^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} - \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}a_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}b_{\\alpha}}}}{4} + \\frac{{t1^{a_{\\alpha}b_{\\alpha}}_{i_{\\alpha}j_{\\alpha}}} {C^{P_{\\alpha}}_{i_{\\alpha}b_{\\alpha}}} {G^{P_{\\alpha}}_{j_{\\alpha}a_{\\alpha}}}}{4} - \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {C^{P_{\\alpha}}_{i_{\\beta}a_{\\beta}}} {G^{P_{\\alpha}}_{j_{\\beta}b_{\\beta}}}}{4} + \\frac{{t1^{a_{\\beta}b_{\\beta}}_{i_{\\beta}j_{\\beta}}} {C^{P_{\\alpha}}_{i_{\\beta}b_{\\beta}}} {G^{P_{\\alpha}}_{j_{\\beta}a_{\\beta}}}}{4}"
+      }
+    }
+  }
+}

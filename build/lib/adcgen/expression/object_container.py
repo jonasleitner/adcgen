@@ -463,11 +463,6 @@ class ObjectContainer(Container):
                 ]))
             elif name == tensor_names.coulomb:  # ERI in chemist notation
                 return ("aaaa", "aabb", "bbaa", "bbbb")
-            elif name in (tensor_names.ri_sym, tensor_names.ri_asym_eri,
-                          tensor_names.ri_asym_factor):
-                return ("aaa", "abb")
-            elif name == tensor_names.fock:
-                return ("aa", "bb")
         elif isinstance(obj, KroneckerDelta):  # delta
             # spins have to be equal
             return ("aa", "bb")

@@ -8,10 +8,15 @@ class TestIndices:
         assert idx.get_indices("ijk") == idx.get_indices("ijk")
         assert idx.get_indices("ijk", "aba") == idx.get_indices("ijk", "aba")
         assert idx.get_indices("a", "a") != idx.get_indices("a", "b")
+        assert idx.get_indices("PQ") == idx.get_indices("PQ")
         res = idx.get_indices("Ij", "ba")
         I, j = res[("core", "b")].pop(), res[("occ", "a")].pop()
         assert I.space == "core" and I.spin == "b"
         assert j.space == "occ" and j.spin == "a"
+        res = idx.get_indices("Pa")
+        P, a = res[("ri", "")].pop(), res[("virt", "")].pop()
+        assert P.space == "ri" and P.spin == ""
+        assert a.space == "virt" and a.spin == ""
 
     def test_get_generic_indices(self):
         # ensure that generic indices don't overlap

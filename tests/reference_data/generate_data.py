@@ -10,6 +10,8 @@ from adcgen.reduce_expr import factor_eri_parts, factor_denom, reduce_expr
 from adcgen.secular_matrix import SecularMatrix
 from adcgen.simplify import simplify, remove_tensor
 from adcgen.tensor_names import tensor_names
+from adcgen.resolution_of_identity import apply_resolution_of_identity
+from adcgen.spatial_orbitals import transform_to_spatial_orbitals
 from adcgen import sort_expr as sort
 
 import itertools
@@ -358,6 +360,49 @@ class Generator:
                         assert len(block) == 1
                         block = block[0]
                         dump["real_transition_dm"][block] = str(expr)
+        write_json(results, outfile)
+
+    def gen_ri_gs_energies(self):
+        results: dict = {}
+        outfile = "ri_gs_energy.json"
+
+        variations = itertools.product(['mp', 're'], [0, 1, 2], ['r', 'u'],
+                                       ['sym', 'asym'])
+
+        for variant, order, restriction, symmetry in variations:
+            if variant not in results:
+                results[variant] = {}
+            if order not in results[variant]:
+                results[variant][order] = {}
+            if restriction not in results[variant][order]:
+                results[variant][order][restriction] = {}
+            gs = self.gs[variant]
+            gs_energy = ExprContainer(gs.energy(order), real=True)
+            restricted = restriction == 'r'
+            symmetric = symmetry == 'sym'
+            gs_energy = transform_to_spatial_orbitals(gs_energy, '', '',
+                                                      restricted=restricted)
+            gs_energy = apply_resolution_of_identity(gs_energy, symmetric)
+            gs_energy.substitute_contracted()
+            results[variant][order][restriction][symmetry] = str(gs_energy)
+        write_json(results, outfile)
+
+    def gen_spatial_gs_energies(self):
+        outfile = "spatial_gs_energy.json"
+
+        results: dict = {}
+        for variant in ['mp', 're']:
+            results[variant] = {}
+            gs = self.gs[variant]
+            for order in [0, 1, 2]:
+                results[variant][order] = {}
+                for restriction in ['r', 'u']:
+                    energy = ExprContainer(gs.energy(order), real=True)
+                    restr = restriction == 'r'
+                    energy = transform_to_spatial_orbitals(energy, '', '',
+                                                           restricted=restr)
+                    energy.substitute_contracted()
+                    results[variant][order][restriction] = str(energy)
         write_json(results, outfile)
 
 

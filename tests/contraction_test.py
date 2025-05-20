@@ -42,15 +42,15 @@ class TestContraction:
         target_indices = (i, j)
         contr = Contraction(indices, names, target_indices)
         scaling = contr.scaling
-        comp = ScalingComponent(3, 0, 0, 3, 0)
-        mem = ScalingComponent(2, 0, 0, 2, 0)
+        comp = ScalingComponent(3, 0, 0, 3, 0, 0)
+        mem = ScalingComponent(2, 0, 0, 2, 0, 0)
         assert scaling.computational == comp
         assert scaling.memory == mem
         assert scaling == Scaling(comp, mem)
 
     def test_sizes(self):
         # test the automatic evaluation of the size of the general space
-        sizes = {"occ": 1, "virt": 2, "core": 3}
+        sizes = {"occ": 1, "virt": 2, "core": 3, "ri": 0}
         res = Sizes.from_dict(sizes)
         sizes["general"] = 6
         assert sizes == asdict(res)
@@ -59,17 +59,20 @@ class TestContraction:
         assert sizes == asdict(res)
 
     def test_evalute_costs(self):
-        sizes = {"occ": 3, "virt": 5, "core": 2, "general": 7}
+        sizes = {"occ": 3, "virt": 5, "core": 2, "general": 7, "ri": 8}
         sizes = Sizes.from_dict(sizes)
-        comp = ScalingComponent(42, 1, 2, 3, 4)
-        mem = ScalingComponent(42, 4, 3, 2, 1)
+        comp = ScalingComponent(42, 1, 2, 3, 4, 5)
+        mem = ScalingComponent(42, 5, 4, 3, 2, 1)
         scaling = Scaling(comp, mem)
-        assert comp.evaluate_costs(sizes) == 75600
-        assert mem.evaluate_costs(sizes) == 5402250
-        assert scaling.evaluate_costs(sizes) == (75600, 5402250)
+        print(comp.evaluate_costs(sizes))
+        print(mem.evaluate_costs(sizes))
+        print(scaling.evaluate_costs(sizes))
+        assert comp.evaluate_costs(sizes) == 2477260800 
+        assert mem.evaluate_costs(sizes) == 9075780000
+        assert scaling.evaluate_costs(sizes) == (2477260800, 9075780000)
         # ensure that zero sized spaces are ignored
-        sizes = {"occ": 3, "virt": 5, "core": 0}  # general == 8
+        sizes = {"occ": 3, "virt": 5, "core": 0, "ri": 0}  # general == 8
         sizes = Sizes.from_dict(sizes)
         assert comp.evaluate_costs(sizes) == 5400
-        comp = ScalingComponent(42, 0, 1, 2, 3)
+        comp = ScalingComponent(42, 0, 1, 2, 3, 0)
         assert comp.evaluate_costs(sizes) == 45
