@@ -366,7 +366,7 @@ class Generator:
         results: dict = {}
         outfile = "ri_gs_energy.json"
 
-        variations = itertools.product(['mp', 're'], [0, 1, 2], ['r', 'u'],
+        variations = itertools.product(['mp', 're'], [0, 1, 2, 3], ['r', 'u'],
                                        ['sym', 'asym'])
 
         for variant, order, restriction, symmetry in variations:
