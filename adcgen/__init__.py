@@ -36,7 +36,7 @@ __all__ = ["AntiSymmetricTensor", "SymmetricTensor", "NonSymmetricTensor",
            "Intermediates", "reduce_expr", "factor_intermediates",
            "sort",
            "transform_to_spatial_orbitals",
-           "apply_resolution_of_identity"
+           "apply_resolution_of_identity",
            "apply_cvs_approximation",
            "generate_code", "optimize_contractions",
            "unoptimized_contraction", "Contraction",

@@ -67,7 +67,7 @@ class TestContraction:
         print(comp.evaluate_costs(sizes))
         print(mem.evaluate_costs(sizes))
         print(scaling.evaluate_costs(sizes))
-        assert comp.evaluate_costs(sizes) == 2477260800 
+        assert comp.evaluate_costs(sizes) == 2477260800
         assert mem.evaluate_costs(sizes) == 9075780000
         assert scaling.evaluate_costs(sizes) == (2477260800, 9075780000)
         # ensure that zero sized spaces are ignored
