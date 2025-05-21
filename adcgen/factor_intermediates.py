@@ -14,7 +14,7 @@ from .indices import (
 )
 from .logger import logger
 from .symmetry import LazyTermMap, Permutation
-from .sympy_objects import AntiSymmetricTensor, SymbolicTensor
+from .sympy_objects import SymbolicTensor
 
 if TYPE_CHECKING:
     from .intermediates import RegisteredIntermediate
@@ -381,23 +381,20 @@ def _factor_long_intermediate(expr: ExprContainer,
     result: ExprContainer = ExprContainer(0, **expr.assumptions)
     # keep track which terms have already been factored
     factored_terms: set[int] = set()
-    factored_successfully: bool = False
 
     # first try to factor all complete intermediate variants
-    result, successful = _factor_complete(
+    result = _factor_complete(
         result, terms, itmd_cls, factored_terms, intermediate_variants
     )
-    factored_successfully |= successful
 
     # go again through the remaining itmd variants and try to build more
     # complete variants by allowing mixed prefactors, i.e.,
     # add a term that belongs to a variant with prefactor 1
     # to the nearly complete variant with prefactor 2. To compensate
     # for this, additional terms are added to the result.
-    result, factored_mixed_pref_successfully = _factor_mixed_prefactors(
+    result = _factor_mixed_prefactors(
         result, terms, itmd_cls, factored_terms, intermediate_variants
     )
-    factored_successfully |= factored_mixed_pref_successfully
 
     # TODO:
     # go again through the remaining itmds and see if we can factor another
@@ -410,19 +407,6 @@ def _factor_long_intermediate(expr: ExprContainer,
             factored_terms.add(term_i)
             result += term.inner
     assert len(factored_terms) == len(terms)
-
-    # if we factored the itmd successfully it might be necessary to adjust
-    # sym_tensors or antisym_tensors of the returned expression
-    if factored_successfully:
-        tensor = itmd_cls.tensor(wrap_result=False)
-        if isinstance(tensor, AntiSymmetricTensor):
-            name = tensor.name
-            if tensor.bra_ket_sym is S.One and \
-                    name not in (sym_tensors := result.sym_tensors):
-                result.sym_tensors = sym_tensors + (name,)
-            elif tensor.bra_ket_sym is S.NegativeOne and \
-                    name not in (antisym_t := result.antisym_tensors):
-                result.antisym_tensors = antisym_t + (name,)
     return result
 
 
@@ -469,7 +453,6 @@ def _factor_short_intermediate(expr: ExprContainer, itmd: EriOrbenergy,
 
     factored: ExprContainer = ExprContainer(0, **expr.assumptions)
     # factored expression that is returned
-    factored_sucessfully: bool = False  # bool to indicate whether we factored
     for term in terms:
         term = EriOrbenergy(term).canonicalize_sign()
         data = FactorizationTermData(term)
@@ -604,22 +587,9 @@ def _factor_short_intermediate(expr: ExprContainer, itmd: EriOrbenergy,
         factored_term = _build_factored_term(remainder, pref, itmd_cls,
                                              itmd_indices)
 
-        factored_sucessfully = True
         logger.info(f"\nFactoring {itmd_cls.name} in:\n{term}\n"
                     f"result:\n{EriOrbenergy(factored_term)}")
         factored += factored_term.inner
-    # if we factored the itmd sucessfully it might be necessary to add
-    # the itmd tensor to the sym or antisym tensors
-    if factored_sucessfully:
-        tensor = itmd_cls.tensor(wrap_result=False)
-        if isinstance(tensor, AntiSymmetricTensor):
-            name = tensor.name
-            if tensor.bra_ket_sym is S.One and \
-                    name not in (sym_tensors := factored.sym_tensors):
-                factored.sym_tensors = sym_tensors + (name,)
-            elif tensor.bra_ket_sym is S.NegativeOne and \
-                    name not in (antisym_t := factored.antisym_tensors):
-                factored.antisym_tensors = antisym_t + (name,)
     return factored
 
 
@@ -628,7 +598,7 @@ def _factor_complete(result: ExprContainer,
                      itmd_cls: "RegisteredIntermediate",
                      factored_terms: set[int],
                      intermediate_variants: 'LongItmdVariants'
-                     ) -> tuple[ExprContainer, bool]:
+                     ) -> ExprContainer:
     """
     Factors all found complete intermediate variants of a long intermediate
     in an expression, i.e., variants where for all terms a match with the same
@@ -690,7 +660,7 @@ def _factor_complete(result: ExprContainer,
     if factored_successfully:
         intermediate_variants.clean_empty()
 
-    return result, factored_successfully
+    return result
 
 
 def _factor_mixed_prefactors(result: ExprContainer,
@@ -698,7 +668,7 @@ def _factor_mixed_prefactors(result: ExprContainer,
                              itmd_cls: "RegisteredIntermediate",
                              factored_terms: set[int],
                              intermediate_variants: "LongItmdVariants"
-                             ) -> tuple[ExprContainer, bool]:
+                             ) -> ExprContainer:
     """
     Factors intermediate variants where all terms were found, though with
     different prefactors, i.e., the intermediate might be factored by
@@ -784,7 +754,7 @@ def _factor_mixed_prefactors(result: ExprContainer,
     if factored_successfully:
         intermediate_variants.clean_empty()
 
-    return result, factored_successfully
+    return result
 
 
 def _build_factored_term(remainder: ExprContainer, pref: Expr,
