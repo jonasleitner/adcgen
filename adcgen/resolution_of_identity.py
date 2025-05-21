@@ -1,7 +1,7 @@
 from .expression import ExprContainer
-from .sympy_objects import SymmetricTensor
 from .tensor_names import tensor_names
-from .indices import Indices
+from .misc import Inputerror
+from sympy import Symbol
 
 
 def apply_resolution_of_identity(expr: ExprContainer,
@@ -35,43 +35,13 @@ def apply_resolution_of_identity(expr: ExprContainer,
             If false, the asymmetric factorisation variant is employed instead.
     """
 
-    resolved_expr = ExprContainer(0, **expr.assumptions)
-    idx_cls = Indices()
+    factorisation = 'asym'
+    if symmetric:
+        factorisation = 'sym'
 
-    # We iterate over all terms in the expression and apply RI individually
-    for term in expr.terms:
-        # Check if the term is spin-integrated
-        assert ("n" not in "".join([o.spin for o in term.objects]))
-        # Check that no antisymmetric ERIs remain
-        assert (tensor_names.eri not in
-                ",".join([str(o.name) for o in term.objects]))
+    # Check whether the expression contains antisymmetric ERIs
+    if Symbol(tensor_names.eri) in expr.inner.atoms(Symbol):
+        raise Inputerror('Resolution of Identity requires that the ERIs'
+                         ' be expanded first.')
 
-        resolved_term = 1
-
-        for object in term.objects:
-            # Replace spatial ERIs
-            if object.name == tensor_names.coulomb:
-                # Extract indices
-                lower = object.idx[0:2]
-                upper = object.idx[2:4]
-                ri_idx = idx_cls.get_generic_indices(ri_a=1)[("ri", "a")]
-
-                if symmetric:
-                    # v_pqrs = B^P_pq B^P_rs
-                    ri_expr = (SymmetricTensor(tensor_names.ri_sym,
-                                               ri_idx, tuple(lower))
-                               * SymmetricTensor(tensor_names.ri_sym,
-                                                 ri_idx, tuple(upper)))
-                else:
-                    # v_pqrs = C^P_pq W^P_rs
-                    ri_expr = (SymmetricTensor(tensor_names.ri_asym_eri,
-                                               ri_idx, tuple(upper))
-                               * SymmetricTensor(tensor_names.ri_asym_factor,
-                                                 ri_idx, tuple(lower)))
-                resolved_term *= ri_expr
-            else:
-                # Everything else is unaffected by RI
-                resolved_term *= object
-
-        resolved_expr += resolved_term
-    return resolved_expr
+    return expr.factorise_eri(factorisation=factorisation)

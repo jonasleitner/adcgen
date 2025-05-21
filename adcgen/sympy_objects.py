@@ -230,6 +230,8 @@ class SymmetricTensor(AntiSymmetricTensor):
         # add the Index check for subs to work correctly
         negative_sign = False
         bra_ket_sym_imported = sympify(bra_ket_sym)
+        print(f"{name}: {bra_ket_sym}")
+        print(f"{upper}, {lower}")
         if bra_ket_sym_imported is not S.Zero and \
                 all(isinstance(s, Index) for s in upper+lower):
             if bra_ket_sym_imported not in [S.One, S.NegativeOne]:

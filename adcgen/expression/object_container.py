@@ -747,6 +747,61 @@ class ObjectContainer(Container):
             obj = ExprContainer(obj, **self.assumptions)
         return obj
 
+    def factorise_eri(self, factorisation: str = 'sym',
+                      wrap_result: bool = True) -> "ExprContainer | Expr":
+        """
+        Factorises symmetric ERIs in chemist notation into RI format.
+        This is done either symmetrically or asymmetrically
+
+        Args:
+            factorisation : str, optional
+                Either 'sym' or 'asym'. Determines the type of factorisation.
+                Defaults to 'sym'.
+            wrap_result : bool, optional
+                Whether to wrap the result in an ExprContainer.
+                Defaults to True.
+
+        Returns:
+            ExprContainer | Expr: The factorised result
+        """
+        from .expr_container import ExprContainer
+
+        res = self.inner
+        base, exponent = self.base_and_exponent
+        if isinstance(base, SymmetricTensor) and \
+                base.name == tensor_names.coulomb:
+            # ensure that the ERI is symmetric as an implicit check
+            # whether it is real
+            if base.bra_ket_sym != 1:
+                raise NotImplementedError("Can only apply RI approximation to "
+                                          "ERIs with bra-ket symmetry "
+                                          "(real orbitals).")
+            p, q, r, s = self.idx
+            res = S.One
+            if p.spin == q.spin and r.spin == s.spin:
+                assumptions = {"ri": True}
+                if p.spin:
+                    # Check if RI is applied before or after
+                    # spin integration. RI indices are always alpha
+                    assumptions["alpha"] = True
+                for _ in range(exponent):
+                    aux_idx = Index('P', **assumptions)
+                    if factorisation == 'sym':
+                        res *= SymmetricTensor(tensor_names.ri_sym,
+                                               (aux_idx,), (p, q), 0)
+                        res *= SymmetricTensor(tensor_names.ri_sym,
+                                               (aux_idx,), (r, s), 0)
+                    elif factorisation == 'asym':
+                        res *= SymmetricTensor(tensor_names.ri_asym_factor,
+                                               (aux_idx,), (p, q), 0)
+                        res *= SymmetricTensor(tensor_names.ri_asym_eri,
+                                               (aux_idx,), (r, s), 0)
+
+        if wrap_result:
+            kwargs = self.assumptions
+            res = ExprContainer(res, **kwargs)
+        return res
+
     def expand_antisym_eri(self, wrap_result: bool = True
                            ) -> "ExprContainer | Expr":
         """

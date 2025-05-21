@@ -198,6 +198,40 @@ class PolynomContainer(ObjectContainer):
             renamed = ExprContainer(inner=renamed, **self.assumptions)
         return renamed
 
+    def factorise_eri(self, factorisation: str = 'sym',
+                      wrap_result: bool = True) -> "Expr | ExprContainer":
+        """
+        Fatorises the symmetric ERIs in chemist notation into an RI format.
+        Note that this expands the polynomial to account for the uniqueness
+        of each RI auxilliary index.
+
+        Args:
+            factorisation : str, optional
+                Which type of factorisation to use (sym or asym).
+                Defaults to 'sym'
+            wrap_result : bool, optional
+                Whether to wrap the result in an ExprContainer.
+                Defaults to True.
+
+        Returns:
+            Expr | ExprContainer: The fatorised result
+        """
+        from .expr_container import ExprContainer
+
+        factorised = S.One
+        for _ in range(self.exponent):
+            expanded = S.Zero
+            for term in self.terms:
+                expanded += term.factorise_eri(factorisation=factorisation,
+                                               wrap_result=False)
+            factorised *= expanded
+        assert isinstance(factorised, Expr)
+
+        if wrap_result:
+            assumptions = self.assumptions
+            factorised = ExprContainer(inner=factorised, **assumptions)
+        return factorised
+
     def expand_antisym_eri(self, wrap_result: bool = True):
         """
         Expands the antisymmetric ERI using chemists notation

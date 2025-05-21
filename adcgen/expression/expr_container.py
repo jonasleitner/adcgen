@@ -275,6 +275,26 @@ class ExprContainer(Container):
         self._inner = renamed
         return self
 
+    def factorise_eri(self, factorisation: str = 'sym') -> 'ExprContainer':
+        """
+        Factorises symmetric ERIs in chemist notation into RI format.
+        This can be done both symmetrically and asymetrically
+
+        Args:
+            factorisation : str, optional
+                Which mode of factorisation to use. Defaults to 'sym'.
+
+        Returns:
+            ExprContainer: The factorised result
+        """
+        res = S.Zero
+        for term in self.terms:
+            res += term.factorise_eri(factorisation=factorisation,
+                                      wrap_result=False)
+        assert isinstance(res, Expr)
+        self._inner = res
+        return self
+
     def expand_antisym_eri(self) -> 'ExprContainer':
         """
         Expands the antisymmetric ERI using chemists notation

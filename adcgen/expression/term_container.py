@@ -596,6 +596,35 @@ class TermContainer(Container):
             renamed = ExprContainer(renamed, **self.assumptions)
         return renamed
 
+    def factorise_eri(self, factorisation: str = 'sym',
+                      wrap_result: bool = True) -> "Expr | ExprContainer":
+        """
+        Factorises symmetric ERIs in chemist notation into RI format.
+        This is done either symmetrically or asymmetrically
+
+        Args:
+            factorisation : str, optional
+                Either 'sym' or 'asym'. Determines the type of factorisation.
+                Defaults to 'sym'.
+            wrap_result : bool, optional
+                Whether to wrap the result in an ExprContainer.
+                Defaults to True.
+
+        Returns:
+            ExprContainer | Expr: The factorised result
+        """
+        from .expr_container import ExprContainer
+
+        factorised = S.One
+        for obj in self.objects:
+            factorised *= obj.factorise_eri(factorisation=factorisation,
+                                            wrap_result=False)
+
+        if wrap_result:
+            assumptions = self.assumptions
+            factorised = ExprContainer(factorised, **assumptions)
+        return factorised
+
     def expand_antisym_eri(self, wrap_result: bool = True
                            ) -> "ExprContainer | Expr":
         """
