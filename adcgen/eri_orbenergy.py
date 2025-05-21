@@ -558,9 +558,8 @@ class EriOrbenergy:
             return self.denom
 
         symbolic_denom = ExprContainer(1, **self.denom.assumptions)
-        has_symbolic_denom = False
         for bracket in self.denom_brackets:
-            signs = {'-': set(), '+': set()}
+            signs = {"-": set(), "+": set()}
             for term in bracket.terms:
                 idx = term.idx
                 if len(idx) != 1:
@@ -570,28 +569,23 @@ class EriOrbenergy:
                                        f"Found: {term} in {bracket}.")
                 pref = term.prefactor
                 if pref is S.One:
-                    signs['+'].add(idx[0])
+                    signs["+"].add(idx[0])
                 elif pref is S.NegativeOne:
-                    signs['-'].add(idx[0])
+                    signs["-"].add(idx[0])
                 else:
                     raise RuntimeError(f"Found invalid prefactor {pref} in "
                                        f"denominator bracket {bracket}.")
-            if signs['+'] & signs['-']:
+            if signs["+"] & signs["-"]:
                 raise RuntimeError(f"Found index that is added and "
                                    f"subtracted in a denominator: {bracket}.")
-            has_symbolic_denom = True
             exponent = (
                     S.One if isinstance(bracket, ExprContainer)
                     else bracket.exponent
             )
             symbolic_denom *= Pow(SymmetricTensor(
-                tensor_names.sym_orb_denom, tuple(signs['+']),
-                tuple(signs['-']), -1
+                tensor_names.sym_orb_denom, tuple(signs["+"]),
+                tuple(signs["-"]), -1
             ), exponent)
-        if has_symbolic_denom:
-            symbolic_denom.antisym_tensors = (
-                symbolic_denom.antisym_tensors + (tensor_names.sym_orb_denom,)
-            )
         return symbolic_denom
 
 
