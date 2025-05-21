@@ -31,18 +31,6 @@ class ObjectContainer(Container):
     ----------
     inner:
         The object to wrap, e.g., an AntiSymmetricTensor
-    real : bool, optional
-        Whether the expression is represented in a real orbital basis.
-    sym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-symmetry, i.e.,
-        d^{pq}_{rs} = d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional symmetry if they are not aware
-        of it yet.
-    antisym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-antisymmetry, i.e.,
-        d^{pq}_{rs} = - d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional antisymmetry if they are not
-        aware of it yet.
     target_idx: Iterable[Index] | None, optional
         Target indices of the expression. By default the Einstein sum
         convention will be used to identify target and contracted indices,
@@ -569,13 +557,14 @@ class ObjectContainer(Container):
     ###################################
     # methods manipulating the object #
     ###################################
-    def _apply_tensor_braket_sym(self, sym_tensors: Sequence[str] = tuple(),
-                                 antisym_tensors: Sequence[str] = tuple(),
-                                 wrap_result: bool = True
-                                 ) -> "ExprContainer | Expr":
+    def _apply_tensor_braket_sym(
+            self, braket_sym_tensors: Sequence[str] = tuple(),
+            braket_antisym_tensors: Sequence[str] = tuple(),
+            wrap_result: bool = True) -> "ExprContainer | Expr":
         """
-        Applies the bra-ket symmetry defined in sym_tensors and antisym_tensors
-        to the current object. If wrap_result is set, the new object will be
+        Applies the bra-ket symmetry defined in braket_sym_tensors and
+        braket_antisym_tensors to the current object.
+        If wrap_result is set, the new object will be
         wrapped by :py:class:`ExprContainer`.
         """
         from .expr_container import ExprContainer
@@ -585,9 +574,9 @@ class ObjectContainer(Container):
         if isinstance(base, AntiSymmetricTensor):
             name = base.name
             braketsym: None | Number = None
-            if name in sym_tensors and base.bra_ket_sym is not S.One:
+            if name in braket_sym_tensors and base.bra_ket_sym is not S.One:
                 braketsym = S.One
-            elif name in antisym_tensors and \
+            elif name in braket_antisym_tensors and \
                     base.bra_ket_sym is not S.NegativeOne:
                 braketsym = S.NegativeOne
             if braketsym is not None:

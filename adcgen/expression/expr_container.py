@@ -23,13 +23,13 @@ class ExprContainer(Container):
     real : bool, optional
         Whether the expression is represented in a real orbital basis.
         This will add the antisymmetric ERI and the fock matrix to
-        sym_tensors and rename complex t-amplitudes.
-    sym_tensors: Iterable[str] | None, optional
+        braket_sym_tensors and rename complex t-amplitudes.
+    braket_sym_tensors: Iterable[str] | None, optional
         Names of tensors with bra-ket-symmetry, i.e.,
         d^{pq}_{rs} = d^{rs}_{pq}. Adjusts the corresponding tensors to
         correctly represent this additional symmetry if they are not aware
         of it yet.
-    antisym_tensors: Iterable[str] | None, optional
+    braket_antisym_tensors: Iterable[str] | None, optional
         Names of tensors with bra-ket-antisymmetry, i.e.,
         d^{pq}_{rs} = - d^{rs}_{pq}. Adjusts the corresponding tensors to
         correctly represent this additional antisymmetry if they are not
@@ -41,8 +41,8 @@ class ExprContainer(Container):
     """
     def __init__(self, inner: Expr | Container | Any,
                  real: bool = False,
-                 sym_tensors: Iterable[str] = tuple(),
-                 antisym_tensors: Iterable[str] = tuple(),
+                 braket_sym_tensors: Iterable[str] = tuple(),
+                 braket_antisym_tensors: Iterable[str] = tuple(),
                  target_idx: Iterable[Index] | Iterable[str] | None = None
                  ) -> None:
         # import target index strings
@@ -62,26 +62,29 @@ class ExprContainer(Container):
         if self._target_idx is not None:
             self.set_target_idx(self._target_idx)
         # import sym and antisym_tensors
-        if isinstance(sym_tensors, str):
-            sym_tensors = (sym_tensors,)
-        elif not isinstance(sym_tensors, Sequence):
-            sym_tensors = tuple(sym_tensors)
-        if isinstance(antisym_tensors, str):
-            antisym_tensors = (antisym_tensors,)
-        elif not isinstance(antisym_tensors, Sequence):
-            antisym_tensors = tuple(antisym_tensors)
+        if isinstance(braket_sym_tensors, str):
+            braket_sym_tensors = (braket_sym_tensors,)
+        elif not isinstance(braket_sym_tensors, Sequence):
+            braket_sym_tensors = tuple(braket_sym_tensors)
+        if isinstance(braket_antisym_tensors, str):
+            braket_antisym_tensors = (braket_antisym_tensors,)
+        elif not isinstance(braket_antisym_tensors, Sequence):
+            braket_antisym_tensors = tuple(braket_antisym_tensors)
         # we are working in a real orbital basis:
         # rename complex tensors: for instance complex t-amplitudes t1cc -> t1
-        # add fock matrix and antisymmetric ERI to sym_tensors
+        # add fock matrix and antisymmetric ERI to braket_sym_tensors
         if real:
-            sym_tensors = (*sym_tensors, tensor_names.fock, tensor_names.eri)
+            braket_sym_tensors = (
+                *braket_sym_tensors, tensor_names.fock, tensor_names.eri
+            )
             self._rename_complex_tensors()
         # apply the tensor bra-ket-symmetry:
         # real implicitly adds Fock and antisymmetric ERI to the
         # symmetric tensors
-        if sym_tensors or antisym_tensors:
+        if braket_sym_tensors or braket_antisym_tensors:
             self._apply_tensor_braket_sym(
-                sym_tensors=sym_tensors, antisym_tensors=antisym_tensors
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors
             )
 
     def __len__(self) -> int:
@@ -142,23 +145,24 @@ class ExprContainer(Container):
     ############################################################
     # Modify the expression (in place, related to assumptions) #
     ############################################################
-    def add_bra_ket_sym(self, sym_tensors: Sequence[str] = tuple(),
-                        antisym_tensors: Sequence[str] = tuple()
+    def add_bra_ket_sym(self, braket_sym_tensors: Sequence[str] = tuple(),
+                        braket_antisym_tensors: Sequence[str] = tuple()
                         ) -> "ExprContainer":
         """
         Add bra-ket-symmetry to tensors according to their name.
-        If "d" is given in sym_tensors: d^{pq}_{rs} = d^{rs}_{pq}.
-        If "d" is given in antisym_tensors: d^{pq}_{rs} = -d^{rs}_{pq}.
+        If "d" is given in braket_sym_tensors: d^{pq}_{rs} = d^{rs}_{pq}.
+        If "d" is given in braket_antisym_tensors: d^{pq}_{rs} = -d^{rs}_{pq}.
         Note that it is not possible to remove bra-ket-symmetry,
         because the original state of a tensor can not be recovered.
         """
-        if isinstance(sym_tensors, str):
-            sym_tensors = (sym_tensors,)
-        if isinstance(antisym_tensors, str):
-            antisym_tensors = (antisym_tensors,)
+        if isinstance(braket_sym_tensors, str):
+            braket_sym_tensors = (braket_sym_tensors,)
+        if isinstance(braket_antisym_tensors, str):
+            braket_antisym_tensors = (braket_antisym_tensors,)
 
         return self._apply_tensor_braket_sym(
-            sym_tensors=sym_tensors, antisym_tensors=antisym_tensors
+            braket_sym_tensors=braket_sym_tensors,
+            braket_antisym_tensors=braket_antisym_tensors
         )
 
     def make_real(self) -> "ExprContainer":
@@ -171,19 +175,20 @@ class ExprContainer(Container):
             return self
         # add the bra-ket-symmetry:
         self._apply_tensor_braket_sym(
-            sym_tensors=(tensor_names.fock, tensor_names.eri)
+            braket_sym_tensors=(tensor_names.fock, tensor_names.eri)
         )
         if self.inner.is_number:
             return self
         # rename the tensors and return
         return self._rename_complex_tensors()
 
-    def _apply_tensor_braket_sym(self, sym_tensors: Sequence[str] = tuple(),
-                                 antisym_tensors: Sequence[str] = tuple()
-                                 ) -> "ExprContainer":
+    def _apply_tensor_braket_sym(
+            self, braket_sym_tensors: Sequence[str] = tuple(),
+            braket_antisym_tensors: Sequence[str] = tuple()
+            ) -> "ExprContainer":
         """
         Adds the bra-ket symmetry and antisymmetry defined in
-        sym_tensors and antisym_tensors to the tensor objects
+        braket_sym_tensors and braket_antisym_tensors to the tensor objects
         in the expression.
         """
         if self.inner.is_number:  # nothing to do
@@ -191,7 +196,8 @@ class ExprContainer(Container):
         res = S.Zero
         for term in self.terms:
             res += term._apply_tensor_braket_sym(
-                sym_tensors=sym_tensors, antisym_tensors=antisym_tensors,
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors,
                 wrap_result=False
             )
         assert isinstance(res, Expr)
