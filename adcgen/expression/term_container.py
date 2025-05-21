@@ -339,13 +339,14 @@ class TermContainer(Container):
     ###############################
     # method that modify the term #
     ###############################
-    def _apply_tensor_braket_sym(self, sym_tensors: Sequence[str] = tuple(),
-                                 antisym_tensors: Sequence[str] = tuple(),
-                                 wrap_result: bool = True
-                                 ) -> "ExprContainer | Expr":
+    def _apply_tensor_braket_sym(
+            self, braket_sym_tensors: Sequence[str] = tuple(),
+            braket_antisym_tensors: Sequence[str] = tuple(),
+            wrap_result: bool = True) -> "ExprContainer | Expr":
         """
-        Applies the tensor bra-ket symmetry defined in sym_tensors and
-        antisym_tensors to all tensors in the term. If wrap_result is set,
+        Applies the tensor bra-ket symmetry defined in braket_sym_tensors and
+        braket_antisym_tensors to all tensors in the term.
+        If wrap_result is set,
         the new term will be wrapped by :py:class:`ExprContainer`.
         """
         from .expr_container import ExprContainer
@@ -353,7 +354,8 @@ class TermContainer(Container):
         term = S.One
         for obj in self.objects:
             term *= obj._apply_tensor_braket_sym(
-                sym_tensors=sym_tensors, antisym_tensors=antisym_tensors,
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors,
                 wrap_result=False
             )
         assert isinstance(term, Expr)
