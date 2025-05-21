@@ -45,8 +45,8 @@ class Index(Dummy):
             return "virt"
         elif self.assumptions0.get("core"):
             return "core"
-        elif self.assumptions0.get("ri"):
-            return "ri"
+        elif self.assumptions0.get("aux"):
+            return "aux"
         else:
             return "general"
 
@@ -85,7 +85,7 @@ class Indices(metaclass=Singleton):
     # the valid spaces with their corresponding associated index names
     base = {
         "occ": "ijklmno", "virt": "abcdefgh", "general": "pqrstuvw",
-        "core": "IJKLMNO", "ri": "PQRSTUVWXYZ"
+        "core": "IJKLMNO", "aux": "PQRST"
     }
     # the valid spins
     spins = ("", "a", "b")
@@ -246,8 +246,8 @@ class Indices(metaclass=Singleton):
             assumptions["above_fermi"] = True
         elif space == "core":
             assumptions["core"] = True
-        elif space == "ri":
-            assumptions["ri"] = True
+        elif space == "aux":
+            assumptions["aux"] = True
         elif space != "general":
             raise ValueError(f"Invalid space {space}")
         if spin:
@@ -274,7 +274,7 @@ def sort_idx_canonical(idx: Index | Any):
         # - also add the hash here for wicks, where multiple i are around
         # - we have to map the spaces onto numbers, since in adcman and adcc
         # the ordering o < c < v is used for the definition of canonical blocks
-        space_keys = {"g": 0, "o": 1, "c": 2, "v": 3, "r": 4}
+        space_keys = {"g": 0, "o": 1, "c": 2, "v": 3, "a": 4}
         return (space_keys[idx.space[0]],
                 idx.spin,
                 int(idx.name[1:]) if idx.name[1:] else 0,
@@ -321,7 +321,7 @@ def generic_indices_from_space(space_str: str) -> list[Index]:
     occ = generic_idx.get(("occ", ""), [])
     occ.extend(generic_idx.get(("virt", ""), []))
     occ.extend(generic_idx.get(("core", ""), []))
-    occ.extend(generic_idx.get(("ri", ""), []))
+    occ.extend(generic_idx.get(("aux", ""), []))
     return occ
 
 

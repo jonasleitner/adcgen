@@ -779,12 +779,12 @@ class ObjectContainer(Container):
             p, q, r, s = self.idx
             res = S.One
             if p.spin == q.spin and r.spin == s.spin:
-                assumptions = {"ri": True}
+                assumptions = {"aux": True}
                 if p.spin:
                     # Check if RI is applied before or after
                     # spin integration. RI indices are always alpha
                     assumptions["alpha"] = True
-                for _ in range(exponent):
+                for _ in range(int(exponent)):
                     aux_idx = Index('P', **assumptions)
                     if factorisation == 'sym':
                         res *= SymmetricTensor(tensor_names.ri_sym,

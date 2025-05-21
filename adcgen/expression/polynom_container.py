@@ -219,7 +219,7 @@ class PolynomContainer(ObjectContainer):
         from .expr_container import ExprContainer
 
         factorised = S.One
-        for _ in range(self.exponent):
+        for _ in range(int(self.exponent)):
             expanded = S.Zero
             for term in self.terms:
                 expanded += term.factorise_eri(factorisation=factorisation,

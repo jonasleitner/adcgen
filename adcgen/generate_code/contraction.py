@@ -23,7 +23,7 @@ class Sizes:
     occ: int = 0
     virt: int = 0
     general: int = 0
-    ri: int = 0
+    aux: int = 0
 
     @staticmethod
     def from_dict(input: dict[str, int]) -> "Sizes":
@@ -233,7 +233,7 @@ class ScalingComponent:
     virt: int
     occ: int
     core: int
-    ri: int
+    aux: int
 
     def evaluate_costs(self, sizes: Sizes) -> int:
         """
