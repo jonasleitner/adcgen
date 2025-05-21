@@ -21,9 +21,6 @@ def reduce_expr(expr: ExprContainer) -> ExprContainer:
     The implementation assumes a real orbital basis.
     """
     assert isinstance(expr, ExprContainer)
-    if not expr.real:
-        raise NotImplementedError("Intermediates only implemented for a real "
-                                  "orbital basis.")
     expr = expr.expand()
 
     # check if we have anything to do
