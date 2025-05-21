@@ -19,18 +19,6 @@ class Container:
     ----------
     inner: Expr | Container | Any
         The algebraic expression to wrap, e.g., a sympy.Add or sympy.Mul object
-    real : bool, optional
-        Whether the expression is represented in a real orbital basis.
-    sym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-symmetry, i.e.,
-        d^{pq}_{rs} = d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional symmetry if they are not aware
-        of it yet.
-    antisym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-antisymmetry, i.e.,
-        d^{pq}_{rs} = - d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional antisymmetry if they are not
-        aware of it yet.
     target_idx: Iterable[Index] | None, optional
         Target indices of the expression. By default the Einstein sum
         convention will be used to identify target and contracted indices,
@@ -38,9 +26,6 @@ class Container:
     """
 
     def __init__(self, inner: "Expr | Container | Any",
-                 real: bool = False,
-                 sym_tensors: Iterable[str] = tuple(),
-                 antisym_tensors: Iterable[str] = tuple(),
                  target_idx: Iterable[Index] | None = None) -> None:
         # possibly extract or import the expression to wrap
         if isinstance(inner, Container):
@@ -49,20 +34,7 @@ class Container:
             inner = sympify(inner)
             assert isinstance(inner, Expr)
         self._inner: Expr = inner
-        # set the assumptions
-        self._real: bool = real
-
-        if isinstance(sym_tensors, str):
-            sym_tensors = (sym_tensors,)
-        elif not isinstance(sym_tensors, tuple):
-            sym_tensors = tuple(sym_tensors)
-        self._sym_tensors: tuple[str, ...] = sym_tensors
-
-        if isinstance(antisym_tensors, str):
-            antisym_tensors = (antisym_tensors,)
-        elif not isinstance(antisym_tensors, tuple):
-            antisym_tensors = tuple(antisym_tensors)
-        self._antisym_tensors: tuple[str, ...] = antisym_tensors
+        # set the assumptions: the target indices
         if target_idx is not None and not isinstance(target_idx, tuple):
             target_idx = tuple(target_idx)
         self._target_idx: tuple[Index, ...] | None = target_idx
@@ -73,23 +45,8 @@ class Container:
     @property
     def assumptions(self) -> dict[str, Any]:
         return {
-            "real": self.real,
-            "sym_tensors": self.sym_tensors,
-            "antisym_tensors": self.antisym_tensors,
             "target_idx": self.provided_target_idx,
         }
-
-    @property
-    def real(self) -> bool:
-        return self._real
-
-    @property
-    def sym_tensors(self) -> tuple[str, ...]:
-        return self._sym_tensors
-
-    @property
-    def antisym_tensors(self) -> tuple[str, ...]:
-        return self._antisym_tensors
 
     @property
     def provided_target_idx(self) -> tuple[Index, ...] | None:
