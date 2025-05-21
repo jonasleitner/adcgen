@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from functools import cached_property
-from typing import Any, Sequence, TYPE_CHECKING, Literal
+from typing import Any, Sequence, TYPE_CHECKING
 import itertools
 
 from sympy.physics.secondquant import F, Fd, FermionicOperator, NO
@@ -747,22 +747,30 @@ class ObjectContainer(Container):
             obj = ExprContainer(obj, **self.assumptions)
         return obj
 
-    def expand_coulomb_ri(self, factorisation: Literal['sym', 'asym'] = 'sym',
+    def expand_coulomb_ri(self, factorisation: str = 'sym',
                           wrap_result: bool = True) -> "ExprContainer | Expr":
         """
-        Factorises Coulomb integrals into RI format.
-        This is done either symmetrically or asymmetrically.
+        Expands the Coulomb operators (pq | rs) into RI format
 
-        Args:
-            factorisation : str, optional
-                Either 'sym' or 'asym'. Determines the type of factorisation.
-                Defaults to 'sym'.
-            wrap_result : bool, optional
-                Whether to wrap the result in an ExprContainer.
-                Defaults to True.
+        Parameters
+        ----------
+        factorisation : str, optional
+            The type of factorisation ('sym' or 'asym'), by default 'sym'
+        wrap_result : bool, optional
+            Whether to wrap the result in an ExprContainer, by default True
 
-        Returns:
-            ExprContainer | Expr: The factorised result
+        Returns
+        -------
+        ExprContainer | Expr
+            The factorised expression.
+
+        Raises
+        ------
+        NotImplementedError
+            If a factorisation that is not 'sym' or 'asym' is provided or if
+            the expression is not real.
+        ValueError
+            If an invalide exponent is present
         """
         from .expr_container import ExprContainer
 
@@ -773,6 +781,13 @@ class ObjectContainer(Container):
 
         res = self.inner
         base, exponent = self.base_and_exponent
+        if not exponent.is_integer:
+            raise ValueError("Exponent of Object is not an integer. "
+                             f"Exponent: {exponent}")
+        elif int(exponent) < 0:
+            raise ValueError("RI decomposition is not meaningful for "
+                             "reciprocal Coulomb operators")
+
         if isinstance(base, SymmetricTensor) and \
                 base.name == tensor_names.coulomb:
             # ensure that the ERI is symmetric as an implicit check

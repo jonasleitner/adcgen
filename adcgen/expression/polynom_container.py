@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Sequence
 from functools import cached_property
-from typing import Any, TYPE_CHECKING, Literal
+from typing import Any, TYPE_CHECKING
 
 from sympy import Add, Expr, Pow, Symbol, S
 
@@ -198,25 +198,36 @@ class PolynomContainer(ObjectContainer):
             renamed = ExprContainer(inner=renamed, **self.assumptions)
         return renamed
 
-    def expand_coulomb_ri(self, factorisation: Literal['sym', 'asym'] = 'sym',
+    def expand_coulomb_ri(self, factorisation: str = 'sym',
                           wrap_result: bool = True) -> "Expr | ExprContainer":
         """
-        Fatorises the symmetric ERIs in chemist notation into an RI format.
-        Note that this expands the polynomial to account for the uniqueness
-        of each RI auxilliary index.
+        Expands the Coulomb operators (pq | rs) into RI format
 
-        Args:
-            factorisation : str, optional
-                Which type of factorisation to use (sym or asym).
-                Defaults to 'sym'
-            wrap_result : bool, optional
-                Whether to wrap the result in an ExprContainer.
-                Defaults to True.
+        Parameters
+        ----------
+        factorisation : str, optional
+            The type of factorisation ('sym' or 'asym'), by default 'sym'
+        wrap_result : bool, optional
+            Whether to wrap the result in an ExprContainer, by default True
 
-        Returns:
-            Expr | ExprContainer: The fatorised result
+        Returns
+        -------
+        ExprContainer | Expr
+            The factorised expression.
+
+        Raises
+        ------
+        ValueError
+            If an invalide exponent is present
         """
         from .expr_container import ExprContainer
+
+        if not self.exponent.is_integer:
+            raise ValueError("Only Polynomials with integer exponents can "
+                             "be factorised")
+        elif int(self.exponent) < 0:
+            raise ValueError("Decomposition of reciprocal Coulomb operators "
+                             "with RI is not meaningful")
 
         factorised = S.One
         for _ in range(int(self.exponent)):

@@ -379,10 +379,9 @@ class Generator:
             gs = self.gs[variant]
             gs_energy = ExprContainer(gs.energy(order), real=True)
             restricted = restriction == 'r'
-            symmetric = symmetry == 'sym'
             gs_energy = transform_to_spatial_orbitals(gs_energy, '', '',
                                                       restricted=restricted)
-            gs_energy = apply_resolution_of_identity(gs_energy, symmetric)
+            gs_energy = apply_resolution_of_identity(gs_energy, symmetry)
             gs_energy.substitute_contracted()
             results[variant][order][restriction][symmetry] = str(gs_energy)
         write_json(results, outfile)
@@ -394,7 +393,7 @@ class Generator:
         for variant in ['mp', 're']:
             results[variant] = {}
             gs = self.gs[variant]
-            for order in [0, 1, 2]:
+            for order in [0, 1, 2, 3]:
                 results[variant][order] = {}
                 for restriction in ['r', 'u']:
                     energy = ExprContainer(gs.energy(order), real=True)

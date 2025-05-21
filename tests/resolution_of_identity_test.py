@@ -21,12 +21,11 @@ class TestResolutionOfIdentity():
         ref = ref[restriction][symmetry].inner
         # transform restriction and symmetry to bool
         restricted = restriction == 'r'
-        symmetric = symmetry == 'sym'
         # compute the energy
         e = cls_instances[variant]['gs'].energy(order)
         expr = ExprContainer(e, real=True)
 
         sp_expr = transform_to_spatial_orbitals(expr, '', '', restricted)
-        ri_expr = apply_resolution_of_identity(sp_expr, symmetric)
+        ri_expr = apply_resolution_of_identity(sp_expr, symmetry)
 
         assert simplify(ri_expr - ref).substitute_contracted().inner is S.Zero

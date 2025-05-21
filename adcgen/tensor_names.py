@@ -29,6 +29,9 @@ class TensorNames(metaclass=Singleton):
     the attributes storing the names are given in brackets:
     - antisymmetric ERI in physicist notation (eri): V
     - Coulomb integrals in chemist notation (coulomb): v
+    - Symmetrically decomposed RI integrals (ri_sym): B
+    - The "factor" for an asymmetric RI integral (ri_asym_factor): C
+    - The pure 2e3c RI integral (ri_asym_eri): G
     - The fock matrix (fock): f
     - The arbitrary N-particle operator matrix (operator): d
     - Ground state amplitudes (gs_amplitude): t

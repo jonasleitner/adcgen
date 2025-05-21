@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from collections import Counter
 from functools import cached_property
-from typing import Any, TYPE_CHECKING, Sequence, Literal
+from typing import Any, TYPE_CHECKING, Sequence
 
 from sympy import Add, Expr, Mul, Pow, S, Symbol, factor, latex, nsimplify
 from sympy.physics.secondquant import NO
@@ -596,22 +596,22 @@ class TermContainer(Container):
             renamed = ExprContainer(renamed, **self.assumptions)
         return renamed
 
-    def expand_coulomb_ri(self, factorisation: Literal['sym', 'asym'] = 'sym',
+    def expand_coulomb_ri(self, factorisation: str = 'sym',
                           wrap_result: bool = True) -> "Expr | ExprContainer":
         """
-        Factorises Coulomb integrals into RI format.
-        This is done either symmetrically or asymmetrically
+        Expands the Coulomb operators (pq | rs) into RI format
 
-        Args:
-            factorisation : str, optional
-                Either 'sym' or 'asym'. Determines the type of factorisation.
-                Defaults to 'sym'.
-            wrap_result : bool, optional
-                Whether to wrap the result in an ExprContainer.
-                Defaults to True.
+        Parameters
+        ----------
+        factorisation : str, optional
+            The type of factorisation ('sym' or 'asym'), by default 'sym'
+        wrap_result : bool, optional
+            Whether to wrap the result in an ExprContainer, by default True
 
-        Returns:
-            ExprContainer | Expr: The factorised result
+        Returns
+        -------
+        ExprContainer | Expr
+            The factorised expression.
         """
         from .expr_container import ExprContainer
 

@@ -320,7 +320,7 @@ class KroneckerDelta(DefinedFunction):
             return S.Zero
 
         spi, spj = i.space[0], j.space[0]
-        valid_spaces = ["o", "v", "g", "c", "r"]
+        valid_spaces = ["o", "v", "g", "c", "a"]
         assert spi in valid_spaces and spj in valid_spaces
         if spi != "g" and spj != "g" and spi != spj:  # delta_ov / delta_vo
             return S.Zero

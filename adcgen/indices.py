@@ -320,8 +320,6 @@ def generic_indices_from_space(space_str: str) -> list[Index]:
     assert len(generic_idx) <= 2  # only occ and virt
     occ = generic_idx.get(("occ", ""), [])
     occ.extend(generic_idx.get(("virt", ""), []))
-    occ.extend(generic_idx.get(("core", ""), []))
-    occ.extend(generic_idx.get(("aux", ""), []))
     return occ
 
 
