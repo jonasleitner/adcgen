@@ -362,7 +362,7 @@ class Generator:
                         dump["real_transition_dm"][block] = str(expr)
         write_json(results, outfile)
 
-    def gen_ri_gs_energies(self):
+    def gen_ri_gs_energy(self):
         results: dict = {}
         outfile = "ri_gs_energy.json"
 
@@ -386,7 +386,7 @@ class Generator:
             results[variant][order][restriction][symmetry] = str(gs_energy)
         write_json(results, outfile)
 
-    def gen_spatial_gs_energies(self):
+    def gen_spatial_gs_energy(self):
         outfile = "spatial_gs_energy.json"
 
         results: dict = {}

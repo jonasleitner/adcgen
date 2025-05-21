@@ -781,7 +781,7 @@ class ObjectContainer(Container):
 
         res = self.inner
         base, exponent = self.base_and_exponent
-        if not exponent.is_integer:
+        if not exponent.is_Integer:
             raise ValueError("Exponent of Object is not an integer. "
                              f"Exponent: {exponent}")
         elif int(exponent) < 0:

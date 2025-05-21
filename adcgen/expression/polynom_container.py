@@ -222,7 +222,7 @@ class PolynomContainer(ObjectContainer):
         """
         from .expr_container import ExprContainer
 
-        if not self.exponent.is_integer:
+        if not self.exponent.is_Integer:
             raise ValueError("Only Polynomials with integer exponents can "
                              "be factorised")
         elif int(self.exponent) < 0:
