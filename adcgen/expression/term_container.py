@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from collections import Counter
 from functools import cached_property
-from typing import Any, TYPE_CHECKING, Sequence
+from typing import Any, TYPE_CHECKING, Sequence, Literal
 
 from sympy import Add, Expr, Mul, Pow, S, Symbol, factor, latex, nsimplify
 from sympy.physics.secondquant import NO
@@ -596,10 +596,10 @@ class TermContainer(Container):
             renamed = ExprContainer(renamed, **self.assumptions)
         return renamed
 
-    def factorise_eri(self, factorisation: str = 'sym',
-                      wrap_result: bool = True) -> "Expr | ExprContainer":
+    def expand_coulomb_ri(self, factorisation: Literal['sym', 'asym'] = 'sym',
+                          wrap_result: bool = True) -> "Expr | ExprContainer":
         """
-        Factorises symmetric ERIs in chemist notation into RI format.
+        Factorises Coulomb integrals into RI format.
         This is done either symmetrically or asymmetrically
 
         Args:
@@ -617,8 +617,8 @@ class TermContainer(Container):
 
         factorised = S.One
         for obj in self.objects:
-            factorised *= obj.factorise_eri(factorisation=factorisation,
-                                            wrap_result=False)
+            factorised *= obj.expand_coulomb_ri(factorisation=factorisation,
+                                                wrap_result=False)
 
         if wrap_result:
             assumptions = self.assumptions

@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, Literal
 
 from sympy import Add, Basic, Expr, Mul, Pow, S, Symbol, factor, nsimplify
 
@@ -275,22 +275,23 @@ class ExprContainer(Container):
         self._inner = renamed
         return self
 
-    def factorise_eri(self, factorisation: str = 'sym') -> 'ExprContainer':
+    def expand_coulomb_ri(self, factorisation: Literal['sym', 'asym'] = 'sym'
+                          ) -> 'ExprContainer':
         """
         Factorises symmetric ERIs in chemist notation into RI format.
         This can be done both symmetrically and asymetrically
 
         Args:
             factorisation : str, optional
-                Which mode of factorisation to use. Defaults to 'sym'.
+                Either 'sym' or 'asym'. Defaults to 'sym'.
 
         Returns:
             ExprContainer: The factorised result
         """
         res = S.Zero
         for term in self.terms:
-            res += term.factorise_eri(factorisation=factorisation,
-                                      wrap_result=False)
+            res += term.expand_coulomb_ri(factorisation=factorisation,
+                                          wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         return self

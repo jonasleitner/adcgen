@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Sequence
 from functools import cached_property
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Literal
 
 from sympy import Add, Expr, Pow, Symbol, S
 
@@ -198,8 +198,8 @@ class PolynomContainer(ObjectContainer):
             renamed = ExprContainer(inner=renamed, **self.assumptions)
         return renamed
 
-    def factorise_eri(self, factorisation: str = 'sym',
-                      wrap_result: bool = True) -> "Expr | ExprContainer":
+    def expand_coulomb_ri(self, factorisation: Literal['sym', 'asym'] = 'sym',
+                          wrap_result: bool = True) -> "Expr | ExprContainer":
         """
         Fatorises the symmetric ERIs in chemist notation into an RI format.
         Note that this expands the polynomial to account for the uniqueness
@@ -222,8 +222,8 @@ class PolynomContainer(ObjectContainer):
         for _ in range(int(self.exponent)):
             expanded = S.Zero
             for term in self.terms:
-                expanded += term.factorise_eri(factorisation=factorisation,
-                                               wrap_result=False)
+                expanded += term.expand_coulomb_ri(factorisation=factorisation,
+                                                   wrap_result=False)
             factorised *= expanded
         assert isinstance(factorised, Expr)
 

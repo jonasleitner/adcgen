@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from functools import cached_property
-from typing import Any, Sequence, TYPE_CHECKING
+from typing import Any, Sequence, TYPE_CHECKING, Literal
 import itertools
 
 from sympy.physics.secondquant import F, Fd, FermionicOperator, NO
@@ -747,11 +747,11 @@ class ObjectContainer(Container):
             obj = ExprContainer(obj, **self.assumptions)
         return obj
 
-    def factorise_eri(self, factorisation: str = 'sym',
-                      wrap_result: bool = True) -> "ExprContainer | Expr":
+    def expand_coulomb_ri(self, factorisation: Literal['sym', 'asym'] = 'sym',
+                          wrap_result: bool = True) -> "ExprContainer | Expr":
         """
-        Factorises symmetric ERIs in chemist notation into RI format.
-        This is done either symmetrically or asymmetrically
+        Factorises Coulomb integrals into RI format.
+        This is done either symmetrically or asymmetrically.
 
         Args:
             factorisation : str, optional

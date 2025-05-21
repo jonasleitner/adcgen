@@ -44,4 +44,4 @@ def apply_resolution_of_identity(expr: ExprContainer,
         raise Inputerror('Resolution of Identity requires that the ERIs'
                          ' be expanded first.')
 
-    return expr.factorise_eri(factorisation=factorisation)
+    return expr.expand_coulomb_ri(factorisation=factorisation)
