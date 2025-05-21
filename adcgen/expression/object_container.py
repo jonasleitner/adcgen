@@ -766,6 +766,11 @@ class ObjectContainer(Container):
         """
         from .expr_container import ExprContainer
 
+        if factorisation not in ('sym', 'asym'):
+            raise NotImplementedError("Only symmetric (sym) and asymmetric "
+                                      "(asym) factorisation of the Coulomb "
+                                      "integral is implemented")
+
         res = self.inner
         base, exponent = self.base_and_exponent
         if isinstance(base, SymmetricTensor) and \
