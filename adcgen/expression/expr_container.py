@@ -191,8 +191,15 @@ class ExprContainer(Container):
         braket_sym_tensors and braket_antisym_tensors to the tensor objects
         in the expression.
         """
+        if any(name in braket_sym_tensors for name in braket_antisym_tensors):
+            raise ValueError("Can not simultaneously add bra-ket-symmetry and "
+                             "-antisymmetry to a tensor: "
+                             f"sym_tensors {braket_sym_tensors}, "
+                             f"antisym_tensors {braket_antisym_tensors}.")
+
         if self.inner.is_number:  # nothing to do
             return self
+
         res = S.Zero
         for term in self.terms:
             res += term._apply_tensor_braket_sym(
