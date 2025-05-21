@@ -1,9 +1,10 @@
 from collections.abc import Iterable
 from typing import Any, TYPE_CHECKING
 
-from sympy import Expr, latex, sympify
+from sympy import Expr, latex, S, sympify
 
 from ..indices import Index, order_substitutions
+from ..sympy_objects import AntiSymmetricTensor
 
 # imports only required for type checking (avoid circular imports)
 if TYPE_CHECKING:
@@ -55,6 +56,28 @@ class Container:
     @property
     def inner(self) -> Expr:
         return self._inner
+
+    @property
+    def braket_sym_tensors(self) -> tuple[str, ...]:
+        """
+        Returns the names of all tensors with bra-ket-symmetry, i.e.,
+        all tensors with d^{pq}_{rs} = d^{rs}_{pq}.
+        """
+        return tuple(sorted(set(
+            tensor.name for tensor in self.inner.atoms(AntiSymmetricTensor)
+            if tensor.bra_ket_sym is S.One
+        )))
+
+    @property
+    def braket_antisym_tensors(self) -> tuple[str, ...]:
+        """
+        Returns the names of all tensors with bra-ket-antisymmetry, i.e.,
+        all tensors with d^{pq}_{rs} = -d^{rs}_{pq}.
+        """
+        return tuple(sorted(set(
+            tensor.name for tensor in self.inner.atoms(AntiSymmetricTensor)
+            if tensor.bra_ket_sym is S.NegativeOne
+        )))
 
     def permute(self, *perms: tuple[Index, Index]) -> "ExprContainer":
         """
