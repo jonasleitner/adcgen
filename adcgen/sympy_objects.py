@@ -322,6 +322,8 @@ class KroneckerDelta(DefinedFunction):
         spi, spj = i.space[0], j.space[0]
         valid_spaces = ["o", "v", "g", "c", "a"]
         assert spi in valid_spaces and spj in valid_spaces
+        if (spi == "g" and spj == "a") or (spi == "a" or spj == "g"):
+            return S.Zero
         if spi != "g" and spj != "g" and spi != spj:  # delta_ov / delta_vo
             return S.Zero
         spi, spj = i.spin, j.spin
@@ -366,13 +368,13 @@ class KroneckerDelta(DefinedFunction):
         space2, spin2 = j.space[0], j.spin
         # ensure we have no unexpected space and spin
         assert (
-            space1 in ["o", "v", "g", "c", "r"]
-            and space2 in ["o", "v", "g", "c", "r"]
+            space1 in ["o", "v", "g", "c", "a"]
+            and space2 in ["o", "v", "g", "c", "a"]
         )
         assert spin1 in ["", "a", "b"] and spin2 in ["", "a", "b"]
 
         if spin1 == spin2:  # nn / aa / bb  -> equal spin information
-            # oo / vv / cc / gg / og / vg / cg / rr
+            # oo / vv / cc / gg / og / vg / cg / aa
             # RI indices will always end up here
             if space1 == space2 or space2 == "g":
                 return (i, j)
