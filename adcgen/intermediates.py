@@ -238,13 +238,7 @@ class RegisteredIntermediate:
         # build the tensor object
         tensor = self._build_tensor(indices=indices)
         if wrap_result:
-            kwargs = {}
-            if isinstance(tensor, AntiSymmetricTensor):
-                if tensor.bra_ket_sym is S.One:  # bra ket symmetry
-                    kwargs["sym_tensors"] = (tensor.name,)
-                elif tensor.bra_ket_sym is S.NegativeOne:  # bra ket anisym
-                    kwargs["antisym_tensors"] = (tensor.name,)
-            return ExprContainer(tensor, **kwargs)
+            return ExprContainer(tensor)
         else:
             return tensor
 

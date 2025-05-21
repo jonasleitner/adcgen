@@ -429,9 +429,6 @@ class ExprContainer(Container):
                 raise TypeError("Assumptions need to be equal. Got: "
                                 f"{self.assumptions} and {other.assumptions}")
             other = other.inner
-        elif isinstance(other, Basic):
-            # Apply the assumptions to the sympy object
-            other = ExprContainer(other, **self.assumptions).inner
         res = self.inner + other
         assert isinstance(res, Expr)
         self._inner = res
@@ -443,9 +440,6 @@ class ExprContainer(Container):
                 raise TypeError("Assumptions need to be equal. Got: "
                                 f"{self.assumptions} and {other.assumptions}")
             other = other.inner
-        elif isinstance(other, Basic):
-            # Apply the assumptions to the sympy object
-            other = ExprContainer(other, **self.assumptions).inner
         res = self.inner - other
         assert isinstance(res, Expr)
         self._inner = res
@@ -457,9 +451,6 @@ class ExprContainer(Container):
                 raise TypeError("Assumptions need to be equal. Got: "
                                 f"{self.assumptions} and {other.assumptions}")
             other = other.inner
-        elif isinstance(other, Basic):
-            # Apply the assumptions to the sympy object
-            other = ExprContainer(other, **self.assumptions).inner
         res = self.inner * other
         assert isinstance(res, Expr)
         self._inner = res
@@ -471,8 +462,6 @@ class ExprContainer(Container):
                 raise TypeError("Assumptions need to be equal. Got: "
                                 f"{self.assumptions} and {other.assumptions}")
             other = other.inner
-        elif isinstance(other, Basic):
-            other = ExprContainer(other, **self.assumptions).inner
         res = self.inner / other
         assert isinstance(res, Expr)
         self._inner = res
