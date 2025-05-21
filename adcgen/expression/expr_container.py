@@ -1,7 +1,7 @@
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from sympy import Add, Basic, Expr, Mul, Pow, S, Symbol, factor, nsimplify
+from sympy import Add, Basic, Expr, Mul, Pow, S, factor, nsimplify
 
 from ..indices import (
     Index, get_symbols, sort_idx_canonical,
@@ -22,6 +22,8 @@ class ExprContainer(Container):
         The algebraic expression to wrap, e.g., a sympy.Add or sympy.Mul object
     real : bool, optional
         Whether the expression is represented in a real orbital basis.
+        This will add the antisymmetric ERI and the fock matrix to
+        sym_tensors and rename complex t-amplitudes.
     sym_tensors: Iterable[str] | None, optional
         Names of tensors with bra-ket-symmetry, i.e.,
         d^{pq}_{rs} = d^{rs}_{pq}. Adjusts the corresponding tensors to
@@ -45,7 +47,7 @@ class ExprContainer(Container):
                  ) -> None:
         # import target index strings
         if target_idx is not None:
-            if isinstance(target_idx, str) or isinstance(target_idx, Sequence):
+            if isinstance(target_idx, Sequence):  # str, list, tuple
                 target_idx = get_symbols(target_idx)
             else:
                 target_tpl = tuple(target_idx)
@@ -54,32 +56,33 @@ class ExprContainer(Container):
                 target_idx = get_symbols(target_tpl)
                 del target_tpl
         # set the class attributes and import the inner expression
-        super().__init__(
-            inner=inner, real=real, sym_tensors=sym_tensors,
-            antisym_tensors=antisym_tensors, target_idx=target_idx
-        )
-        # ensure that sym_tensor and antisym_tensor are immutable tuples and
-        # remove duplicates
-        self._sym_tensors = tuple(sorted(set(self._sym_tensors)))
-        self._antisym_tensors = tuple(sorted(set(self._antisym_tensors)))
+        super().__init__(inner=inner, target_idx=target_idx)
         # Now apply the given assumptions: this only happens in this class
         # store target indices as sorted tuple
         if self._target_idx is not None:
             self.set_target_idx(self._target_idx)
-        # applying the tensor symmetry has a certain overlap with
-        # make_real: make_real will try to add ERI and Fock matrix
-        # to sym_tensor and apply the tensor symmetry (but only
-        # if the tensors were not already marked as symmetric).
-        # Therefore, it makes sense to manually add them here
-        # to avoid applying the tensor symmetry twice.
-        if self._sym_tensors or self._antisym_tensors:
-            if self._real:
-                self._sym_tensors = tuple(sorted(set(
-                    self._sym_tensors + (tensor_names.fock, tensor_names.eri)
-                )))
-            self._apply_tensor_braket_sym()
-        if self._real:
-            self.make_real(force=True)
+        # import sym and antisym_tensors
+        if isinstance(sym_tensors, str):
+            sym_tensors = (sym_tensors,)
+        elif not isinstance(sym_tensors, Sequence):
+            sym_tensors = tuple(sym_tensors)
+        if isinstance(antisym_tensors, str):
+            antisym_tensors = (antisym_tensors,)
+        elif not isinstance(antisym_tensors, Sequence):
+            antisym_tensors = tuple(antisym_tensors)
+        # we are working in a real orbital basis:
+        # rename complex tensors: for instance complex t-amplitudes t1cc -> t1
+        # add fock matrix and antisymmetric ERI to sym_tensors
+        if real:
+            sym_tensors = (*sym_tensors, tensor_names.fock, tensor_names.eri)
+            self._rename_complex_tensors()
+        # apply the tensor bra-ket-symmetry:
+        # real implicitly adds Fock and antisymmetric ERI to the
+        # symmetric tensors
+        if sym_tensors or antisym_tensors:
+            self._apply_tensor_braket_sym(
+                sym_tensors=sym_tensors, antisym_tensors=antisym_tensors
+            )
 
     def __len__(self) -> int:
         # ExprContainer(0) also has length 1!
@@ -136,101 +139,81 @@ class ExprContainer(Container):
                 sorted(set(get_symbols(target_idx)), key=sort_idx_canonical)
             )
 
-    @Container.sym_tensors.setter
-    def sym_tensors(self, tensors: Iterable[str]) -> None:
+    ############################################################
+    # Modify the expression (in place, related to assumptions) #
+    ############################################################
+    def add_bra_ket_sym(self, sym_tensors: Sequence[str] = tuple(),
+                        antisym_tensors: Sequence[str] = tuple()
+                        ) -> "ExprContainer":
         """
         Add bra-ket-symmetry to tensors according to their name.
-        Note that it is only formally possible to remove tensors from
-        sym_tensors, because the original state of a tensor is lost when the
-        bra-ket-symmetry is applied, i.e., after bra-ket-symmetry was added to
-        a tensor d^{p}_{q} it is not knwon whether it's original state was
-        d^{q}_{p} or d^{p}_{q}.
+        If "d" is given in sym_tensors: d^{pq}_{rs} = d^{rs}_{pq}.
+        If "d" is given in antisym_tensors: d^{pq}_{rs} = -d^{rs}_{pq}.
+        Note that it is not possible to remove bra-ket-symmetry,
+        because the original state of a tensor can not be recovered.
         """
-        if isinstance(tensors, str):
-            tensors = {tensors, }
-        else:
-            assert all(isinstance(t, str) for t in tensors)
-            tensors = set(tensors)
+        if isinstance(sym_tensors, str):
+            sym_tensors = (sym_tensors,)
+        if isinstance(antisym_tensors, str):
+            antisym_tensors = (antisym_tensors,)
 
-        if self.real:
-            tensors.update([tensor_names.fock, tensor_names.eri])
-        tensors = tuple(sorted(tensors))
-        if tensors != self._sym_tensors:
-            self._sym_tensors = tensors
-            self._apply_tensor_braket_sym()
+        return self._apply_tensor_braket_sym(
+            sym_tensors=sym_tensors, antisym_tensors=antisym_tensors
+        )
 
-    @Container.antisym_tensors.setter
-    def antisym_tensors(self, tensors: Iterable[str]) -> None:
+    def make_real(self) -> "ExprContainer":
         """
-        Add bra-ket-antisymmetry to tensors according to their name.
-        Note that it is only formally possible to remove tensors from
-        sym_tensors, because the original state of a tensor is lost when the
-        bra-ket-symmetry is applied, i.e., after bra-ket-antisymmetry was
-        added to a tensor d^{p}_{q} it is not knwon whether it's original
-        state was d^{q}_{p} or d^{p}_{q}.
+        Represent the expression in a real orbital basis.
+        - names of complex conjugate t-amplitudes, for instance t1cc -> t1
+        - adds bra-ket-symmetry to the fock matrix and the ERI.
         """
-        if isinstance(tensors, str):
-            tensors = (tensors,)
-        else:
-            assert all(isinstance(t, str) for t in tensors)
-            tensors = tuple(sorted(set(tensors)))
+        if self.inner.is_number:
+            return self
+        # add the bra-ket-symmetry:
+        self._apply_tensor_braket_sym(
+            sym_tensors=(tensor_names.fock, tensor_names.eri)
+        )
+        if self.inner.is_number:
+            return self
+        # rename the tensors and return
+        return self._rename_complex_tensors()
 
-        if tensors != self._antisym_tensors:
-            self._antisym_tensors = tensors
-            self._apply_tensor_braket_sym()
-
-    #################################################
-    # methods that modify the expression (in place) #
-    #################################################
-    def _apply_tensor_braket_sym(self) -> "ExprContainer":
+    def _apply_tensor_braket_sym(self, sym_tensors: Sequence[str] = tuple(),
+                                 antisym_tensors: Sequence[str] = tuple()
+                                 ) -> "ExprContainer":
         """
         Adds the bra-ket symmetry and antisymmetry defined in
         sym_tensors and antisym_tensors to the tensor objects
         in the expression.
         """
-        if self.inner.is_number:
+        if self.inner.is_number:  # nothing to do
             return self
-        # actually do something
         res = S.Zero
         for term in self.terms:
-            res += term._apply_tensor_braket_sym(wrap_result=False)
+            res += term._apply_tensor_braket_sym(
+                sym_tensors=sym_tensors, antisym_tensors=antisym_tensors,
+                wrap_result=False
+            )
         assert isinstance(res, Expr)
         self._inner = res
         return self
 
-    def make_real(self, force: bool = False) -> "ExprContainer":
+    def _rename_complex_tensors(self) -> "ExprContainer":
         """
-        Represent the expression in a real orbital basis.
-        - names of complex conjugate t-amplitudes, for instance t1cc -> t1
-        - adds bra-ket-symmetry to the fock matrix and the ERI.
-
-        Parameters
-        ----------
-        force: bool, optional
-            If set the function will also run also if 'real' is already set.
-            (default: False)
+        Renames complex tensors to reflect that the expression is
+        represented in a real orbital basis, e.g., complex t-amplitudes
+        are renamed t1cc -> t1.
         """
-        if (self.real and not force):
-            return self
-        # actually so something: first adjust the tensor symmetry
-        self._real = True
-        sym_tensors = self._sym_tensors
-        if tensor_names.fock not in sym_tensors or \
-                tensor_names.eri not in sym_tensors:
-            self._sym_tensors = tuple(sorted(set(
-                sym_tensors + (tensor_names.fock, tensor_names.eri)
-            )))
-            self._apply_tensor_braket_sym()
-        if self.inner.is_number:
-            return self
-        # and then adjust the tensor names
         res = S.Zero
         for term in self.terms:
-            res += term.make_real(wrap_result=False)
+            res += term._rename_complex_tensors(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
         return self
 
+    #################################################
+    # methods that modify the expression (in place) #
+    #################################################
     def block_diagonalize_fock(self) -> "ExprContainer":
         """
         Block diagonalize the Fock matrix, i.e. all terms that contain off
@@ -247,10 +230,10 @@ class ExprContainer(Container):
     def diagonalize_fock(self) -> "ExprContainer":
         """
         Represent the expression in the canonical orbital basis, where the
-        fock matrix is diagonal. Because it is not possible to
+        fock matrix is diagonal. Because it might not be possible to
         determine the target indices in the resulting expression according
         to the Einstein sum convention, the current target indices will
-        be set manually in the resulting expression.
+        be set in the resulting expression.
         """
         # expand to get rid of polynoms as much as possible
         self.expand()
@@ -264,7 +247,7 @@ class ExprContainer(Container):
         self._target_idx = diag.provided_target_idx
         return self
 
-    def rename_tensor(self, current: str, new: str) -> 'ExprContainer':
+    def rename_tensor(self, current: str, new: str) -> "ExprContainer":
         """Changes the name of a tensor from current to new."""
         assert isinstance(current, str) and isinstance(new, str)
 
@@ -275,7 +258,7 @@ class ExprContainer(Container):
         self._inner = renamed
         return self
 
-    def expand_antisym_eri(self) -> 'ExprContainer':
+    def expand_antisym_eri(self) -> "ExprContainer":
         """
         Expands the antisymmetric ERI using chemists notation
         <pq||rs> = (pr|qs) - (ps|qr).
@@ -287,14 +270,9 @@ class ExprContainer(Container):
             res += term.expand_antisym_eri(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
-        # only update the assumptions if there was an eri to expand
-        if Symbol(tensor_names.coulomb) in self.inner.atoms(Symbol):
-            self._sym_tensors = tuple(sorted(set(
-                self._sym_tensors + (tensor_names.coulomb,)
-            )))
         return self
 
-    def use_explicit_denominators(self) -> 'ExprContainer':
+    def use_explicit_denominators(self) -> "ExprContainer":
         """
         Switch to an explicit representation of orbital energy denominators by
         replacing all symbolic denominators by their explicit counter part,
@@ -305,15 +283,9 @@ class ExprContainer(Container):
             res += term.use_explicit_denominators(wrap_result=False)
         assert isinstance(res, Expr)
         self._inner = res
-        # remove the symbolic denom from the assumptions if necessary
-        if tensor_names.sym_orb_denom in self._antisym_tensors:
-            self._antisym_tensors = tuple(
-                t for t in self._antisym_tensors
-                if t != tensor_names.sym_orb_denom
-            )
         return self
 
-    def substitute_contracted(self) -> 'ExprContainer':
+    def substitute_contracted(self) -> "ExprContainer":
         """
         Tries to substitute all contracted indices with pretty indices, i.e.
         i, j, k instad of i3, n4, o42 etc.
@@ -327,7 +299,7 @@ class ExprContainer(Container):
         self._inner = res
         return self
 
-    def substitute_with_generic(self) -> 'ExprContainer':
+    def substitute_with_generic(self) -> "ExprContainer":
         """
         Subsitutes all contracted indices with new, unused generic indices.
         """
@@ -339,7 +311,7 @@ class ExprContainer(Container):
         self._inner = res
         return self
 
-    def factor(self, num=None) -> 'ExprContainer':
+    def factor(self, num=None) -> "ExprContainer":
         """
         Tries to factors the expression. Note: this only works for simple cases
 
@@ -363,7 +335,7 @@ class ExprContainer(Container):
         return self
 
     def expand_intermediates(self, fully_expand: bool = True
-                             ) -> 'ExprContainer':
+                             ) -> "ExprContainer":
         """
         Expand the known intermediates in the expression.
 
@@ -381,7 +353,9 @@ class ExprContainer(Container):
         # determine them after expanding intermediates
         expanded = S.Zero
         for t in self.terms:
-            expanded += t.expand_intermediates(fully_expand=fully_expand)
+            expanded += t.expand_intermediates(
+                fully_expand=fully_expand, wrap_result=True
+            )
         assert isinstance(expanded, ExprContainer)
         self._inner = expanded.inner
         self.set_target_idx(expanded.provided_target_idx)
@@ -394,22 +368,10 @@ class ExprContainer(Container):
         where D is a SymmetricTensor.
         """
         symbolic_denom = S.Zero
-        has_symbolic_denom = False
         for term in self.terms:
-            term = term.use_symbolic_denominators()
-            symbolic_denom += term.inner
-            if tensor_names.sym_orb_denom in term.antisym_tensors:
-                has_symbolic_denom = True
-        # the symbolic denominators have additional antisymmetry
-        # for bra ket swaps
-        # -> this is the only possible change in the assumptions
-        # -> only set if we replaced a denominator in the expr
+            symbolic_denom += term.use_symbolic_denominators(wrap_result=False)
         assert isinstance(symbolic_denom, Expr)
         self._inner = symbolic_denom
-        if has_symbolic_denom:
-            self._antisym_tensors = tuple(sorted(set(
-                self._antisym_tensors + (tensor_names.sym_orb_denom,)
-            )))
         return self
 
     ###########################################################
