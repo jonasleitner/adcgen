@@ -14,8 +14,8 @@ class TestIndices:
         assert I.space == "core" and I.spin == "b"
         assert j.space == "occ" and j.spin == "a"
         res = idx.get_indices("Pa")
-        P, a = res[("ri", "")].pop(), res[("virt", "")].pop()
-        assert P.space == "ri" and P.spin == ""
+        P, a = res[("aux", "")].pop(), res[("virt", "")].pop()
+        assert P.space == "aux" and P.spin == ""
         assert a.space == "virt" and a.spin == ""
 
     def test_get_generic_indices(self):
