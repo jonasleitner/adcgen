@@ -210,7 +210,9 @@ class PolynomContainer(ObjectContainer):
 
     def expand_intermediates(self, target: Sequence[Index],
                              wrap_result: bool = True,
-                             fully_expand: bool = True
+                             fully_expand: bool = True,
+                             braket_sym_tensors: Sequence[str] = tuple(),
+                             braket_antisym_tensors: Sequence[str] = tuple()
                              ) -> "ExprContainer | Expr":
         """Expands all known intermediates in the polynom."""
         from .expr_container import ExprContainer
@@ -218,7 +220,9 @@ class PolynomContainer(ObjectContainer):
         expanded = S.Zero
         for term in self.terms:
             expanded += term.expand_intermediates(
-                target, wrap_result=False, fully_expand=fully_expand
+                target, wrap_result=False, fully_expand=fully_expand,
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors
             )
         assert isinstance(expanded, Expr)
         expanded = Pow(expanded, self.exponent)

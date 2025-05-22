@@ -759,7 +759,9 @@ class ObjectContainer(Container):
 
     def expand_intermediates(self, target: Sequence[Index],
                              wrap_result: bool = True,
-                             fully_expand: bool = True
+                             fully_expand: bool = True,
+                             braket_sym_tensors: Sequence[str] = tuple(),
+                             braket_antisym_tensors: Sequence[str] = tuple()
                              ) -> "ExprContainer | Expr":
         """
         Expand the object if it is a known intermediate.
@@ -781,7 +783,7 @@ class ObjectContainer(Container):
               order MP t-amplitudes are expressed by means of (n-1)'th order
               MP t-amplitudes and ERI.
         """
-        from ..intermediates import Intermediates, RegisteredIntermediate
+        from ..intermediates import Intermediates
         from .expr_container import ExprContainer
 
         # intermediates only defined for tensors
@@ -798,7 +800,6 @@ class ObjectContainer(Container):
         itmd = Intermediates().available.get(longname, None)
         expanded = self.inner
         if itmd is not None:
-            assert isinstance(itmd, RegisteredIntermediate)
             # Use a for loop to obtain different contracted itmd indices
             # for each x in: x * x * ...
             expanded = S.One
@@ -811,6 +812,13 @@ class ObjectContainer(Container):
                 )
             if exponent < S.Zero:
                 expanded = Pow(expanded, -1)
+        # apply assumptions to the expanded object
+        if braket_sym_tensors or braket_antisym_tensors:
+            expanded = ExprContainer(expanded).add_bra_ket_sym(
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors
+            ).inner
+
         if wrap_result:
             assumptions = self.assumptions
             assumptions["target_idx"] = target

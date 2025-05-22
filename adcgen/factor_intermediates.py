@@ -1,6 +1,7 @@
 from collections.abc import Iterable, Sequence, Generator
 from collections import Counter
 from functools import cached_property
+from time import perf_counter
 from typing import Any, TYPE_CHECKING, TypeGuard
 import itertools
 
@@ -48,7 +49,6 @@ def factor_intermediates(expr: ExprContainer,
         might be reduced which is not correctly handled currently.
     """
     from .intermediates import Intermediates, RegisteredIntermediate
-    from time import perf_counter
 
     assert isinstance(expr, ExprContainer)
     if expr.inner.is_number:  # nothing to factor

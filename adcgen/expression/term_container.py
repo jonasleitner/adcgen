@@ -604,7 +604,9 @@ class TermContainer(Container):
 
     def expand_intermediates(self, target: Sequence[Index] | None = None,
                              wrap_result: bool = True,
-                             fully_expand: bool = True
+                             fully_expand: bool = True,
+                             braket_sym_tensors: Sequence[str] = tuple(),
+                             braket_antisym_tensors: Sequence[str] = tuple()
                              ) -> "ExprContainer | Expr":
         """
         Expands all known intermediates in the term.
@@ -626,6 +628,12 @@ class TermContainer(Container):
             False: The intermediates are only expanded once, e.g., n'th
               order MP t-amplitudes are expressed by means of (n-1)'th order
               MP t-amplitudes and ERI.
+        braket_sym_tensors: Sequence[str], optional
+            Add bra-ket-symmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
+        braket_antisym_tensors: Sequence[str], optional
+            Add bra-ket-antisymmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
         """
         from .expr_container import ExprContainer
 
@@ -635,7 +643,9 @@ class TermContainer(Container):
         expanded = S.One
         for obj in self.objects:
             expanded *= obj.expand_intermediates(
-                target, wrap_result=False, fully_expand=fully_expand
+                target, wrap_result=False, fully_expand=fully_expand,
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors
             )
 
         if wrap_result:
