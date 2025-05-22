@@ -1,7 +1,7 @@
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from sympy import Add, Basic, Expr, Mul, Pow, S, factor, nsimplify
+from sympy import Add, Expr, Mul, Pow, S, factor, nsimplify
 
 from ..indices import (
     Index, get_symbols, sort_idx_canonical,
@@ -347,7 +347,9 @@ class ExprContainer(Container):
         self._inner = res
         return self
 
-    def expand_intermediates(self, fully_expand: bool = True
+    def expand_intermediates(self, fully_expand: bool = True,
+                             braket_sym_tensors: Sequence[str] = tuple(),
+                             braket_antisym_tensors: Sequence[str] = tuple()
                              ) -> "ExprContainer":
         """
         Expand the known intermediates in the expression.
@@ -360,6 +362,12 @@ class ExprContainer(Container):
             False: The intermediates are only expanded once, e.g., n'th
               order MP t-amplitudes are expressed by means of (n-1)'th order
               MP t-amplitudes and ERI.
+        braket_sym_tensors: Sequence[str], optional
+            Add bra-ket-symmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
+        braket_antisym_tensors: Sequence[str], optional
+            Add bra-ket-antisymmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
         """
         # TODO: only expand specific intermediates
         # need to adjust the target indices -> not necessarily possible to
@@ -367,7 +375,9 @@ class ExprContainer(Container):
         expanded = S.Zero
         for t in self.terms:
             expanded += t.expand_intermediates(
-                fully_expand=fully_expand, wrap_result=True
+                fully_expand=fully_expand, wrap_result=True,
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors
             )
         assert isinstance(expanded, ExprContainer)
         self._inner = expanded.inner
