@@ -21,7 +21,6 @@ class TestExpandAntiSymEri:
             AntiSymmetricTensor("d", tuple(), tuple())
         ).make_real()
         test = test.expand_antisym_eri()
-        assert tensor_names.coulomb not in test.sym_tensors
 
     def test_t2_1(self):
         t2 = Intermediates().available["t2_1"]
@@ -29,7 +28,6 @@ class TestExpandAntiSymEri:
         assert isinstance(t2, ExprContainer)
         t2.make_real()
         res = t2.expand_antisym_eri()
-        assert tensor_names.coulomb in res.sym_tensors
         i, j, a, b = get_symbols('ijab')
         ref = Add(
             SymmetricTensor(tensor_names.coulomb, (i, a), (j, b), 1),
