@@ -139,8 +139,10 @@ class TestCoreValenceSeparation:
         m_contribs = ref_data["real_factored"]
         m_expr = sum(m_contribs.values())
         assert isinstance(m_expr, ExprContainer)
+        # sym_tensors: fine through third order
+        sym_tensors = ("p2", "t2sq")
         m_expr.make_real()
-        m_expr.sym_tensors = ("p2", "t2sq")  # fine through 3rd order
+        m_expr.add_bra_ket_sym(braket_sym_tensors=sym_tensors)
         # build the valence-valence block (no core orbitals)
         res = apply_cvs_approximation(m_expr.copy(), "")
         assert simplify(res - m_expr).inner is S.Zero
@@ -154,5 +156,7 @@ class TestCoreValenceSeparation:
         res = apply_cvs_approximation(m_expr.copy(), "IJ")
         for delta_sp, sub_expr in sort.by_delta_types(res).items():
             ref = ref_data["real_factored_cvs"]["-".join(delta_sp)]
-            ref = ExprContainer(ref.inner, **sub_expr.assumptions)
+            assert isinstance(ref, ExprContainer)
+            ref.make_real()
+            ref.add_bra_ket_sym(braket_sym_tensors=sym_tensors)
             assert simplify(sub_expr - ref).inner is S.Zero

@@ -8,15 +8,15 @@ from sympy import S
 import pytest
 
 
-@pytest.mark.parametrize('adc_variant', ['pp'])
+@pytest.mark.parametrize("adc_variant", ["pp"])
 class TestProperties():
-    @pytest.mark.parametrize('n_particles', [1])
-    @pytest.mark.parametrize('adc_order', [0, 1, 2])
+    @pytest.mark.parametrize("n_particles", [1])
+    @pytest.mark.parametrize("adc_order", [0, 1, 2])
     def test_expectation_value(self, adc_variant: str, n_particles: int,
                                adc_order: int, cls_instances: dict,
                                reference_data: dict):
         # load the reference data
-        ref = reference_data['properties_expectation_value']
+        ref = reference_data["properties_expectation_value"]
         ref = ref[adc_variant][n_particles][adc_order]
         prop = cls_instances["mp"]["prop_pp"]
 
@@ -36,12 +36,15 @@ class TestProperties():
 
         # real state expectation value for a symmetric operator matrix
         res.make_real()
-        res.sym_tensors = [tensor_names.operator]
+        res.add_bra_ket_sym(braket_sym_tensors=tensor_names.operator)
         res.rename_tensor(tensor_names.left_adc_amplitude,
                           tensor_names.right_adc_amplitude)
         res = simplify(res)
         ref_expec = ref["real_symmetric_state_expectation_value"]
-        assert simplify(res - ref_expec.inner).inner is S.Zero
+        assert isinstance(ref_expec, ExprContainer)
+        ref_expec.make_real()
+        ref_expec.add_bra_ket_sym(braket_sym_tensors=[tensor_names.operator])
+        assert simplify(res - ref_expec).inner is S.Zero
 
         ref = ref["real_symmetric_state_dm"]
         # extract the state density matrix and factor intermediates
@@ -54,10 +57,16 @@ class TestProperties():
             assert block in ref
 
             ref_block = ref[block]
-            assert simplify(block_expr - ref_block.inner).inner is S.Zero
+            assert isinstance(ref_block, ExprContainer)
+            ref_block.make_real()
+            ref_block.add_bra_ket_sym(
+                braket_sym_tensors=block_expr.braket_sym_tensors,
+                braket_antisym_tensors=block_expr.braket_antisym_tensors
+            )
+            assert simplify(block_expr - ref_block).inner is S.Zero
 
-    @pytest.mark.parametrize('n_create,n_annihilate', [(1, 1)])
-    @pytest.mark.parametrize('adc_order', [0, 1, 2])
+    @pytest.mark.parametrize("n_create,n_annihilate", [(1, 1)])
+    @pytest.mark.parametrize("adc_order", [0, 1, 2])
     def test_trans_moment(self, adc_variant: str, n_create: int,
                           n_annihilate: int, adc_order: int,
                           cls_instances: dict, reference_data: dict):
@@ -87,7 +96,9 @@ class TestProperties():
         res.make_real()
         res = simplify(res)
         ref_expec = ref["real_expectation_value"]
-        assert simplify(res - ref_expec.inner).inner is S.Zero
+        assert isinstance(ref_expec, ExprContainer)
+        ref_expec.make_real()
+        assert simplify(res - ref_expec).inner is S.Zero
 
         ref = ref["real_transition_dm"]
         # extract the transition dm and factor intermediates
@@ -100,4 +111,10 @@ class TestProperties():
             assert block in ref
 
             ref_tdm = ref[block]
-            assert simplify(block_expr - ref_tdm.inner).inner is S.Zero
+            assert isinstance(ref_tdm, ExprContainer)
+            ref_tdm.make_real()
+            ref_tdm.add_bra_ket_sym(
+                braket_sym_tensors=block_expr.braket_sym_tensors,
+                braket_antisym_tensors=block_expr.braket_antisym_tensors
+            )
+            assert simplify(block_expr - ref_tdm).inner is S.Zero
