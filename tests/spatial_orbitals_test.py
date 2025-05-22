@@ -295,21 +295,21 @@ class TestTransformToSpatialOrbitals:
         i, j, k, a, b, c = get_symbols("ijkabc", "aaaaaa")
         jb, kb, bb = get_symbols("jkb", "bbb")
         ref = (
-            SymmetricTensor(tensor_names.sym_orb_denom, (b, c), (i, j), -1) *  # type: ignore  # noqa E501
-            SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1) * (  # type: ignore  # noqa E501
+            SymmetricTensor(tensor_names.sym_orb_denom, (b, c), (i, j), -1) *
+            SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1) * (
                 SymmetricTensor(tensor_names.coulomb, (i, b), (j, c), 1)
                 - SymmetricTensor(tensor_names.coulomb, (i, c), (j, b), 1)
             )
-            - SymmetricTensor(tensor_names.sym_orb_denom, (bb, c), (i, jb),  # type: ignore  # noqa E501
+            - SymmetricTensor(tensor_names.sym_orb_denom, (bb, c), (i, jb),
                               -1) *
             SymmetricTensor(tensor_names.coulomb, (jb, bb), (a, c), 1) *
             SymmetricTensor(tensor_names.coulomb, (i, c), (jb, bb), 1)
-            + SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (j, k), -1) *  # type: ignore  # noqa E501
-            SymmetricTensor(tensor_names.coulomb, (i, j), (k, b), 1) * (  # type: ignore  # noqa E501
+            + SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (j, k), -1) *
+            SymmetricTensor(tensor_names.coulomb, (i, j), (k, b), 1) * (
                 SymmetricTensor(tensor_names.coulomb, (j, a), (k, b), 1)
                 - SymmetricTensor(tensor_names.coulomb, (j, b), (k, a), 1)
             )
-            + SymmetricTensor(tensor_names.sym_orb_denom, (a, bb), (j, kb),  # type: ignore  # noqa E501
+            + SymmetricTensor(tensor_names.sym_orb_denom, (a, bb), (j, kb),
                               -1) *
             SymmetricTensor(tensor_names.coulomb, (i, j), (kb, bb), 1) *
             SymmetricTensor(tensor_names.coulomb, (j, a), (kb, bb), 1)
@@ -324,14 +324,14 @@ class TestTransformToSpatialOrbitals:
                                                    restricted=True)
         restricted = simplify(restricted)
         ref = (
-            SymmetricTensor(tensor_names.sym_orb_denom, (b, c), (i, j), -1) *  # type: ignore  # noqa E501
+            SymmetricTensor(tensor_names.sym_orb_denom, (b, c), (i, j), -1) *
             SymmetricTensor(tensor_names.coulomb, (j, b), (a, c), 1) * (
                 SymmetricTensor(tensor_names.coulomb, (i, b), (j, c), 1)
-                - 2 * SymmetricTensor(tensor_names.coulomb, (i, c), (j, b), 1)  # type: ignore  # noqa E501
+                - 2 * SymmetricTensor(tensor_names.coulomb, (i, c), (j, b), 1)
             )
-            + SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (j, k), -1) *  # type: ignore  # noqa E501
+            + SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (j, k), -1) *
             SymmetricTensor(tensor_names.coulomb, (j, a), (k, b), 1) * (
-                2 * SymmetricTensor(tensor_names.coulomb, (j, i), (k, b), 1)  # type: ignore  # noqa E501# type: ignore  # noqa E501
+                2 * SymmetricTensor(tensor_names.coulomb, (j, i), (k, b), 1)
                 - SymmetricTensor(tensor_names.coulomb, (j, b), (k, i), 1)
             )) * SymmetricTensor(tensor_names.sym_orb_denom, (i,), (a,), -1)
         assert simplify(restricted - ref.expand()).inner is S.Zero
