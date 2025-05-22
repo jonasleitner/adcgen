@@ -48,7 +48,7 @@ def reduce_expr(expr: ExprContainer) -> ExprContainer:
             braket_sym_tensors=braket_sym_tensors
         )
         assert isinstance(term, ExprContainer)
-        term = term.expand().make_real()
+        term = term.expand()
         logger.info(f"into {len(term)} terms.\nCollecting terms.... ")
         term = factor_eri_parts(term)
         logger.info('-'*80)

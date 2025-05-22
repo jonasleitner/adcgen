@@ -16,7 +16,7 @@ class TestSymbolicDenominators:
         original = AntiSymmetricTensor("V", (i, j), (a, b))
         original = ExprContainer(original, real=True)
         symbolic = original.copy().use_symbolic_denominators()
-        assert symbolic.inner - original.inner is S.Zero  # type: ignore
+        assert symbolic.inner - original.inner is S.Zero
 
     def test_t2_1(self):
         t2 = Intermediates().available["t2_1"]
@@ -25,7 +25,7 @@ class TestSymbolicDenominators:
         original.make_real()
         symbolic = original.copy().use_symbolic_denominators()
         i, j, a, b = get_symbols("ijab")
-        ref = (AntiSymmetricTensor(tensor_names.eri, (i, j), (a, b), 1) *  # type: ignore  # noqa E501
+        ref = (AntiSymmetricTensor(tensor_names.eri, (i, j), (a, b), 1) *
                SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (i, j), -1))
         assert symbolic.inner - ref is S.Zero
         # reintroduce the explicit denominators
@@ -33,7 +33,7 @@ class TestSymbolicDenominators:
         # need to fix the sign in the denominator for the test to pass
         explicit = EriOrbenergy(explicit).canonicalize_sign().expr
         original = EriOrbenergy(original).canonicalize_sign().expr
-        assert explicit.inner - original.inner is S.Zero  # type: ignore
+        assert explicit.inner - original.inner is S.Zero
 
     def test_t1_2(self):
         t1 = Intermediates().available["t1_2"]
@@ -50,10 +50,10 @@ class TestSymbolicDenominators:
                + Rational(1, 2) *
                Amplitude(f"{tensor_names.gs_amplitude}1", (a, b), (j, k)) *
                AntiSymmetricTensor(tensor_names.eri, (j, k), (i, b), 1))
-        ref *= SymmetricTensor(tensor_names.sym_orb_denom, (i,), (a,), -1)  # type: ignore # noqa E501
-        assert symbolic.inner - ref.expand() is S.Zero  # type: ignore
+        ref *= SymmetricTensor(tensor_names.sym_orb_denom, (i,), (a,), -1)
+        assert symbolic.inner - ref.expand() is S.Zero
         explicit = symbolic.use_explicit_denominators().expand()
-        assert explicit.inner - original.inner is S.Zero  # type: ignore
+        assert explicit.inner - original.inner is S.Zero
 
         # fully expand the itmd -> 2 denominators
         original = t1.expand_itmd(fully_expand=True)
@@ -69,8 +69,8 @@ class TestSymbolicDenominators:
                AntiSymmetricTensor(tensor_names.eri, (a, b), (j, k), 1) *
                AntiSymmetricTensor(tensor_names.eri, (j, k), (i, b), 1) *
                SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (j, k), -1))
-        ref *= SymmetricTensor(tensor_names.sym_orb_denom, (i,), (a,), -1)  # type: ignore # noqa E501
-        assert symbolic.inner - ref.expand() is S.Zero  # type: ignore
+        ref *= SymmetricTensor(tensor_names.sym_orb_denom, (i,), (a,), -1)
+        assert symbolic.inner - ref.expand() is S.Zero
         # need to fix the sign of the denominators!
         explicit = 0
         for term in symbolic.use_explicit_denominators().terms:
@@ -80,26 +80,26 @@ class TestSymbolicDenominators:
         for term in original.terms:
             ref += EriOrbenergy(term).canonicalize_sign().expr
         assert isinstance(ref, ExprContainer)
-        assert explicit.inner - ref.inner is S.Zero  # type: ignore
+        assert explicit.inner - ref.inner is S.Zero
 
     def test_squared_denom(self):
         i, j, a, b = get_symbols("ijab")
         original = AntiSymmetricTensor("V", (i, j), (a, b), 1)
         original /= (
             NonSymmetricTensor(tensor_names.orb_energy, (i,))
-            + NonSymmetricTensor(tensor_names.orb_energy, (j,))  # type: ignore
+            + NonSymmetricTensor(tensor_names.orb_energy, (j,))
             - NonSymmetricTensor(tensor_names.orb_energy, (a,))
             - NonSymmetricTensor(tensor_names.orb_energy, (b,))
         )**2
         original = ExprContainer(original, real=True)
         symbolic = original.copy().use_symbolic_denominators()
-        ref = (  # type: ignore
+        ref = (
             AntiSymmetricTensor("V", (i, j), (a, b), 1) *
             SymmetricTensor(tensor_names.sym_orb_denom, (i, j), (a, b), -1)**2
         )
         assert symbolic.inner - ref is S.Zero
         explicit = symbolic.use_explicit_denominators()
-        assert explicit.inner - original.inner is S.Zero  # type: ignore
+        assert explicit.inner - original.inner is S.Zero
 
     def test_some_denom_terms(self):
         t2 = Intermediates().available["t2_1"]
@@ -109,7 +109,7 @@ class TestSymbolicDenominators:
             + AntiSymmetricTensor(tensor_names.eri, (i, j), (a, b), 1)
         )
         symbolic = original.copy().use_symbolic_denominators()
-        ref = (AntiSymmetricTensor(tensor_names.eri, (i, j), (a, b), 1) *  # type: ignore # noqa E501
+        ref = (AntiSymmetricTensor(tensor_names.eri, (i, j), (a, b), 1) *
                SymmetricTensor(tensor_names.sym_orb_denom, (a, b), (i, j), -1)
                + AntiSymmetricTensor(tensor_names.eri, (i, j), (a, b), 1))
         assert symbolic.inner - ref is S.Zero
