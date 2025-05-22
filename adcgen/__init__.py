@@ -20,6 +20,7 @@ from .spatial_orbitals import transform_to_spatial_orbitals
 from .sympy_objects import (AntiSymmetricTensor, SymmetricTensor, Amplitude,
                             NonSymmetricTensor, KroneckerDelta, SymbolicTensor)
 from .tensor_names import tensor_names
+from .resolution_of_identity import apply_resolution_of_identity
 from . import sort_expr as sort
 
 
@@ -35,6 +36,7 @@ __all__ = ["AntiSymmetricTensor", "SymmetricTensor", "NonSymmetricTensor",
            "Intermediates", "reduce_expr", "factor_intermediates",
            "sort",
            "transform_to_spatial_orbitals",
+           "apply_resolution_of_identity",
            "apply_cvs_approximation",
            "generate_code", "optimize_contractions",
            "unoptimized_contraction", "Contraction",

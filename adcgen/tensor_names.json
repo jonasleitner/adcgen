@@ -8,5 +8,8 @@
   "left_adc_amplitude": "X",
   "right_adc_amplitude": "Y",
   "orb_energy": "e",
-  "sym_orb_denom": "D"
+  "sym_orb_denom": "D",
+  "ri_sym": "B",
+  "ri_asym_factor": "C",
+  "ri_asym_eri": "G"
 }

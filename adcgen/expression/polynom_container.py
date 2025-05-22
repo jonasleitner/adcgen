@@ -188,6 +188,51 @@ class PolynomContainer(ObjectContainer):
             renamed = ExprContainer(inner=renamed, **self.assumptions)
         return renamed
 
+    def expand_coulomb_ri(self, factorisation: str = 'sym',
+                          wrap_result: bool = True) -> "Expr | ExprContainer":
+        """
+        Expands the Coulomb operators (pq | rs) into RI format
+
+        Parameters
+        ----------
+        factorisation : str, optional
+            The type of factorisation ('sym' or 'asym'), by default 'sym'
+        wrap_result : bool, optional
+            Whether to wrap the result in an ExprContainer, by default True
+
+        Returns
+        -------
+        ExprContainer | Expr
+            The factorised expression.
+
+        Raises
+        ------
+        ValueError
+            If an invalide exponent is present
+        """
+        from .expr_container import ExprContainer
+
+        if not self.exponent.is_Integer:
+            raise ValueError("Only Polynomials with integer exponents can "
+                             "be factorised")
+        elif int(self.exponent) < 0:
+            raise ValueError("Decomposition of reciprocal Coulomb operators "
+                             "with RI is not meaningful")
+
+        factorised = S.One
+        for _ in range(int(self.exponent)):
+            expanded = S.Zero
+            for term in self.terms:
+                expanded += term.expand_coulomb_ri(factorisation=factorisation,
+                                                   wrap_result=False)
+            factorised *= expanded
+        assert isinstance(factorised, Expr)
+
+        if wrap_result:
+            assumptions = self.assumptions
+            factorised = ExprContainer(inner=factorised, **assumptions)
+        return factorised
+
     def expand_antisym_eri(self, wrap_result: bool = True):
         """
         Expands the antisymmetric ERI using chemists notation

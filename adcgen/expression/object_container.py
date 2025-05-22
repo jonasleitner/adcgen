@@ -445,6 +445,11 @@ class ObjectContainer(Container):
                 ]))
             elif name == tensor_names.coulomb:  # ERI in chemist notation
                 return ("aaaa", "aabb", "bbaa", "bbbb")
+            elif name in (tensor_names.ri_sym, tensor_names.ri_asym_eri,
+                          tensor_names.ri_asym_factor):
+                return ("aaa", "abb")
+            elif name == tensor_names.fock:
+                return ("aa", "bb")
         elif isinstance(obj, KroneckerDelta):  # delta
             # spins have to be equal
             return ("aa", "bb")
@@ -499,6 +504,8 @@ class ObjectContainer(Container):
                 ),
                 # coulomb integral chemist notation
                 tensor_names.coulomb: lambda up, lo: f"({up}\\vert {lo})",
+                # 2e3c integral in asymmetric RI
+                tensor_names.ri_asym_eri: lambda up, lo: f"({up}\\vert {lo})",
                 # orbital energy
                 tensor_names.orb_energy: lambda _, lo: f"\\varepsilon_{{{lo}}}"
             }
@@ -723,6 +730,81 @@ class ObjectContainer(Container):
         if wrap_result:
             obj = ExprContainer(obj, **self.assumptions)
         return obj
+
+    def expand_coulomb_ri(self, factorisation: str = 'sym',
+                          wrap_result: bool = True) -> "ExprContainer | Expr":
+        """
+        Expands the Coulomb operators (pq | rs) into RI format
+
+        Parameters
+        ----------
+        factorisation : str, optional
+            The type of factorisation ('sym' or 'asym'), by default 'sym'
+        wrap_result : bool, optional
+            Whether to wrap the result in an ExprContainer, by default True
+
+        Returns
+        -------
+        ExprContainer | Expr
+            The factorised expression.
+
+        Raises
+        ------
+        NotImplementedError
+            If a factorisation that is not 'sym' or 'asym' is provided or if
+            the expression is not real.
+        ValueError
+            If an invalide exponent is present
+        """
+        from .expr_container import ExprContainer
+
+        if factorisation not in ('sym', 'asym'):
+            raise NotImplementedError("Only symmetric (sym) and asymmetric "
+                                      "(asym) factorisation of the Coulomb "
+                                      "integral is implemented")
+
+        res = self.inner
+        base, exponent = self.base_and_exponent
+        if not exponent.is_Integer:
+            raise ValueError("Exponent of Object is not an integer. "
+                             f"Exponent: {exponent}")
+        elif int(exponent) < 0:
+            raise ValueError("RI decomposition is not meaningful for "
+                             "reciprocal Coulomb operators")
+
+        if isinstance(base, SymmetricTensor) and \
+                base.name == tensor_names.coulomb:
+            # ensure that the ERI is symmetric as an implicit check
+            # whether it is real
+            if base.bra_ket_sym != 1:
+                raise NotImplementedError("Can only apply RI approximation to "
+                                          "ERIs with bra-ket symmetry "
+                                          "(real orbitals).")
+            p, q, r, s = self.idx
+            res = S.One
+            if p.spin == q.spin and r.spin == s.spin:
+                assumptions = {"aux": True}
+                if p.spin:
+                    # Check if RI is applied before or after
+                    # spin integration. RI indices are always alpha
+                    assumptions["alpha"] = True
+                for _ in range(int(exponent)):
+                    aux_idx = Index('P', **assumptions)
+                    if factorisation == 'sym':
+                        res *= SymmetricTensor(tensor_names.ri_sym,
+                                               (aux_idx,), (p, q), 0)
+                        res *= SymmetricTensor(tensor_names.ri_sym,
+                                               (aux_idx,), (r, s), 0)
+                    elif factorisation == 'asym':
+                        res *= SymmetricTensor(tensor_names.ri_asym_factor,
+                                               (aux_idx,), (p, q), 0)
+                        res *= SymmetricTensor(tensor_names.ri_asym_eri,
+                                               (aux_idx,), (r, s), 0)
+
+        if wrap_result:
+            kwargs = self.assumptions
+            res = ExprContainer(res, **kwargs)
+        return res
 
     def expand_antisym_eri(self, wrap_result: bool = True
                            ) -> "ExprContainer | Expr":

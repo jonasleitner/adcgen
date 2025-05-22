@@ -179,11 +179,19 @@ def integrate_spin(expr: ExprContainer, target_idx: str,
                 addition: list[str | None] = [
                     None for _ in range(len(term_indices))
                 ]
+                # We keep an explicit note whether to keep the block
+                # This is required because of the internal loop structure
+                # of the checks
+                accept_spin_block: bool = True
                 for spin, idx in zip(block, indices):
                     if addition[idx] is not None and addition[idx] != spin:
-                        raise ValueError("Found invalid allowed spin block "
-                                         f"{block} for {obj}.")
+                        # This can occur if the same index appears in the same
+                        # object multiple times, e. g. < ij || ij >
+                        accept_spin_block = False
+                        break
                     addition[idx] = spin
+                if not accept_spin_block:
+                    continue
                 # check for contracdictions with the target_spin and skip the
                 # block if this is the case
                 if any(sp1 != sp2 for sp1, sp2 in

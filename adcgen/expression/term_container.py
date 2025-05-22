@@ -583,6 +583,35 @@ class TermContainer(Container):
             renamed = ExprContainer(renamed, **self.assumptions)
         return renamed
 
+    def expand_coulomb_ri(self, factorisation: str = 'sym',
+                          wrap_result: bool = True) -> "Expr | ExprContainer":
+        """
+        Expands the Coulomb operators (pq | rs) into RI format
+
+        Parameters
+        ----------
+        factorisation : str, optional
+            The type of factorisation ('sym' or 'asym'), by default 'sym'
+        wrap_result : bool, optional
+            Whether to wrap the result in an ExprContainer, by default True
+
+        Returns
+        -------
+        ExprContainer | Expr
+            The factorised expression.
+        """
+        from .expr_container import ExprContainer
+
+        factorised = S.One
+        for obj in self.objects:
+            factorised *= obj.expand_coulomb_ri(factorisation=factorisation,
+                                                wrap_result=False)
+
+        if wrap_result:
+            assumptions = self.assumptions
+            factorised = ExprContainer(factorised, **assumptions)
+        return factorised
+
     def expand_antisym_eri(self, wrap_result: bool = True
                            ) -> "ExprContainer | Expr":
         """

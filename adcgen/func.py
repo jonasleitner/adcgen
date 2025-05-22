@@ -159,7 +159,10 @@ def import_from_sympy_latex(expr_string: str,
             # ADC-Amplitude or t-amplitudes
             if is_adc_amplitude(name) or is_t_amplitude(name):
                 base: Expr = Amplitude(name, upper, lower)
-            elif name == tensor_names.coulomb:  # eri in chemist notation
+            elif name in (tensor_names.coulomb, tensor_names.ri_sym,
+                          tensor_names.ri_asym_eri,
+                          tensor_names.ri_asym_factor):
+                # eri in chemist notation or RI tensor
                 base: Expr = SymmetricTensor(name, upper, lower)
             else:
                 base: Expr = AntiSymmetricTensor(name, upper, lower)
