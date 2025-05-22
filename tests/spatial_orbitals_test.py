@@ -358,6 +358,8 @@ class TestSpatialGroundstateEnergy:
         expr = ExprContainer(e, real=True)
 
         sp_expr = transform_to_spatial_orbitals(expr, '', '', restricted)
+        sp_expr.make_real()
+        ref.make_real()
 
-        assert (simplify(sp_expr - ref.inner).substitute_contracted().inner
+        assert (simplify(sp_expr - ref).substitute_contracted().inner
                 is S.Zero)

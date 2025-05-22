@@ -18,7 +18,7 @@ class TestResolutionOfIdentity():
                           cls_instances, reference_data):
         # load the reference data
         ref = reference_data['ri_gs_energy'][variant][order]
-        ref = ref[restriction][symmetry].inner
+        ref = ref[restriction][symmetry]
         # transform restriction and symmetry to bool
         restricted = restriction == 'r'
         # compute the energy
@@ -27,5 +27,7 @@ class TestResolutionOfIdentity():
 
         sp_expr = transform_to_spatial_orbitals(expr, '', '', restricted)
         ri_expr = apply_resolution_of_identity(sp_expr, symmetry)
+        ri_expr.make_real()
+        ref.make_real()
 
         assert simplify(ri_expr - ref).substitute_contracted().inner is S.Zero
