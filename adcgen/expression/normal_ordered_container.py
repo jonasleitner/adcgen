@@ -20,32 +20,16 @@ class NormalOrderedContainer(ObjectContainer):
     ----------
     inner:
         The NO object to wrap
-    real : bool, optional
-        Whether the expression is represented in a real orbital basis.
-    sym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-symmetry, i.e.,
-        d^{pq}_{rs} = d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional symmetry if they are not aware
-        of it yet.
-    antisym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-antisymmetry, i.e.,
-        d^{pq}_{rs} = - d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional antisymmetry if they are not
-        aware of it yet.
     target_idx: Iterable[Index] | None, optional
         Target indices of the expression. By default the Einstein sum
         convention will be used to identify target and contracted indices,
         which is not always sufficient.
     """
     def __init__(self, inner: Expr | Container | Any,
-                 real: bool = False,
-                 sym_tensors: Iterable[str] = tuple(),
-                 antisym_tensors: Iterable[str] = tuple(),
                  target_idx: Iterable[Index] | None = None) -> None:
         # call init from ObjectContainers parent class
         super(ObjectContainer, self).__init__(
-            inner=inner, real=real, sym_tensors=sym_tensors,
-            antisym_tensors=antisym_tensors, target_idx=target_idx
+            inner=inner, target_idx=target_idx
         )
         assert isinstance(self._inner, NO)
 

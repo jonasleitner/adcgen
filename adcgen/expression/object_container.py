@@ -31,32 +31,14 @@ class ObjectContainer(Container):
     ----------
     inner:
         The object to wrap, e.g., an AntiSymmetricTensor
-    real : bool, optional
-        Whether the expression is represented in a real orbital basis.
-    sym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-symmetry, i.e.,
-        d^{pq}_{rs} = d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional symmetry if they are not aware
-        of it yet.
-    antisym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-antisymmetry, i.e.,
-        d^{pq}_{rs} = - d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional antisymmetry if they are not
-        aware of it yet.
     target_idx: Iterable[Index] | None, optional
         Target indices of the expression. By default the Einstein sum
         convention will be used to identify target and contracted indices,
         which is not always sufficient.
     """
     def __init__(self, inner: Expr | Container | Any,
-                 real: bool = False,
-                 sym_tensors: Iterable[str] = tuple(),
-                 antisym_tensors: Iterable[str] = tuple(),
                  target_idx: Iterable[Index] | None = None) -> None:
-        super().__init__(
-            inner=inner, real=real, sym_tensors=sym_tensors,
-            antisym_tensors=antisym_tensors, target_idx=target_idx
-        )
+        super().__init__(inner=inner, target_idx=target_idx)
         # we can not wrap an Add object: should be wrapped by ExprContainer
         # we can not wrap an Mul object: should be wrapped by TermContainer
         # we can not wrap an NO object: should be wrapped by
@@ -582,24 +564,26 @@ class ObjectContainer(Container):
     ###################################
     # methods manipulating the object #
     ###################################
-    def _apply_tensor_braket_sym(self, wrap_result: bool = True
-                                 ) -> "ExprContainer | Expr":
+    def _apply_tensor_braket_sym(
+            self, braket_sym_tensors: Sequence[str] = tuple(),
+            braket_antisym_tensors: Sequence[str] = tuple(),
+            wrap_result: bool = True) -> "ExprContainer | Expr":
         """
-        Applies the bra-ket symmetry defined in sym_tensors and antisym_tensors
-        to the current object. If wrap_result is set, the new object will be
+        Applies the bra-ket symmetry defined in braket_sym_tensors and
+        braket_antisym_tensors to the current object.
+        If wrap_result is set, the new object will be
         wrapped by :py:class:`ExprContainer`.
         """
         from .expr_container import ExprContainer
 
         obj = self.inner
         base, exponent = self.base_and_exponent
-        # antisymtensor, symtensor or amplitude
         if isinstance(base, AntiSymmetricTensor):
             name = base.name
             braketsym: None | Number = None
-            if name in self.sym_tensors and base.bra_ket_sym is not S.One:
+            if name in braket_sym_tensors and base.bra_ket_sym is not S.One:
                 braketsym = S.One
-            elif name in self.antisym_tensors and \
+            elif name in braket_antisym_tensors and \
                     base.bra_ket_sym is not S.NegativeOne:
                 braketsym = S.NegativeOne
             if braketsym is not None:
@@ -611,10 +595,12 @@ class ObjectContainer(Container):
             obj = ExprContainer(inner=obj, **self.assumptions)
         return obj
 
-    def make_real(self, wrap_result: bool = True) -> "ExprContainer | Expr":
+    def _rename_complex_tensors(self, wrap_result: bool = True
+                                ) -> "ExprContainer | Expr":
         """
-        Represent the object in a real orbital basis by renaming the
-        complex conjugate t-amplitudes, for instance 't1cc' -> 't1'.
+        Renames complex tensors to reflect that the expression is
+        represented in a real orbital basis, e.g., complex t-amplitudes
+        are renamed t1cc -> t1.
 
         Parameters
         ----------
@@ -639,9 +625,7 @@ class ObjectContainer(Container):
                     exponent
                 )
         if wrap_result:
-            kwargs = self.assumptions
-            kwargs["real"] = True
-            real_obj = ExprContainer(real_obj, **kwargs)
+            real_obj = ExprContainer(real_obj, **self.assumptions)
         return real_obj
 
     def block_diagonalize_fock(self, wrap_result: bool = True
@@ -833,7 +817,6 @@ class ObjectContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        expanded_coulomb = False
         res = self.inner
         base, exponent = self.base_and_exponent
         if isinstance(base, AntiSymmetricTensor) and \
@@ -848,22 +831,19 @@ class ObjectContainer(Container):
             res = S.Zero
             if p.spin == r.spin and q.spin == s.spin:
                 res += SymmetricTensor(tensor_names.coulomb, (p, r), (q, s), 1)
-                expanded_coulomb = True
             if p.spin == s.spin and q.spin == r.spin:
                 res -= SymmetricTensor(tensor_names.coulomb, (p, s), (q, r), 1)
-                expanded_coulomb = True
             res = Pow(res, exponent)
 
         if wrap_result:
-            kwargs = self.assumptions
-            if expanded_coulomb:
-                kwargs["sym_tensors"] += (tensor_names.coulomb,)
-            res = ExprContainer(res, **kwargs)
+            res = ExprContainer(res, **self.assumptions)
         return res
 
     def expand_intermediates(self, target: Sequence[Index],
                              wrap_result: bool = True,
-                             fully_expand: bool = True
+                             fully_expand: bool = True,
+                             braket_sym_tensors: Sequence[str] = tuple(),
+                             braket_antisym_tensors: Sequence[str] = tuple()
                              ) -> "ExprContainer | Expr":
         """
         Expand the object if it is a known intermediate.
@@ -885,7 +865,7 @@ class ObjectContainer(Container):
               order MP t-amplitudes are expressed by means of (n-1)'th order
               MP t-amplitudes and ERI.
         """
-        from ..intermediates import Intermediates, RegisteredIntermediate
+        from ..intermediates import Intermediates
         from .expr_container import ExprContainer
 
         # intermediates only defined for tensors
@@ -902,7 +882,6 @@ class ObjectContainer(Container):
         itmd = Intermediates().available.get(longname, None)
         expanded = self.inner
         if itmd is not None:
-            assert isinstance(itmd, RegisteredIntermediate)
             # Use a for loop to obtain different contracted itmd indices
             # for each x in: x * x * ...
             expanded = S.One
@@ -915,6 +894,13 @@ class ObjectContainer(Container):
                 )
             if exponent < S.Zero:
                 expanded = Pow(expanded, -1)
+        # apply assumptions to the expanded object
+        if braket_sym_tensors or braket_antisym_tensors:
+            expanded = ExprContainer(expanded).add_bra_ket_sym(
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors
+            ).inner
+
         if wrap_result:
             assumptions = self.assumptions
             assumptions["target_idx"] = target
@@ -948,12 +934,5 @@ class ObjectContainer(Container):
                 )
             explicit_denom = Pow(explicit_denom, -exponent)
         if wrap_result:
-            assumptions = self.assumptions
-            # remove the symbolic denom from the assumptions if necessary
-            if tensor_names.sym_orb_denom in self.antisym_tensors:
-                assumptions["antisym_tensors"] = tuple(
-                    n for n in assumptions["antisym_tensors"]
-                    if n != tensor_names.sym_orb_denom
-                )
-            explicit_denom = ExprContainer(explicit_denom, **assumptions)
+            explicit_denom = ExprContainer(explicit_denom, **self.assumptions)
         return explicit_denom

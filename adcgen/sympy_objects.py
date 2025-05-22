@@ -336,12 +336,13 @@ class KroneckerDelta(DefinedFunction):
             return cls(j, i)
         return None
 
-    def _eval_power(self, exp) -> Expr:  # type: ignore[override]
+    def _eval_power(self, exp) -> Expr | None:  # type: ignore[override]
         # we don't want exponents > 1 on deltas!
         if exp.is_positive:
             return self
         elif exp.is_negative and exp is not S.NegativeOne:
             return S.One / self
+        return None
 
     def _latex(self, printer) -> str:
         return (

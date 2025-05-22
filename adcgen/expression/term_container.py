@@ -3,7 +3,7 @@ from collections import Counter
 from functools import cached_property
 from typing import Any, TYPE_CHECKING, Sequence
 
-from sympy import Add, Expr, Mul, Pow, S, Symbol, factor, latex, nsimplify
+from sympy import Add, Expr, Mul, Pow, S, factor, latex, nsimplify
 from sympy.physics.secondquant import NO
 
 from ..indices import (
@@ -12,7 +12,6 @@ from ..indices import (
 )
 from ..misc import Inputerror, cached_member
 from ..sympy_objects import NonSymmetricTensor
-from ..tensor_names import tensor_names
 from .container import Container
 from .normal_ordered_container import NormalOrderedContainer
 from .polynom_container import PolynomContainer
@@ -32,18 +31,6 @@ class TermContainer(Container):
     ----------
     inner:
         The algebraic term to wrap, e.g., a sympy.Mul object
-    real : bool, optional
-        Whether the expression is represented in a real orbital basis.
-    sym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-symmetry, i.e.,
-        d^{pq}_{rs} = d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional symmetry if they are not aware
-        of it yet.
-    antisym_tensors: Iterable[str] | None, optional
-        Names of tensors with bra-ket-antisymmetry, i.e.,
-        d^{pq}_{rs} = - d^{rs}_{pq}. Adjusts the corresponding tensors to
-        correctly represent this additional antisymmetry if they are not
-        aware of it yet.
     target_idx: Iterable[Index] | None, optional
         Target indices of the expression. By default the Einstein sum
         convention will be used to identify target and contracted indices,
@@ -51,14 +38,8 @@ class TermContainer(Container):
     """
 
     def __init__(self, inner: Expr | Container | Any,
-                 real: bool = False,
-                 sym_tensors: Iterable[str] = tuple(),
-                 antisym_tensors: Iterable[str] = tuple(),
                  target_idx: Iterable[Index] | None = None) -> None:
-        super().__init__(
-            inner=inner, real=real, sym_tensors=sym_tensors,
-            antisym_tensors=antisym_tensors, target_idx=target_idx
-        )
+        super().__init__(inner=inner, target_idx=target_idx)
         # we can not wrap an Add object: should be wrapped by ExprContainer
         # But everything else should be fine (Mul or single objects)
         assert not isinstance(self._inner, Add)
@@ -358,46 +339,52 @@ class TermContainer(Container):
     ###############################
     # method that modify the term #
     ###############################
-    def _apply_tensor_braket_sym(self, wrap_result: bool = True
-                                 ) -> "ExprContainer | Expr":
+    def _apply_tensor_braket_sym(
+            self, braket_sym_tensors: Sequence[str] = tuple(),
+            braket_antisym_tensors: Sequence[str] = tuple(),
+            wrap_result: bool = True) -> "ExprContainer | Expr":
         """
-        Applies the tensor bra-ket symmetry defined in sym_tensors and
-        antisym_tensors to all tensors in the term. If wrap_result is set,
+        Applies the tensor bra-ket symmetry defined in braket_sym_tensors and
+        braket_antisym_tensors to all tensors in the term.
+        If wrap_result is set,
         the new term will be wrapped by :py:class:`ExprContainer`.
         """
         from .expr_container import ExprContainer
 
         term = S.One
         for obj in self.objects:
-            term *= obj._apply_tensor_braket_sym(wrap_result=False)
+            term *= obj._apply_tensor_braket_sym(
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors,
+                wrap_result=False
+            )
+        assert isinstance(term, Expr)
         if wrap_result:
             term = ExprContainer(inner=term, **self.assumptions)
         return term
 
-    def make_real(self, wrap_result: bool = True) -> "ExprContainer | Expr":
+    def _rename_complex_tensors(self, wrap_result: bool = True
+                                ) -> "ExprContainer | Expr":
         """
-        Represent the tern in a real orbital basis.
-        - names of complex conjugate t-amplitudes, for instance t1cc -> t1
-        - adds bra-ket-symmetry to the fock matrix and the ERI.
+        Renames complex tensors to reflect that the expression is
+        represented in a real orbital basis, e.g., complex t-amplitudes
+        are renamed t1cc -> t1.
 
         Parameters
         ----------
         wrap_result: bool, optional
-            If this is set the result will be wrapped in an
-            :py:class:`ExprContainer`. Otherwhise that unwrapped object
-            is returned. (default: True)
+            If set the result will be wrapped with
+            :py:class:`ExprContainer`. Otherwise the unwrapped
+            object is returned. (default: True)
         """
         from .expr_container import ExprContainer
 
-        real_term = S.One
+        res = S.One
         for obj in self.objects:
-            real_term *= obj.make_real(wrap_result=False)
-
+            res *= obj._rename_complex_tensors(wrap_result=False)
         if wrap_result:
-            kwargs = self.assumptions
-            kwargs["real"] = True
-            real_term = ExprContainer(inner=real_term, **kwargs)
-        return real_term
+            res = ExprContainer(inner=res, **self.assumptions)
+        return res
 
     def block_diagonalize_fock(self, wrap_result: bool = True
                                ) -> "ExprContainer | Expr":
@@ -641,15 +628,14 @@ class TermContainer(Container):
             expanded *= obj.expand_antisym_eri(wrap_result=False)
 
         if wrap_result:
-            assumptions = self.assumptions
-            if Symbol(tensor_names.coulomb) in expanded.atoms(Symbol):
-                assumptions["sym_tensors"] += (tensor_names.coulomb,)
-            expanded = ExprContainer(expanded, **assumptions)
+            expanded = ExprContainer(expanded, **self.assumptions)
         return expanded
 
     def expand_intermediates(self, target: Sequence[Index] | None = None,
                              wrap_result: bool = True,
-                             fully_expand: bool = True
+                             fully_expand: bool = True,
+                             braket_sym_tensors: Sequence[str] = tuple(),
+                             braket_antisym_tensors: Sequence[str] = tuple()
                              ) -> "ExprContainer | Expr":
         """
         Expands all known intermediates in the term.
@@ -671,6 +657,12 @@ class TermContainer(Container):
             False: The intermediates are only expanded once, e.g., n'th
               order MP t-amplitudes are expressed by means of (n-1)'th order
               MP t-amplitudes and ERI.
+        braket_sym_tensors: Sequence[str], optional
+            Add bra-ket-symmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
+        braket_antisym_tensors: Sequence[str], optional
+            Add bra-ket-antisymmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
         """
         from .expr_container import ExprContainer
 
@@ -680,7 +672,9 @@ class TermContainer(Container):
         expanded = S.One
         for obj in self.objects:
             expanded *= obj.expand_intermediates(
-                target, wrap_result=False, fully_expand=fully_expand
+                target, wrap_result=False, fully_expand=fully_expand,
+                braket_sym_tensors=braket_sym_tensors,
+                braket_antisym_tensors=braket_antisym_tensors
             )
 
         if wrap_result:
@@ -713,14 +707,7 @@ class TermContainer(Container):
             explicit_denom *= obj.use_explicit_denominators(wrap_result=False)
 
         if wrap_result:
-            assumptions = self.assumptions
-            # remove the tensor from the assumptions
-            if tensor_names.sym_orb_denom in self.antisym_tensors:
-                assumptions["antisym_tensors"] = tuple(
-                    n for n in assumptions["antisym_tensors"]
-                    if n != tensor_names.sym_orb_denom
-                )
-            explicit_denom = ExprContainer(explicit_denom, **assumptions)
+            explicit_denom = ExprContainer(explicit_denom, **self.assumptions)
         return explicit_denom
 
     def split_orb_energy(self) -> "dict[str, ExprContainer]":
@@ -735,10 +722,10 @@ class TermContainer(Container):
         from .expr_container import ExprContainer
 
         assumptions = self.assumptions
-        assumptions['target_idx'] = self.target
+        assumptions["target_idx"] = self.target
         ret = {"num": ExprContainer(1, **assumptions),
-               'denom': ExprContainer(1, **assumptions),
-               'remainder': ExprContainer(1, **assumptions)}
+               "denom": ExprContainer(1, **assumptions),
+               "remainder": ExprContainer(1, **assumptions)}
         for o in self.objects:
             base, exponent = o.base_and_exponent
             if o.inner.is_number:
@@ -746,21 +733,26 @@ class TermContainer(Container):
             elif o.contains_only_orb_energies:
                 key = "denom" if exponent < S.Zero else "num"
             else:
-                key = 'remainder'
+                key = "remainder"
             ret[key] *= Pow(base, abs(exponent))
         return ret
 
-    def use_symbolic_denominators(self) -> "ExprContainer":
+    def use_symbolic_denominators(self, wrap_result: bool = True
+                                  ) -> "ExprContainer | Expr":
         """
         Replace all orbital energy denominators in the expression by tensors,
         e.g., (e_a + e_b - e_i - e_j)^{-1} will be replaced by D^{ab}_{ij},
-        where D is a SymmetricTensor."""
+        where D is a SymmetricTensor.
+        """
         from ..eri_orbenergy import EriOrbenergy
 
         term = EriOrbenergy(self)
         symbolic_denom = term.symbolic_denominator()
-        # symbolic denom might additionaly have D set as antisym tensor
-        return symbolic_denom * term.pref * term.num.inner * term.eri.inner
+        if wrap_result:
+            return term.pref * symbolic_denom * term.num * term.eri
+        return (
+            term.pref * symbolic_denom.inner * term.num.inner * term.eri.inner
+        )
 
     def to_latex_str(self, only_pull_out_pref: bool = False,
                      spin_as_overbar: bool = False):

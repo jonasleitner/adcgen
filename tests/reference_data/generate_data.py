@@ -151,7 +151,9 @@ class Generator:
                     dump["expectation_value"] = str(res)
                     # dump the real symmetric expec value
                     res.make_real()
-                    res.sym_tensors = [tensor_names.operator]
+                    res.add_bra_ket_sym(
+                        braket_sym_tensors=tensor_names.operator
+                    )
                     res = simplify(res)
                     dump["real_symmetric_expectation_value"] = str(res)
                     # dump the real symmetric density matrix
@@ -305,7 +307,9 @@ class Generator:
                     # dump the real result for a symmetric operator
                     # for a single state
                     res.make_real()
-                    res.sym_tensors = [tensor_names.operator]
+                    res.add_bra_ket_sym(
+                        braket_sym_tensors=tensor_names.operator
+                    )
                     res.rename_tensor(tensor_names.left_adc_amplitude,
                                       tensor_names.right_adc_amplitude)
                     res = simplify(res)

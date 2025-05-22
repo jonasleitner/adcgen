@@ -10,24 +10,24 @@ from sympy import S
 import pytest
 
 
-@pytest.mark.parametrize('order', [0, 1, 2, 3])
+@pytest.mark.parametrize("order", [0, 1, 2, 3])
 class TestSecularMatrix():
-    @pytest.mark.parametrize('block,indices',
-                             [('ph,ph', 'ia,jb')])
+    @pytest.mark.parametrize("block,indices",
+                             [("ph,ph", "ia,jb")])
     def test_isr_matrix_block(self, order, block, indices, cls_instances,
                               reference_data):
         # load reference data
         ref = reference_data["secular_matrix"]["pp"][block][order]
 
         # compute the raw matrix block
-        m = cls_instances['mp']['m'].isr_matrix_block(order, block, indices)
+        m = cls_instances["mp"]["m"].isr_matrix_block(order, block, indices)
         m = ExprContainer(m)
         ref_m = ref["complex"]
         assert simplify(m - ref_m).inner is S.Zero
 
         # assume a real orbital basis
         m = ExprContainer(m.inner, real=True).substitute_contracted()
-        ref_m = ref['real'].make_real()
+        ref_m = ref["real"].make_real()
         assert simplify(m - ref_m).inner is S.Zero
 
         # expand itmds, cancel orbital energy fractions
@@ -47,8 +47,11 @@ class TestSecularMatrix():
         for delta_sp, sub_expr in sort.by_delta_types(m).items():
             # compare to reference
             ref_sub_expr = ref["real_factored"]["-".join(delta_sp)]
-            ref_sub_expr = ExprContainer(
-                ref_sub_expr.inner, **sub_expr.assumptions
+            ref_sub_expr = ExprContainer(ref_sub_expr, **sub_expr.assumptions)
+            ref_sub_expr.make_real()
+            ref_sub_expr.add_bra_ket_sym(
+                braket_sym_tensors=sub_expr.braket_sym_tensors,
+                braket_antisym_tensors=sub_expr.braket_antisym_tensors
             )
             assert simplify(sub_expr - ref_sub_expr).inner is S.Zero
             # exploit permutational symmetry and test that the result is

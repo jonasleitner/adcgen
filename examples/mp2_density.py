@@ -10,7 +10,9 @@ mp = GroundState(h)
 expec = mp.expectation_value(order=2, n_particles=1)
 # in a real orbital basis and for a symmetric operator matrix as the density
 # is symmetric.
-expec = ExprContainer(expec, real=True, sym_tensors=[tensor_names.operator])
+expec = ExprContainer(
+    expec, real=True, braket_sym_tensors=[tensor_names.operator]
+)
 expec.substitute_contracted()
 expec = simplify(expec)
 

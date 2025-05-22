@@ -10,6 +10,7 @@ from .expression import ExprContainer, TermContainer
 from .indices import Index
 from .logger import logger
 from .symmetry import Permutation
+from .tensor_names import tensor_names
 
 
 def reduce_expr(expr: ExprContainer) -> ExprContainer:
@@ -21,14 +22,14 @@ def reduce_expr(expr: ExprContainer) -> ExprContainer:
     The implementation assumes a real orbital basis.
     """
     assert isinstance(expr, ExprContainer)
-    if not expr.real:
-        raise NotImplementedError("Intermediates only implemented for a real "
-                                  "orbital basis.")
     expr = expr.expand()
 
     # check if we have anything to do
     if expr.inner.is_number:
         return expr
+
+    # add eri and fock matrix to the sym_tensors
+    braket_sym_tensors = (tensor_names.fock, tensor_names.eri)
 
     logger.info("".join(
         ['\n', '#'*80, '\n', ' '*25, "REDUCING EXPRESSION\n", '#'*80, '\n']
@@ -42,7 +43,10 @@ def reduce_expr(expr: ExprContainer) -> ExprContainer:
     for term_i, term in enumerate(expr.terms):
         logger.info(
             "#"*80 + f"\nExpanding term {term_i+1} of {len(expr)}: {term}... ")
-        term = term.expand_intermediates()
+        term = term.expand_intermediates(
+            wrap_result=True, fully_expand=True,
+            braket_sym_tensors=braket_sym_tensors
+        )
         assert isinstance(term, ExprContainer)
         term = term.expand()
         logger.info(f"into {len(term)} terms.\nCollecting terms.... ")

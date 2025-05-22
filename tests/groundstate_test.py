@@ -110,19 +110,24 @@ class TestGroundState():
         # assume a real basis and a symmetric operator/ symmetric dm
         expec.substitute_contracted()
         expec.make_real()
-        expec.sym_tensors = [tensor_names.operator]
+        expec.add_bra_ket_sym(braket_sym_tensors=tensor_names.operator)
         expec = simplify(expec)
         ref_expec = ref['real_symmetric_expectation_value']
-        assert simplify(expec - ref_expec.inner).inner is S.Zero
+        assert isinstance(ref_expec, ExprContainer)
+        ref_expec.make_real()
+        ref_expec.add_bra_ket_sym(braket_sym_tensors=(tensor_names.operator,))
+        assert simplify(expec - ref_expec).inner is S.Zero
 
         # extract all blocks of the symmetric dm
         density_matrix = remove_tensor(expec, tensor_names.operator)
         for block, block_expr in density_matrix.items():
             assert len(block) == 1
             ref_dm = ref["real_symmetric_dm"][block[0]]
-            assert simplify(block_expr - ref_dm.inner).inner is S.Zero
+            assert isinstance(ref_dm, ExprContainer)
+            ref_dm.make_real()
+            assert simplify(block_expr - ref_dm).inner is S.Zero
 
-            # exploit permutational symmetry and collec the terms again
+            # exploit permutational symmetry and collect the terms again
             re_expanded_dm = ExprContainer(0, **block_expr.assumptions)
             for perm_sym, sub_expr in \
                     sort.exploit_perm_sym(block_expr).items():

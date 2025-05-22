@@ -54,9 +54,9 @@ class EriOrbenergy:
         #       But if we keep it like it is, we should have a more clear
         #       definition of the prefactor (only the sign might be ambiguous
         #       +0.5 vs -0.5)
-        self._pref: Expr = min(  # type: ignore
+        self._pref: Expr = min(
             [t.prefactor for t in splitted["num"].terms],
-            key=abs  # type: ignore
+            key=abs
         )
 
         # only possiblity to extract 0 should be if the numerator is 0
@@ -332,9 +332,7 @@ class EriOrbenergy:
         num.expand()
         # this possibly introduced prefactors in the numerator again
         # -> extract the smallest prefactor and shift to self.pref
-        additional_pref = min(  # type: ignore
-            [t.prefactor for t in num.terms], key=abs  # type: ignore
-        )
+        additional_pref = min([t.prefactor for t in num.terms], key=abs)
         self._pref *= additional_pref
         if additional_pref is S.Zero:  # permuted num = 0
             if not num.inner.is_number:
@@ -472,7 +470,7 @@ class EriOrbenergy:
                 #    in the new numerator
                 # -> can only cancel each bracket at most 1 time
                 # -> no need to recurse just iterate through the list
-                min_pref = min(relevant_prefs, key=abs)  # type: ignore
+                min_pref = min(relevant_prefs, key=abs)
                 # the sign in the numerator has been fixed before entering this
                 # function -> dont change it!
                 if min_pref < 0:
@@ -558,9 +556,8 @@ class EriOrbenergy:
             return self.denom
 
         symbolic_denom = ExprContainer(1, **self.denom.assumptions)
-        has_symbolic_denom = False
         for bracket in self.denom_brackets:
-            signs = {'-': set(), '+': set()}
+            signs = {"-": set(), "+": set()}
             for term in bracket.terms:
                 idx = term.idx
                 if len(idx) != 1:
@@ -570,28 +567,23 @@ class EriOrbenergy:
                                        f"Found: {term} in {bracket}.")
                 pref = term.prefactor
                 if pref is S.One:
-                    signs['+'].add(idx[0])
+                    signs["+"].add(idx[0])
                 elif pref is S.NegativeOne:
-                    signs['-'].add(idx[0])
+                    signs["-"].add(idx[0])
                 else:
                     raise RuntimeError(f"Found invalid prefactor {pref} in "
                                        f"denominator bracket {bracket}.")
-            if signs['+'] & signs['-']:
+            if signs["+"] & signs["-"]:
                 raise RuntimeError(f"Found index that is added and "
                                    f"subtracted in a denominator: {bracket}.")
-            has_symbolic_denom = True
             exponent = (
                     S.One if isinstance(bracket, ExprContainer)
                     else bracket.exponent
             )
             symbolic_denom *= Pow(SymmetricTensor(
-                tensor_names.sym_orb_denom, tuple(signs['+']),
-                tuple(signs['-']), -1
+                tensor_names.sym_orb_denom, tuple(signs["+"]),
+                tuple(signs["-"]), -1
             ), exponent)
-        if has_symbolic_denom:
-            symbolic_denom.antisym_tensors = (
-                symbolic_denom.antisym_tensors + (tensor_names.sym_orb_denom,)
-            )
         return symbolic_denom
 
 

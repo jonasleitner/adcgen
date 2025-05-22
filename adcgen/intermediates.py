@@ -238,13 +238,7 @@ class RegisteredIntermediate:
         # build the tensor object
         tensor = self._build_tensor(indices=indices)
         if wrap_result:
-            kwargs = {}
-            if isinstance(tensor, AntiSymmetricTensor):
-                if tensor.bra_ket_sym is S.One:  # bra ket symmetry
-                    kwargs["sym_tensors"] = (tensor.name,)
-                elif tensor.bra_ket_sym is S.NegativeOne:  # bra ket anisym
-                    kwargs["antisym_tensors"] = (tensor.name,)
-            return ExprContainer(tensor, **kwargs)
+            return ExprContainer(tensor)
         else:
             return tensor
 
@@ -426,10 +420,6 @@ class RegisteredIntermediate:
         )
 
         assert isinstance(expr, ExprContainer)
-        if not expr.real:
-            raise NotImplementedError("Intermediates only implemented for "
-                                      "a real orbital basis.")
-
         # ensure that the previously factored intermediates
         # are provided as tuple -> can use them as dict key
         if isinstance(factored_itmds, str):
@@ -549,9 +539,6 @@ class t2_1(RegisteredIntermediate):
         """
         _ = allow_repeated_itmd_indices
         assert isinstance(expr, ExprContainer)
-        if not expr.real:
-            raise NotImplementedError("Intermediates only implemented for a "
-                                      "real orbital basis.")
         # do we have something to factor? did we already factor the itmd?
         if expr.inner.is_number or \
                 (factored_itmds and self.name in factored_itmds):
