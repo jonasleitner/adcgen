@@ -765,7 +765,7 @@ class ObjectContainer(Container):
 
         res = self.inner
         base, exponent = self.base_and_exponent
-        if not exponent.is_integer:
+        if not exponent.is_Integer:
             raise ValueError("Exponent of Object is not an integer. "
                              f"Exponent: {exponent}")
 
@@ -903,7 +903,7 @@ class ObjectContainer(Container):
                     fully_expand=fully_expand
                 )
             if exponent < S.Zero:
-                expanded = Pow(expanded, -1)
+                expanded = Pow(expanded, exponent)
         # apply assumptions to the expanded object
         if braket_sym_tensors or braket_antisym_tensors:
             expanded = ExprContainer(expanded).add_bra_ket_sym(
