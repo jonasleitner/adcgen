@@ -799,6 +799,7 @@ class ObjectContainer(Container):
                             res *= SymmetricTensor(tensor_names.ri_asym_eri,
                                                    (aux_idx,), (r, s), 0)
                 else:
+                    aux_idx = Index('P', **assumptions)
                     if factorisation == 'sym':
                         res *= SymmetricTensor(tensor_names.ri_sym,
                                                (aux_idx,), (p, q), 0)

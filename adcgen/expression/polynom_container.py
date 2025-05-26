@@ -225,13 +225,16 @@ class PolynomContainer(ObjectContainer):
                         factorisation=factorisation, wrap_result=False
                     )
                 factorised *= expanded
+            assert isinstance(factorised, Expr)
         else:
-            expanded_list = [
-                term.expand_coulomb_ri(factorisation=factorisation,
-                                       wrap_result=False)
-                for term in self.terms
-            ]
-            factorised = Pow(Add(*expanded_list), self.exponent)
+            expanded = S.Zero
+            for term in self.terms:
+                expanded += term.expand_coulomb_ri(
+                    factorisation=factorisation, wrap_result=False
+                )
+            assert isinstance(expanded, Expr)
+            factorised = Pow(expanded, self.exponent)
+
         assert isinstance(factorised, Expr)
 
         if wrap_result:
