@@ -212,20 +212,26 @@ class PolynomContainer(ObjectContainer):
         """
         from .expr_container import ExprContainer
 
-        if not self.exponent.is_Integer:
+        if not self.exponent.is_integer:
             raise ValueError("Only Polynomials with integer exponents can "
                              "be factorised")
-        elif int(self.exponent) < 0:
-            raise ValueError("Decomposition of reciprocal Coulomb operators "
-                             "with RI is not meaningful")
 
         factorised = S.One
-        for _ in range(int(self.exponent)):
-            expanded = S.Zero
-            for term in self.terms:
-                expanded += term.expand_coulomb_ri(factorisation=factorisation,
-                                                   wrap_result=False)
-            factorised *= expanded
+        if self.exponent >= S.Zero:
+            for _ in range(int(self.exponent)):
+                expanded = S.Zero
+                for term in self.terms:
+                    expanded += term.expand_coulomb_ri(
+                        factorisation=factorisation, wrap_result=False
+                    )
+                factorised *= expanded
+        else:
+            expanded_list = [
+                term.expand_coulomb_ri(factorisation=factorisation,
+                                       wrap_result=False)
+                for term in self.terms
+            ]
+            factorised = Pow(Add(*expanded_list), self.exponent)
         assert isinstance(factorised, Expr)
 
         if wrap_result:

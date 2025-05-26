@@ -358,8 +358,6 @@ class TestSpatialGroundstateEnergy:
         expr = ExprContainer(e, real=True)
 
         sp_expr = transform_to_spatial_orbitals(expr, '', '', restricted)
-        sp_expr.make_real()
-        sp_expr.add_bra_ket_sym(braket_sym_tensors=tensor_names.coulomb)
         ref.make_real()
         ref.add_bra_ket_sym(braket_sym_tensors=tensor_names.coulomb)
 

@@ -765,12 +765,9 @@ class ObjectContainer(Container):
 
         res = self.inner
         base, exponent = self.base_and_exponent
-        if not exponent.is_Integer:
+        if not exponent.is_integer:
             raise ValueError("Exponent of Object is not an integer. "
                              f"Exponent: {exponent}")
-        elif int(exponent) < 0:
-            raise ValueError("RI decomposition is not meaningful for "
-                             "reciprocal Coulomb operators")
 
         if isinstance(base, SymmetricTensor) and \
                 base.name == tensor_names.coulomb:
@@ -788,8 +785,20 @@ class ObjectContainer(Container):
                     # Check if RI is applied before or after
                     # spin integration. RI indices are always alpha
                     assumptions["alpha"] = True
-                for _ in range(int(exponent)):
-                    aux_idx = Index('P', **assumptions)
+                if self.exponent >= S.Zero:
+                    for _ in range(int(exponent)):
+                        aux_idx = Index('P', **assumptions)
+                        if factorisation == 'sym':
+                            res *= SymmetricTensor(tensor_names.ri_sym,
+                                                   (aux_idx,), (p, q), 0)
+                            res *= SymmetricTensor(tensor_names.ri_sym,
+                                                   (aux_idx,), (r, s), 0)
+                        elif factorisation == 'asym':
+                            res *= SymmetricTensor(tensor_names.ri_asym_factor,
+                                                   (aux_idx,), (p, q), 0)
+                            res *= SymmetricTensor(tensor_names.ri_asym_eri,
+                                                   (aux_idx,), (r, s), 0)
+                else:
                     if factorisation == 'sym':
                         res *= SymmetricTensor(tensor_names.ri_sym,
                                                (aux_idx,), (p, q), 0)
@@ -800,6 +809,7 @@ class ObjectContainer(Container):
                                                (aux_idx,), (p, q), 0)
                         res *= SymmetricTensor(tensor_names.ri_asym_eri,
                                                (aux_idx,), (r, s), 0)
+                    res = Pow(res, self.exponent)
 
         if wrap_result:
             kwargs = self.assumptions
