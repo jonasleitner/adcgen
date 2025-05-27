@@ -30,8 +30,14 @@ class TensorNames(metaclass=Singleton):
     - antisymmetric ERI in physicist notation (eri): V
     - Coulomb integrals in chemist notation (coulomb): v
     - Symmetrically decomposed RI integrals (ri_sym): B
+      These are formally calculated by decomposing the symmetric
+      four center integrals: (pq | rs) = B^Q_pq B^Q_rs
     - The "factor" for an asymmetric RI integral (ri_asym_factor): C
+      This tensor is the dimensionless part of the asymmetric
+      resolution of identity decomposition: C^P_{pq} = (pq | Q) (Q | P)^{-1}
     - The pure 2e3c RI integral (ri_asym_eri): G
+      This tensor is combined with C^P_{pq} to reform the symmetric
+      four center integrals: C^P_{pq} G^P_{rs} = (pq | rs)
     - The fock matrix (fock): f
     - The arbitrary N-particle operator matrix (operator): d
     - Ground state amplitudes (gs_amplitude): t

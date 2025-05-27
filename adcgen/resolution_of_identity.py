@@ -5,7 +5,8 @@ from sympy import Symbol
 
 
 def apply_resolution_of_identity(expr: ExprContainer,
-                                 factorisation: str = 'sym'
+                                 factorisation: str = 'sym',
+                                 resolve_indices: bool = True
                                  ) -> ExprContainer:
     """
     Applies the Resolution of Identity approximation (RI, sometimes also
@@ -38,6 +39,10 @@ def apply_resolution_of_identity(expr: ExprContainer,
         If 'sym', the symmetric factorisation variant is employed.
         If 'asym', the asymmetric factorisation variant is employed
         instead, by default 'sym'
+    resolve_indices: bool, optional
+        Whether the indices should be resolved to unique indices
+        after applying the RI approximation. This is equivalent
+        to calling 'substitute_contracted()' afterwards.
 
     Returns
     -------
@@ -63,4 +68,8 @@ def apply_resolution_of_identity(expr: ExprContainer,
         raise Inputerror('Resolution of Identity requires that the ERIs'
                          ' be expanded first.')
 
-    return expr.expand_coulomb_ri(factorisation=factorisation)
+    ri_expr = expr.expand_coulomb_ri(factorisation=factorisation)
+    if resolve_indices:
+        ri_expr.substitute_contracted()
+
+    return ri_expr
