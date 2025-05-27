@@ -747,71 +747,63 @@ class ObjectContainer(Container):
         -------
         ExprContainer | Expr
             The factorised expression.
-
-        Raises
-        ------
-        NotImplementedError
-            If a factorisation that is not 'sym' or 'asym' is provided or if
-            the expression is not real.
-        ValueError
-            If an invalide exponent is present
         """
         from .expr_container import ExprContainer
 
         if factorisation not in ('sym', 'asym'):
-            raise NotImplementedError("Only symmetric (sym) and asymmetric "
-                                      "(asym) factorisation of the Coulomb "
+            raise NotImplementedError("Only symmetric ('sym') and asymmetric "
+                                      "('asym') factorisation of the Coulomb "
                                       "integral is implemented")
 
         res = self.inner
         base, exponent = self.base_and_exponent
-        if not exponent.is_Integer:
-            raise ValueError("Exponent of Object is not an integer. "
-                             f"Exponent: {exponent}")
-
         if isinstance(base, SymmetricTensor) and \
                 base.name == tensor_names.coulomb:
-            # ensure that the ERI is symmetric as an implicit check
-            # whether it is real
             if base.bra_ket_sym != 1:
                 raise NotImplementedError("Can only apply RI approximation to "
-                                          "ERIs with bra-ket symmetry "
-                                          "(real orbitals).")
-            p, q, r, s = self.idx
+                                          "coulomb integrals with "
+                                          "bra-ket symmetry.")
+            # we dont expand negative exponents, because the result
+            # (ab)^-n will evaluate to a^-n b^-n, which is
+            # only correct if the product ab has no contracted
+            # indices
+            if not exponent.is_Integer or exponent < S.Zero:
+                raise NotImplementedError("Can only apply RI approximation to "
+                                          "coulomb integrals "
+                                          "with positive integer exponents. "
+                                          f"{self} has an invalid exponent.")
+            # setup the assumptions for the aux index:
+            # assign alpha spin if represented in spatial orbitals
+            idx = self.idx
+            has_spin = bool(idx[0].spin)
+            if any(bool(s) != has_spin for s in idx):
+                raise NotImplementedError(f"The coulomb integral {self} has "
+                                          "to be represented either in spatial"
+                                          " or spin orbitals. A mixture is not"
+                                          " valid.")
+            assumptions = {"aux": True}
+            if has_spin:
+                assumptions["alpha"] = True
+            # actually do the expansion
+            p, q, r, s = idx
             res = S.One
-            if p.spin == q.spin and r.spin == s.spin:
-                assumptions = {"aux": True}
-                if p.spin:
-                    # Check if RI is applied before or after
-                    # spin integration. RI indices are always alpha
-                    assumptions["alpha"] = True
-                if self.exponent >= S.Zero:
-                    for _ in range(int(exponent)):
-                        aux_idx = Index('P', **assumptions)
-                        if factorisation == 'sym':
-                            res *= SymmetricTensor(tensor_names.ri_sym,
-                                                   (aux_idx,), (p, q), 0)
-                            res *= SymmetricTensor(tensor_names.ri_sym,
-                                                   (aux_idx,), (r, s), 0)
-                        elif factorisation == 'asym':
-                            res *= SymmetricTensor(tensor_names.ri_asym_factor,
-                                                   (aux_idx,), (p, q), 0)
-                            res *= SymmetricTensor(tensor_names.ri_asym_eri,
-                                                   (aux_idx,), (r, s), 0)
+            for _ in range(int(exponent)):  # exponent has to be positive
+                aux_idx = Index("P", **assumptions)
+                if factorisation == "sym":
+                    res *= SymmetricTensor(
+                        tensor_names.ri_sym, (aux_idx,), (p, q), 0
+                    )
+                    res *= SymmetricTensor(
+                        tensor_names.ri_sym, (aux_idx,), (r, s), 0
+                    )
                 else:
-                    aux_idx = Index('P', **assumptions)
-                    if factorisation == 'sym':
-                        res *= SymmetricTensor(tensor_names.ri_sym,
-                                               (aux_idx,), (p, q), 0)
-                        res *= SymmetricTensor(tensor_names.ri_sym,
-                                               (aux_idx,), (r, s), 0)
-                    elif factorisation == 'asym':
-                        res *= SymmetricTensor(tensor_names.ri_asym_factor,
-                                               (aux_idx,), (p, q), 0)
-                        res *= SymmetricTensor(tensor_names.ri_asym_eri,
-                                               (aux_idx,), (r, s), 0)
-                    res = Pow(res, self.exponent)
-
+                    assert factorisation == "asym"
+                    res *= SymmetricTensor(
+                        tensor_names.ri_asym_factor, (aux_idx,), (p, q), 0
+                    )
+                    res *= SymmetricTensor(
+                        tensor_names.ri_asym_eri, (aux_idx,), (r, s), 0
+                    )
         if wrap_result:
             kwargs = self.assumptions
             res = ExprContainer(res, **kwargs)
@@ -875,6 +867,12 @@ class ObjectContainer(Container):
             False: The intermediate is only expanded once, e.g., n'th
               order MP t-amplitudes are expressed by means of (n-1)'th order
               MP t-amplitudes and ERI.
+        braket_sym_tensors: Sequence[str], optional
+            Add bra-ket-symmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
+        braket_antisym_tensors: Sequence[str], optional
+            Add bra-ket-antisymmetry to the given tensors of the expanded
+            expression (after expansion of the intermediates).
         """
         from ..intermediates import Intermediates
         from .expr_container import ExprContainer
@@ -893,18 +891,31 @@ class ObjectContainer(Container):
         itmd = Intermediates().available.get(longname, None)
         expanded = self.inner
         if itmd is not None:
+            # for negative exponents we would have to ensure that the
+            # intermediate is a "long" intermediate that consists of
+            # multiple terms. Or if it consists of a single term
+            # that it does not have any contracted indices
+            # However, this can only be checked by calling ".expand()"
+            # on the contributions in the for loop below, which seems bad.
+            # A short intermediates will be expanded as
+            # X^-2 = (ab * cd)^-1 -> a^-1 b^-1 c^-1 d^-1
+            # where the last step is not correct if the intermediate
+            # has contracted indices.
+            exponent = self.exponent
+            if not exponent.is_Integer or exponent < S.Zero:
+                raise NotImplementedError(
+                    "Can only expand intermediates with positive "
+                    f"integer exponents. {self} has an invalid exponent."
+                )
             # Use a for loop to obtain different contracted itmd indices
             # for each x in: x * x * ...
             expanded = S.One
-            exponent = self.exponent
             assert exponent.is_Integer
             for _ in range(abs(int(exponent))):
                 expanded *= itmd.expand_itmd(
                     indices=self.idx, wrap_result=False,
                     fully_expand=fully_expand
                 )
-            if exponent < S.Zero:
-                expanded = Pow(expanded, exponent)
         # apply assumptions to the expanded object
         if braket_sym_tensors or braket_antisym_tensors:
             expanded = ExprContainer(expanded).add_bra_ket_sym(

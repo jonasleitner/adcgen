@@ -2,7 +2,7 @@ from collections.abc import Iterable, Sequence
 from functools import cached_property
 from typing import Any, TYPE_CHECKING
 
-from sympy import Add, Expr, Pow, S
+from sympy import Add, Expr, Mul, Pow, S
 
 from ..indices import Index, sort_idx_canonical
 from .container import Container
@@ -199,48 +199,34 @@ class PolynomContainer(ObjectContainer):
             The type of factorisation ('sym' or 'asym'), by default 'sym'
         wrap_result : bool, optional
             Whether to wrap the result in an ExprContainer, by default True
-
-        Returns
-        -------
-        ExprContainer | Expr
-            The factorised expression.
-
-        Raises
-        ------
-        ValueError
-            If an invalide exponent is present
         """
         from .expr_container import ExprContainer
 
-        if not self.exponent.is_Integer:
-            raise ValueError("Only Polynomials with integer exponents can "
-                             "be factorised")
-
-        factorised = S.One
-        if self.exponent >= S.Zero:
-            for _ in range(int(self.exponent)):
-                expanded = S.Zero
-                for term in self.terms:
-                    expanded += term.expand_coulomb_ri(
-                        factorisation=factorisation, wrap_result=False
-                    )
-                factorised *= expanded
-            assert isinstance(factorised, Expr)
-        else:
-            expanded = S.Zero
+        exponent = self.exponent
+        if not exponent.is_Integer:
+            raise ValueError("Can only apply RI approximation to Polynomials "
+                             "with integer exponents. "
+                             f"{self} has an invalid exponent.")
+        # use a for loop so the contracted aux indices for each x in
+        # x * x * ... = x^n are different.
+        expanded = S.One
+        for _ in range(abs(int(exponent))):
+            contrib = S.Zero
             for term in self.terms:
-                expanded += term.expand_coulomb_ri(
+                contrib += term.expand_coulomb_ri(
                     factorisation=factorisation, wrap_result=False
                 )
-            assert isinstance(expanded, Expr)
-            factorised = Pow(expanded, self.exponent)
-
-        assert isinstance(factorised, Expr)
-
+            assert isinstance(contrib, Expr)
+            if exponent < S.Zero:
+                # a mul object would be simplified as
+                # (ab)^-1 -> a^-1 b^-1
+                # which is only correct if a and b have no contracted indices.
+                assert not isinstance(contrib, Mul)
+                contrib = Pow(contrib, -1)
+            expanded *= contrib
         if wrap_result:
-            assumptions = self.assumptions
-            factorised = ExprContainer(inner=factorised, **assumptions)
-        return factorised
+            expanded = ExprContainer(inner=expanded, **self.assumptions)
+        return expanded
 
     def expand_antisym_eri(self, wrap_result: bool = True):
         """
@@ -271,16 +257,30 @@ class PolynomContainer(ObjectContainer):
         """Expands all known intermediates in the polynom."""
         from .expr_container import ExprContainer
 
-        expanded = S.Zero
-        for term in self.terms:
-            expanded += term.expand_intermediates(
-                target, wrap_result=False, fully_expand=fully_expand,
-                braket_sym_tensors=braket_sym_tensors,
-                braket_antisym_tensors=braket_antisym_tensors
-            )
-        assert isinstance(expanded, Expr)
-        expanded = Pow(expanded, self.exponent)
-
+        exponent = self.exponent
+        if not exponent.is_Integer:
+            raise NotImplementedError("Can only expand intermediates for "
+                                      "polynoms with integer exponents."
+                                      f"{self} has an invalid exponent.")
+        # use a for loop so the contracted itmd indices for each x in
+        # x * x * ... = x^n are different.
+        expanded = S.One
+        for _ in range(abs(int(exponent))):
+            contrib = S.Zero
+            for term in self.terms:
+                contrib += term.expand_intermediates(
+                    target, wrap_result=False, fully_expand=fully_expand,
+                    braket_sym_tensors=braket_sym_tensors,
+                    braket_antisym_tensors=braket_antisym_tensors
+                )
+            assert isinstance(contrib, Expr)
+            if exponent < S.Zero:
+                # a mul object would be simplified as
+                # (ab)^-1 -> a^-1 b^-1
+                # which is only correct if a and b have no contracted indices.
+                assert not isinstance(contrib, Mul)
+                contrib = Pow(contrib, -1)
+            expanded *= contrib
         if wrap_result:
             assumptions = self.assumptions
             assumptions["target_idx"] = target
