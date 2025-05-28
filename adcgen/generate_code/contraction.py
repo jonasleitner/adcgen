@@ -33,7 +33,7 @@ class Sizes:
         if not provided.
         """
         if "general" not in input:
-            input["general"] = sum(input.values())
+            input["general"] = sum(v for k, v in input.items() if k != "aux")
         return Sizes(**input)
 
     @staticmethod
