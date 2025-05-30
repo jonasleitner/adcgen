@@ -271,6 +271,29 @@ class ExprContainer(Container):
         self._inner = renamed
         return self
 
+    def expand_coulomb_ri(self, factorisation: str = 'sym'
+                          ) -> 'ExprContainer':
+        """
+        Expands the Coulomb operators (pq | rs) into RI format
+
+        Parameters
+        ----------
+        factorisation : str, optional
+            The type of factorisation ('sym' or 'asym'), by default 'sym'
+
+        Returns
+        -------
+        ExprContainer
+            The factorised expression.
+        """
+        res = S.Zero
+        for term in self.terms:
+            res += term.expand_coulomb_ri(factorisation=factorisation,
+                                          wrap_result=False)
+        assert isinstance(res, Expr)
+        self._inner = res
+        return self
+
     def expand_antisym_eri(self) -> "ExprContainer":
         """
         Expands the antisymmetric ERI using chemists notation

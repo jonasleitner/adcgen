@@ -60,7 +60,7 @@ def filter_tensor(expr: ExprContainer, t_strings: Sequence[str],
         # True if all requested tensors are in the term
         if strict == 'low':
             return all(t in available for t in set(t_strings))
-        # True if all requested Tensors occure the correct amount of times
+        # True if all requested Tensors occur the correct amount of times
         elif strict == 'medium':
             available = Counter(available)
             desired = Counter(t_strings)

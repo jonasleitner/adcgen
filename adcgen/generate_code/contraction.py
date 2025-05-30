@@ -23,6 +23,7 @@ class Sizes:
     occ: int = 0
     virt: int = 0
     general: int = 0
+    aux: int = 0
 
     @staticmethod
     def from_dict(input: dict[str, int]) -> "Sizes":
@@ -32,7 +33,7 @@ class Sizes:
         if not provided.
         """
         if "general" not in input:
-            input["general"] = sum(input.values())
+            input["general"] = sum(v for k, v in input.items() if k != "aux")
         return Sizes(**input)
 
     @staticmethod
@@ -232,6 +233,7 @@ class ScalingComponent:
     virt: int
     occ: int
     core: int
+    aux: int
 
     def evaluate_costs(self, sizes: Sizes) -> int:
         """

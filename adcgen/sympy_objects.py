@@ -320,9 +320,12 @@ class KroneckerDelta(DefinedFunction):
             return S.Zero
 
         spi, spj = i.space[0], j.space[0]
-        valid_spaces = ["o", "v", "g", "c"]
+        valid_spaces = ["o", "v", "g", "c", "a"]
         assert spi in valid_spaces and spj in valid_spaces
-        if spi != "g" and spj != "g" and spi != spj:  # delta_ov / delta_vo
+        # delta_ov / delta_vo / delta_{aux general} / delta_{general aux}
+        if (spi != "g" and spj != "g" and spi != spj) or \
+                (spi == "g" and spj == "a") or \
+                (spi == "a" and spj == "g"):
             return S.Zero
         spi, spj = i.spin, j.spin
         assert spi in ["", "a", "b"] and spj in ["", "a", "b"]
@@ -367,12 +370,14 @@ class KroneckerDelta(DefinedFunction):
         space2, spin2 = j.space[0], j.spin
         # ensure we have no unexpected space and spin
         assert (
-            space1 in ["o", "v", "g", "c"] and space2 in ["o", "v", "g", "c"]
+            space1 in ["o", "v", "g", "c", "a"]
+            and space2 in ["o", "v", "g", "c", "a"]
         )
         assert spin1 in ["", "a", "b"] and spin2 in ["", "a", "b"]
 
         if spin1 == spin2:  # nn / aa / bb  -> equal spin information
-            # oo / vv / cc / gg / og / vg / cg
+            # oo / vv / cc / gg / og / vg / cg / aa
+            # RI indices will always end up here
             if space1 == space2 or space2 == "g":
                 return (i, j)
             else:  # go / gv / gc

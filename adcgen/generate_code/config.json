@@ -2,6 +2,7 @@
   "sizes": {
     "core": 5,
     "occ": 20,
-    "virt": 200
+    "virt": 200,
+    "aux": 250
   }
 }
