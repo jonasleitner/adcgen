@@ -135,3 +135,39 @@ class TestImportFromSympyLatex:
         fraction = fraction.expand()
         imported = import_from_sympy_latex(latex(fraction))
         assert imported.inner - fraction is S.Zero
+
+    def test_is_amplitude(self):
+        i, j = get_symbols("ij")
+        tensor = Amplitude(tensor_names.eri, (i,), (j,))
+        # by default we should get a AntiSymmetricTensor
+        imported = import_from_sympy_latex(latex(tensor))
+        assert tensor - imported.inner is not S.Zero
+        # now import as amplitude
+        imported = import_from_sympy_latex(
+            latex(tensor), is_amplitude=lambda n: n == tensor_names.eri
+        )
+        assert tensor - imported.inner is S.Zero
+        # is_amplitude should have priority over is_symmetric_tensor
+        imported = import_from_sympy_latex(
+            latex(tensor), is_amplitude=lambda n: n == tensor_names.eri,
+            is_symmetric_tensor=lambda n: n == tensor_names.eri
+        )
+        assert tensor - imported.inner is S.Zero
+
+    def test_is_symmetric_tensor(self):
+        i, j = get_symbols("ij")
+        tensor = SymmetricTensor(tensor_names.eri, (i,), (j,))
+        # by default we should get a AntiSymmetricTensor
+        imported = import_from_sympy_latex(latex(tensor))
+        assert tensor - imported.inner is not S.Zero
+        # now import as symmetrictensor
+        imported = import_from_sympy_latex(
+            latex(tensor), is_symmetric_tensor=lambda n: n == tensor_names.eri
+        )
+        assert tensor - imported.inner is S.Zero
+        # is_amplitude should have priority over is_symmetric_tensor
+        imported = import_from_sympy_latex(
+            latex(tensor), is_amplitude=lambda n: n == tensor_names.eri,
+            is_symmetric_tensor=lambda n: n == tensor_names.eri
+        )
+        assert tensor - imported.inner is not S.Zero

@@ -1,9 +1,10 @@
+from collections.abc import Callable
 import re
 
 from sympy.physics.secondquant import F, Fd, NO
-from sympy import Expr, Mul, Pow, S, Symbol, sqrt, sympify
+from sympy import Expr, Pow, S, Symbol, sqrt, sympify
 
-from ..indices import Index, get_symbols
+from ..indices import Index, get_symbols, split_idx_string
 from ..sympy_objects import (
     Amplitude, AntiSymmetricTensor, KroneckerDelta, NonSymmetricTensor,
     SymmetricTensor
@@ -12,18 +13,44 @@ from ..tensor_names import tensor_names, is_adc_amplitude, is_t_amplitude
 from .expr_container import ExprContainer
 
 
-def import_from_sympy_latex(expr_string: str,
-                            convert_default_names: bool = False
-                            ) -> ExprContainer:
+def import_from_sympy_latex(
+        expr_string: str, convert_default_names: bool = False,
+        is_amplitude: Callable[[str], bool] | None = None,
+        is_symmetric_tensor: Callable[[str], bool] | None = None
+        ) -> ExprContainer:
     """
     Imports an expression from a string created by the
-    :py:function:`sympy.latex` function.
+    :py:func:`sympy.latex` function.
 
     Parameters
     ----------
     convert_default_names : bool, optional
         If set, all default tensor names found in the expression to import
         will be converted to the currently configured names.
+        For instance, ERIs named 'V' by default will be renamed to
+        whatever :py:attr:`TensorNames.eri` defines.
+    is_amplitude: callable, optional
+        A callable that takes a tensor name and returns whether a
+        tensor with the corresponding name should be imported
+        as :py:class:`Amplitude`.
+        Note that this is checked after the (optional) conversion
+        of default names, i.e., tensors named 't' (default name
+        for ground state amplitudes) will first be converted to
+        :py:attr:`TensorNames.gs_amplitude` before
+        consulting the callable.
+        Defaults to :py:func:`is_amplitude` defined below.
+    is_symmetric_tensor: callable, optional
+        A callable that takes a tensor name and returns whether a
+        tensor with the corresponding name should be imported
+        as :py:class:`SymmetricTensor`.
+        Note that this is checked after the (optional) conversion
+        of default names and after checking whether the
+        tensor should be imported as :py:class:`Amplitude`.
+        Tensors (with upper and lower indices) that are not
+        identified as :py:class:`Amplitude` or
+        :py:class:`SymmetricTensor` will finally be imported as
+        :py:class:`AntiSymmetricTensor`.
+        Defaults to :py:func:`is_symmetric_tensor` defined below.
 
     Returns
     -------
@@ -31,6 +58,13 @@ def import_from_sympy_latex(expr_string: str,
         The imported expression in a :py:class:`ExprContainer` container.
         Note that bra-ket symmetry is not set during the import.
     """
+    if is_amplitude is None:
+        is_amplitude = globals()["is_amplitude"]
+        assert isinstance(is_amplitude, Callable)
+    if is_symmetric_tensor is None:
+        is_symmetric_tensor = globals()["is_symmetric_tensor"]
+        assert isinstance(is_symmetric_tensor, Callable)
+
     expr_string = expr_string.strip()
     if not expr_string:
         return ExprContainer(0)
@@ -43,15 +77,41 @@ def import_from_sympy_latex(expr_string: str,
     expr = S.Zero
     for term in term_strings:
         expr += _import_term(
-            term_string=term, convert_default_names=convert_default_names
+            term_string=term, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     return ExprContainer(expr)
+
+
+def is_amplitude(name: str) -> bool:
+    """
+    Whether a tensor with the given name should be imported as
+    :py:class:`Amplitude` tensor.
+    (ADC or ground state amplitude)
+    """
+    return is_adc_amplitude(name) or is_t_amplitude(name)
+
+
+def is_symmetric_tensor(name: str) -> bool:
+    """
+    Whether a tensor with the given name should be imported as
+    :py:class:`SymmetricTensor`.
+    (Coulomb, symbolic orbital energy denominator, RI tensors)
+    """
+    sym_names = (
+        tensor_names.coulomb, tensor_names.sym_orb_denom,
+        tensor_names.ri_sym, tensor_names.ri_asym_eri,
+        tensor_names.ri_asym_factor
+    )
+    return name in sym_names
 
 
 ########################
 # import functionality #
 ########################
-def _import_term(term_string: str, convert_default_names: bool) -> Expr:
+def _import_term(term_string: str, convert_default_names: bool,
+                 is_amplitude: Callable[[str], bool],
+                 is_symmetric_tensor: Callable[[str], bool]) -> Expr:
     """
     Import the given term from string
     """
@@ -64,16 +124,20 @@ def _import_term(term_string: str, convert_default_names: bool) -> Expr:
 
     if term_string.startswith(r"\frac"):  # fraction
         term *= _import_fraction(
-            term_string, convert_default_names=convert_default_names
+            term_string, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     else:
         term *= _import_product(
-            term_string, convert_default_names=convert_default_names
+            term_string, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     return term
 
 
-def _import_fraction(fraction: str, convert_default_names: bool) -> Expr:
+def _import_fraction(fraction: str, convert_default_names: bool,
+                     is_amplitude: Callable[[str], bool],
+                     is_symmetric_tensor: Callable[[str], bool]) -> Expr:
     """
     Imports a fraction '\\frac{num}{denom}' from string.
     """
@@ -82,38 +146,49 @@ def _import_fraction(fraction: str, convert_default_names: bool) -> Expr:
     # import num
     if _is_sum(numerator):
         res *= import_from_sympy_latex(
-            numerator, convert_default_names=convert_default_names
+            numerator, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         ).inner
     else:
         res *= _import_product(
-            numerator, convert_default_names=convert_default_names
+            numerator, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     # import denom
     if _is_sum(denominator):
         res /= import_from_sympy_latex(
-            denominator, convert_default_names=convert_default_names
+            denominator, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         ).inner
     else:
         res /= _import_product(
-            denominator, convert_default_names=convert_default_names
+            denominator, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     assert isinstance(res, Expr)
     return res
 
 
-def _import_product(product: str, convert_default_names: bool) -> Expr:
+def _import_product(product: str, convert_default_names: bool,
+                    is_amplitude: Callable[[str], bool],
+                    is_symmetric_tensor: Callable[[str], bool]) -> Expr:
     """
     Imports a product (a term that is no fraction) of objects.
     Objects are separated by a space.
     """
     # we have to have a product at this point
-    return Mul(*(
-        _import_object(obj, convert_default_names=convert_default_names)
-        for obj in _split_product(product)
-    ))
+    res = S.One
+    for obj in _split_product(product):
+        res *= _import_object(
+            obj, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
+        )
+    return res
 
 
-def _import_object(obj_str: str, convert_default_names: bool) -> Expr:
+def _import_object(obj_str: str, convert_default_names: bool,
+                   is_amplitude: Callable[[str], bool],
+                   is_symmetric_tensor: Callable[[str], bool]) -> Expr:
     """
     Imports the given object (a part of a product) from string.
     """
@@ -122,37 +197,45 @@ def _import_object(obj_str: str, convert_default_names: bool) -> Expr:
     elif obj_str.startswith(r"\sqrt{"):  # sqrt{n} prefactor
         assert obj_str[-1] == "}"
         return sqrt(import_from_sympy_latex(
-            obj_str[6:-1].strip(), convert_default_names=convert_default_names
+            obj_str[6:-1].strip(), convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         ).inner)
     elif obj_str.startswith(r"\delta_{"):  # KroneckerDelta
         return _import_kronecker_delta(
-            obj_str, convert_default_names=convert_default_names
+            obj_str, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     elif obj_str.startswith(r"\left("):
         return _import_polynom(
-            obj_str, convert_default_names=convert_default_names
+            obj_str, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     elif obj_str.startswith(r"\left\{"):  # NO
         return _import_normal_ordered(
-            obj_str, convert_default_names=convert_default_names
+            obj_str, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
     else:
         # the remaining objects are harder to identify:
         # tensor, creation, annihilation or symbol
         return _import_tensor_like(
-            obj_str, convert_default_names=convert_default_names
+            obj_str, convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         )
 
 
-def _import_kronecker_delta(delta: str, convert_default_names: bool) -> Expr:
+def _import_kronecker_delta(delta: str, convert_default_names: bool,
+                            is_amplitude: Callable[[str], bool],
+                            is_symmetric_tensor: Callable[[str], bool]
+                            ) -> Expr:
     """
     Imports the given KroneckerDelta of the from
     '\\delta_{p q}' from string
     """
+    _ = convert_default_names, is_amplitude, is_symmetric_tensor
     # a delta should not have an exponent!
     delta, exponent = _split_base_and_exponent(delta)
     assert exponent is None
-    _ = convert_default_names
     assert delta.startswith(r"\delta_{") and delta.endswith("}")
     # extract and import the indices
     p, q = delta[8:-1].strip().split()
@@ -160,7 +243,10 @@ def _import_kronecker_delta(delta: str, convert_default_names: bool) -> Expr:
     return KroneckerDelta(p, q)
 
 
-def _import_polynom(polynom: str, convert_default_names: bool):
+def _import_polynom(polynom: str, convert_default_names: bool,
+                    is_amplitude: Callable[[str], bool],
+                    is_symmetric_tensor: Callable[[str], bool]
+                    ) -> Expr:
     """
     Imports the given polynom of the form '\\left(...)\\right^{exp}'
     from string
@@ -170,18 +256,24 @@ def _import_polynom(polynom: str, convert_default_names: bool):
     assert base.startswith(r"\left(") and base.endswith(r"\right)")
     # import base and exponent and build a Pow object
     res = import_from_sympy_latex(
-        base[6:-7].strip(), convert_default_names=convert_default_names
+        base[6:-7].strip(), convert_default_names=convert_default_names,
+        is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
     ).inner
     if exponent is not None:
         assert exponent.startswith("{") and exponent.endswith("}")
         exponent = import_from_sympy_latex(
-            exponent[1:-1].strip(), convert_default_names=convert_default_names
+            exponent[1:-1].strip(),
+            convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         ).inner
         res = Pow(res, exponent)
     return res
 
 
-def _import_normal_ordered(no: str, convert_default_names: bool):
+def _import_normal_ordered(no: str, convert_default_names: bool,
+                           is_amplitude: Callable[[str], bool],
+                           is_symmetric_tensor: Callable[[str], bool]
+                           ) -> Expr:
     """
     Imports the given NormalOrdered object of the form
     '\\left\\{...\\right\\}' from string
@@ -190,12 +282,16 @@ def _import_normal_ordered(no: str, convert_default_names: bool):
     no, exponent = _split_base_and_exponent(no)
     assert exponent is None
     res = import_from_sympy_latex(
-        no[7:-8], convert_default_names=convert_default_names
+        no[7:-8], convert_default_names=convert_default_names,
+        is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
     ).inner
     return NO(res)
 
 
-def _import_tensor_like(tensor: str, convert_default_names: bool) -> Expr:
+def _import_tensor_like(tensor: str, convert_default_names: bool,
+                        is_amplitude: Callable[[str], bool],
+                        is_symmetric_tensor: Callable[[str], bool]
+                        ) -> Expr:
     """
     Imports a tensor like object (Symbol, creation and annihilation operators
     and Tensors).
@@ -250,12 +346,9 @@ def _import_tensor_like(tensor: str, convert_default_names: bool) -> Expr:
         upper = _import_indices(components[0])
         lower = _import_indices(components[1])
         # figure out which tensor class to use
-        if is_adc_amplitude(name) or is_t_amplitude(name):
+        if is_amplitude(name):
             res = Amplitude(name, upper, lower)
-        elif name in (tensor_names.coulomb, tensor_names.sym_orb_denom,
-                      tensor_names.ri_sym,
-                      tensor_names.ri_asym_eri,
-                      tensor_names.ri_asym_factor):
+        elif is_symmetric_tensor(name):
             res = SymmetricTensor(name, upper, lower)
         else:
             res = AntiSymmetricTensor(name, upper, lower)
@@ -267,7 +360,8 @@ def _import_tensor_like(tensor: str, convert_default_names: bool) -> Expr:
     if exponent is not None:
         assert exponent.startswith("{") and exponent.endswith("}")
         exponent = import_from_sympy_latex(
-            exponent[1:-1], convert_default_names=convert_default_names
+            exponent[1:-1], convert_default_names=convert_default_names,
+            is_amplitude=is_amplitude, is_symmetric_tensor=is_symmetric_tensor
         ).inner
         res = Pow(res, exponent)
     return res
@@ -294,6 +388,9 @@ def _import_index(index_str: str) -> Index:
     elif index_str.endswith(r"_{\beta}"):
         spin = "b"
         index_str = index_str[:-8]
+    else:
+        # ensure that we have a single index without a spin
+        assert len(split_idx_string(index_str)) == 1
     # build the index
     idx = get_symbols(index_str, spin)
     assert len(idx) == 1
@@ -374,7 +471,9 @@ def _split_product(product: str) -> list[str]:
             # this breaks down if the input is a sum and no product
             assert stack
         elif char == " " and not stack and i != obj_start_idx:
-            objects.append(product[obj_start_idx:i].strip())
+            obj = product[obj_start_idx:i].strip()
+            if obj:
+                objects.append(obj)
             obj_start_idx = i
     objects.append(product[obj_start_idx:].strip())  # the last object
     return objects
@@ -425,7 +524,7 @@ def _split_base_and_exponent(obj_str: str) -> tuple[str, str | None]:
 
 def _split_indices(idx_str: str) -> list[str]:
     """
-    Splits an index string of the form 'ab2b_{alpha}b2_{beta}' into a
+    Splits an index string of the form 'ab2b_{\\alpha}b2_{\\beta}' into a
     list [‘a‘, 'b2', 'b_{\\alpha}', 'b2_{\\beta}'].
     """
     splitted = re.findall(r"\D\d*(?:_\{\\(?:alpha|beta)\})?", idx_str)
