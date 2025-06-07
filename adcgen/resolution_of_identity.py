@@ -56,20 +56,17 @@ def apply_resolution_of_identity(expr: ExprContainer,
     Inputerror
         If the expression still contains antisymmetric ERIs.
     """
-
+    assert isinstance(expr, ExprContainer)
     # Check if a valid factorisation is given
-    if factorisation not in ('sym', 'asym'):
-        raise Inputerror('Only symmetric (sym) and asymmetric (asym) '
-                         'factorisation modes are supported. '
-                         f'Received: {factorisation}')
-
+    if factorisation not in ("sym", "asym"):
+        raise Inputerror("Only symmetric (sym) and asymmetric (asym) "
+                         "factorisation modes are supported. "
+                         f"Received: {factorisation}")
     # Check whether the expression contains antisymmetric ERIs
     if Symbol(tensor_names.eri) in expr.inner.atoms(Symbol):
-        raise Inputerror('Resolution of Identity requires that the ERIs'
-                         ' be expanded first.')
-
+        raise Inputerror("Resolution of Identity requires that the ERIs"
+                         " be expanded first.")
     ri_expr = expr.expand_coulomb_ri(factorisation=factorisation)
     if resolve_indices:
         ri_expr.substitute_contracted()
-
     return ri_expr
