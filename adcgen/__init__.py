@@ -1,9 +1,9 @@
 from .core_valence_separation import apply_cvs_approximation
 from .derivative import derivative
 from .eri_orbenergy import EriOrbenergy
-from .expression import ExprContainer
+from .expression import ExprContainer, import_from_sympy_latex
 from .factor_intermediates import factor_intermediates
-from .func import import_from_sympy_latex, evaluate_deltas, wicks
+from .func import evaluate_deltas, wicks
 from .generate_code import (generate_code, optimize_contractions, Contraction,
                             unoptimized_contraction)
 from .groundstate import GroundState

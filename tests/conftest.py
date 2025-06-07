@@ -3,7 +3,7 @@ import pytest
 import pathlib
 import json
 
-from adcgen.func import import_from_sympy_latex
+from adcgen import import_from_sympy_latex
 
 
 @pytest.fixture(scope='session')

@@ -1,6 +1,5 @@
-from adcgen.expression import ExprContainer
+from adcgen.expression import ExprContainer, import_from_sympy_latex
 from adcgen.factor_intermediates import factor_intermediates
-from adcgen.func import import_from_sympy_latex
 from adcgen.intermediates import t2eri_2, p0_3_oo
 from adcgen.simplify import simplify
 

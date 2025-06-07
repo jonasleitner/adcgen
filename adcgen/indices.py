@@ -1,5 +1,6 @@
 from collections.abc import Sequence, Collection, Mapping
 from typing import Any, TypeGuard, TYPE_CHECKING
+import re
 
 from sympy import Dummy, Tuple
 
@@ -288,18 +289,12 @@ def split_idx_string(str_tosplit: str) -> list[str]:
     """
     Splits an index string of the form 'ij12a3b' in a list ['i','j12','a3','b']
     """
-    splitted = []
-    temp = []
-    for i, idx in enumerate(str_tosplit):
-        temp.append(idx)
-        try:
-            if str_tosplit[i+1].isdigit():
-                continue
-            else:
-                splitted.append("".join(temp))
-                temp.clear()
-        except IndexError:
-            splitted.append("".join(temp))
+    # findall only returns the matching parts of the string
+    # -> ensure that we don't loose part of the string
+    #    (string starting with a numnber)
+    splitted = re.findall(r"\D\d*", str_tosplit)
+    if "".join(splitted) != str_tosplit:
+        raise ValueError(f"Invalid index string {str_tosplit}")
     return splitted
 
 

@@ -1,4 +1,4 @@
-from adcgen.func import import_from_sympy_latex
+from adcgen.expression import import_from_sympy_latex
 from adcgen.generate_code.contraction import Contraction
 from adcgen.generate_code.optimize_contractions import (
     _group_objects, optimize_contractions
