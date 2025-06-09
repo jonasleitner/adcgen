@@ -16,6 +16,8 @@ class TestImportFromSympyLatex:
         assert import_from_sympy_latex("2").inner == 2
         assert import_from_sympy_latex(r"\frac{1}{2}").inner == Rational(1, 2)
         assert import_from_sympy_latex(r"\sqrt{2}").inner == sqrt(2)
+        assert import_from_sympy_latex("2.0").inner == 2.0
+        assert import_from_sympy_latex("42.42").inner == 42.42
 
     def test_delta(self):
         # spin orbitals

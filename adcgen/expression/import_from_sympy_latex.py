@@ -192,8 +192,10 @@ def _import_object(obj_str: str, convert_default_names: bool,
     """
     Imports the given object (a part of a product) from string.
     """
-    if obj_str.isnumeric():  # prefactor
+    if obj_str.isnumeric():  # prefactor: int
         return sympify(int(obj_str))
+    elif re.fullmatch(r"\d+\.\d+", obj_str):  # prefactor: float
+        return sympify(float(obj_str))
     elif obj_str.startswith(r"\sqrt{"):  # sqrt{n} prefactor
         assert obj_str[-1] == "}"
         return sqrt(import_from_sympy_latex(
