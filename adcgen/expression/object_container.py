@@ -750,7 +750,7 @@ class ObjectContainer(Container):
         """
         from .expr_container import ExprContainer
 
-        if factorisation not in ('sym', 'asym'):
+        if factorisation not in ("sym", "asym"):
             raise NotImplementedError("Only symmetric ('sym') and asymmetric "
                                       "('asym') factorisation of the Coulomb "
                                       "integral is implemented")
@@ -776,7 +776,7 @@ class ObjectContainer(Container):
             # assign alpha spin if represented in spatial orbitals
             idx = self.idx
             has_spin = bool(idx[0].spin)
-            if any(bool(s) != has_spin for s in idx):
+            if any(bool(s.spin) != has_spin for s in idx):
                 raise NotImplementedError(f"The coulomb integral {self} has "
                                           "to be represented either in spatial"
                                           " or spin orbitals. A mixture is not"
