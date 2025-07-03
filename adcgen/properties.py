@@ -4,13 +4,14 @@ from math import factorial
 from sympy import Add, Expr, S, sqrt, sympify
 
 from .expression import ExprContainer
-from .func import gen_term_orders, wicks
+from .func import gen_term_orders
 from .indices import n_ov_from_space, generic_indices_from_space
 from .intermediate_states import IntermediateStates
 from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .rules import Rules
 from .secular_matrix import SecularMatrix
 from .simplify import simplify
+from .wicks import wicks
 
 
 class Properties:

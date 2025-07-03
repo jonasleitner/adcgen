@@ -4,7 +4,7 @@ from sympy.physics.secondquant import NO, Dagger
 from sympy import Expr, Mul, Rational, S, latex
 
 from .expression import ExprContainer
-from .func import gen_term_orders, wicks
+from .func import gen_term_orders
 from .indices import Indices, n_ov_from_space
 from .logger import logger
 from .misc import cached_member, Inputerror, validate_input
@@ -12,6 +12,7 @@ from .operators import Operators
 from .simplify import simplify
 from .sympy_objects import Amplitude
 from .tensor_names import tensor_names
+from .wicks import wicks
 
 
 class GroundState:

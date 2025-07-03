@@ -1,9 +1,8 @@
 from adcgen.expression import ExprContainer
-from adcgen.func import (
-    _contraction, _contract_operator_string, wicks, evaluate_deltas
-)
+from adcgen.func import evaluate_deltas
 from adcgen.indices import Index, get_symbols
 from adcgen.sympy_objects import KroneckerDelta
+from adcgen.wicks import wicks, _contract_operator_string, _contraction
 
 from sympy import Add, Mul, S
 from sympy.physics.secondquant import F, Fd
