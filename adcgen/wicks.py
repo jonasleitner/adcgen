@@ -78,7 +78,7 @@ def wicks(expr: Expr, rules: Rules | None = None,
     return rules.apply(ExprContainer(result)).inner
 
 
-def _contract_operator_string(op_string: list[FermionicOperator]) -> Expr:
+def _contract_operator_string(op_string: Sequence[FermionicOperator]) -> Expr:
     """
     Contracts the operator string only returning fully contracted
     contritbutions.
@@ -98,7 +98,10 @@ def _contract_operator_string(op_string: list[FermionicOperator]) -> Expr:
 
         if len(op_string) - 2 > 0:  # at least one operator left
             # remove the contracted operators from the string and recurse
-            remaining = op_string[1:i] + op_string[i+1:]
+            remaining = tuple(
+                ele for j, ele in
+                enumerate(op_string) if j != 0 and j != i
+            )
             result.append(Mul(c, _contract_operator_string(remaining)))
         else:  # no operators left
             result.append(c)
