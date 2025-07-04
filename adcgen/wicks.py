@@ -1,4 +1,6 @@
 from collections.abc import Sequence
+import itertools
+import math
 
 from sympy.physics.secondquant import F, Fd, FermionicOperator, NO
 from sympy import Add, Expr, Mul, S
@@ -65,7 +67,9 @@ def wicks(expr: Expr, rules: Rules | None = None,
     elif n == 1:  # a single operator
         return S.Zero
     else:  # at least 2 operators
-        result = _contract_operator_string(op_string)
+        result = _contract_operator_string(
+            op_string=tuple(enumerate(op_string))
+        )
         result = Mul(*c_part, result).expand()
         assert isinstance(result, Expr)
         if simplify_kronecker_deltas:
@@ -78,19 +82,50 @@ def wicks(expr: Expr, rules: Rules | None = None,
     return rules.apply(ExprContainer(result)).inner
 
 
-def _contract_operator_string(op_string: Sequence[FermionicOperator]) -> Expr:
+def _contract_operator_string(
+        op_string: Sequence[tuple[int, FermionicOperator]],
+        contractions: Sequence[Expr] | None = None) -> Expr:
     """
     Contracts the operator string only returning fully contracted
     contritbutions.
-    Adapted from 'sympy.physics.secondquant'.
     """
     # check that we can get a fully contracted contribution
     if not _has_fully_contracted_contribution(op_string):
         return S.Zero
+    # we can precompute all relevant contractions as they can
+    # be reused often in an depth first graph traversal
+    # It is sufficient to precompute the upper triangle
+    #   1  2  3
+    # 1    x  x
+    # 2       x
+    # 3
+    # the element (i, j) that is part of the upper triangle
+    # (excluding diagonal elements) of a n x n matrix
+    # can be computed accoding to
+    # idx = (2*i*n - i**2 + 2*j - 3*i - 2) / 2
+    if contractions is None:
+        contractions = tuple(
+            _contraction(op1, op2) for (_, op1), (_, op2) in
+            itertools.combinations(op_string, 2)
+        )
+        n_operators = len(op_string)
+    else:
+        # calculate the number of operators from the length of the
+        # contraction cache: n(n-1)/2 elements are in the cache
+        # required for the calculation of the flattened cache index
+        n_operators = int(0.5 + math.sqrt(0.25 + 2 * len(contractions)))
 
     result = []
+    left_pos, _ = op_string[0]
     for i in range(1, len(op_string)):
-        c = _contraction(op_string[0], op_string[i])
+        right_pos, _ = op_string[i]
+        # compute the index in the flattened cache of the upper triangular
+        # matrix and load the contraction result
+        flattened_idx = (
+            2 * left_pos * n_operators - left_pos * left_pos
+            + 2 * right_pos - 3 * left_pos - 2
+        ) // 2
+        c = contractions[flattened_idx]
         if c is S.Zero:
             continue
         if not i % 2:  # introduce -1 for swapping operators
@@ -102,7 +137,10 @@ def _contract_operator_string(op_string: Sequence[FermionicOperator]) -> Expr:
                 ele for j, ele in
                 enumerate(op_string) if j != 0 and j != i
             )
-            result.append(Mul(c, _contract_operator_string(remaining)))
+            result.append(
+                c * _contract_operator_string(op_string=remaining,
+                                              contractions=contractions)
+            )
         else:  # no operators left
             result.append(c)
     return Add(*result)
@@ -151,8 +189,8 @@ def _contraction(p: FermionicOperator, q: FermionicOperator) -> Expr:
     return res
 
 
-def _has_fully_contracted_contribution(op_string: Sequence[FermionicOperator]
-                                       ) -> bool:
+def _has_fully_contracted_contribution(
+        op_string: Sequence[tuple[int, FermionicOperator]]) -> bool:
     """
     Takes a list of second quantized operators and checks whether a
     non-vanishing fully contracted contribution can exist.
@@ -163,7 +201,7 @@ def _has_fully_contracted_contribution(op_string: Sequence[FermionicOperator]
     idx_spaces: tuple[str, ...] = tuple(Indices.base.keys())
     creation: list[int] = [0 for _ in idx_spaces]
     annihilation: list[int] = [0 for _ in idx_spaces]
-    for op in op_string:
+    for _, op in op_string:
         if isinstance(op, Fd):
             counter = creation
         else:
