@@ -6,6 +6,8 @@ from adcgen.wicks import _contraction, _contract_operator_string, wicks
 from sympy.physics.secondquant import F, Fd
 from sympy import S
 
+import pytest
+
 
 class TestWicks:
     def test_contraction(self):
@@ -52,6 +54,11 @@ class TestWicks:
         assert _contraction(F(i), Fd(a)) is S.Zero
         assert _contraction(F(a), Fd(i)) is S.Zero
         assert _contraction(Fd(i), F(a)) is S.Zero
+
+    def test_contraction_spin(self):
+        i, j = get_symbols("ij", "ab")
+        with pytest.raises(NotImplementedError):
+            _contraction(Fd(i), F(j))
 
     def test_contract_operator_string(self):
         i, j, a, b, p, q = get_symbols("ijabpq")

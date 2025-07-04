@@ -29,8 +29,8 @@ def wicks(expr: Expr, rules: Rules | None = None,
         Rules that are applied to the result before returning, e.g., in the
         context of RE not all tensor blocks might be allowed in the result.
     simplify_kronecker_deltas : bool, optional
-        If set, the KroneckerDeltas generated through the contractions
-        will be evaluated before returning.
+        If set, the :py:class:`KroneckerDelta` set generated through the
+        contractions will be evaluated before returning.
     """
     assert isinstance(expr, Expr)
     # normal ordered operator string has to evaluate to zero
@@ -84,11 +84,32 @@ def wicks(expr: Expr, rules: Rules | None = None,
 
 def _contract_operator_string(
         op_string: Sequence[tuple[int, FermionicOperator]],
+        n_total_operators: int | None = None,
         contractions: Sequence[Expr] | None = None) -> Expr:
     """
     Contracts the operator string only returning fully contracted
     contritbutions.
+
+    Parameters
+    ----------
+    op_string: Sequence[tuple[int, FermionicOperator]]
+        The list/tuple of second quantized operators to contract
+        along with their positions in the operator string
+    n_total_operators: int | None, optional
+        The total number of second quantized operators in the
+        operator string. By default, it is calculated from the
+        length of the contraction cache.
+    contractions: Sequence[Expr] | None, optional
+        Precomputed flattened array of contractions of operator
+        pairs. Only the upper triangular part
+        (excluding diagonal elements) of the pair matrix
+        is expected to be present in the cache: for N operators
+        a cache with N(N-1)/2 elements is expected. If not given
+        it will be calculated on the fly for the current
+        operator string.
     """
+    # This function implements recursive depth first tree traversal
+
     # check that we can get a fully contracted contribution
     if not _has_fully_contracted_contribution(op_string):
         return S.Zero
@@ -108,12 +129,14 @@ def _contract_operator_string(
             _contraction(op1, op2) for (_, op1), (_, op2) in
             itertools.combinations(op_string, 2)
         )
-        n_operators = len(op_string)
-    else:
-        # calculate the number of operators from the length of the
-        # contraction cache: n(n-1)/2 elements are in the cache
-        # required for the calculation of the flattened cache index
-        n_operators = int(0.5 + math.sqrt(0.25 + 2 * len(contractions)))
+    # calculate the number of operators from the length of the
+    # contraction cache: n(n-1)/2 elements are in the cache
+    # required for the calculation of the flattened cache index
+    if n_total_operators is None:
+        n = 0.5 + math.sqrt(0.25 + 2 * len(contractions))
+        assert n.is_integer()
+        n_total_operators = int(n)
+        del n
 
     result = []
     left_pos, _ = op_string[0]
@@ -122,7 +145,7 @@ def _contract_operator_string(
         # compute the index in the flattened cache of the upper triangular
         # matrix and load the contraction result
         flattened_idx = (
-            2 * left_pos * n_operators - left_pos * left_pos
+            2 * left_pos * n_total_operators - left_pos * left_pos
             + 2 * right_pos - 3 * left_pos - 2
         ) // 2
         c = contractions[flattened_idx]
@@ -137,10 +160,11 @@ def _contract_operator_string(
                 ele for j, ele in
                 enumerate(op_string) if j != 0 and j != i
             )
-            result.append(
-                c * _contract_operator_string(op_string=remaining,
-                                              contractions=contractions)
+            c *= _contract_operator_string(
+                op_string=remaining, n_total_operators=n_total_operators,
+                contractions=contractions
             )
+            result.append(c)
         else:  # no operators left
             result.append(c)
     return Add(*result)
@@ -192,8 +216,9 @@ def _contraction(p: FermionicOperator, q: FermionicOperator) -> Expr:
 def _has_fully_contracted_contribution(
         op_string: Sequence[tuple[int, FermionicOperator]]) -> bool:
     """
-    Takes a list of second quantized operators and checks whether a
-    non-vanishing fully contracted contribution can exist.
+    Takes a list of second quantized operators and their respective positions
+    in the operator string and checks whether a non-vanishing fully contracted
+    contribution can exist.
     """
     if len(op_string) % 2:  # odd number of operators
         return False
