@@ -47,39 +47,37 @@ def wicks(expr: Expr, rules: Rules | None = None,
                   simplify_kronecker_deltas=simplify_kronecker_deltas)
             for term in expr.args
         ))
-    elif not isinstance(expr, Mul):
-        # nether Add, Mul, NO, F, Fd -> maybe a number or tensor
-        return expr
-    # -> we have a Mul object
-    # we don't want to mess around with commuting part of Mul
-    # so we factorize it out before starting recursion
-    c_part: list[Expr] = []
-    op_string: list[FermionicOperator] = []
-    for factor in expr.args:
-        if factor.is_commutative:
-            c_part.append(factor)
-        else:
-            assert isinstance(factor, FermionicOperator)
-            op_string.append(factor)
+    elif isinstance(expr, Mul):
+        # we don't want to mess around with commuting part of Mul
+        # so we factorize it out before starting recursion
+        c_part: list[Expr] = []
+        op_string: list[FermionicOperator] = []
+        for factor in expr.args:
+            if factor.is_commutative:
+                c_part.append(factor)
+            else:
+                assert isinstance(factor, FermionicOperator)
+                op_string.append(factor)
 
-    if (n := len(op_string)) == 0:  # no operators
+        if (n := len(op_string)) == 0:  # no operators
+            result = expr
+        elif n == 1:  # a single operator
+            return S.Zero
+        else:  # at least 2 operators
+            result = _contract_operator_string(
+                op_string=tuple(enumerate(op_string))
+            )
+            result = Mul(*c_part, result).expand()
+            if simplify_kronecker_deltas:
+                result = evaluate_deltas(result)
+    else:  # neither Add, Mul, NO, F, Fd -> maybe a number or tensor
         result = expr
-    elif n == 1:  # a single operator
-        return S.Zero
-    else:  # at least 2 operators
-        result = _contract_operator_string(
-            op_string=tuple(enumerate(op_string))
-        )
-        result = Mul(*c_part, result).expand()
-        assert isinstance(result, Expr)
-        if simplify_kronecker_deltas:
-            result = evaluate_deltas(result)
 
     # apply rules to the result
-    if rules is None:
-        return result
-    assert isinstance(rules, Rules)
-    return rules.apply(ExprContainer(result)).inner
+    if rules is not None:
+        assert isinstance(rules, Rules)
+        result = rules.apply(ExprContainer(result)).inner
+    return result
 
 
 def _contract_operator_string(
@@ -134,16 +132,22 @@ def _contract_operator_string(
     # required for the calculation of the flattened cache index
     if n_total_operators is None:
         n = 0.5 + math.sqrt(0.25 + 2 * len(contractions))
+        # if n is not integer, the number of entries in the
+        # contraction cache is not valid
         assert n.is_integer()
         n_total_operators = int(n)
         del n
-
+    # left_pos and right_pos denote the positions in the
+    # original full operator string (before contracting any
+    # operators). This is required for the cache lookup.
+    # The loop index i denotes the position in the
+    # current version of the operator string potentially
+    # with previous contraction of other operators. Required to
+    # to determine the sign of a contraction
     result = []
     left_pos, _ = op_string[0]
     for i in range(1, len(op_string)):
         right_pos, _ = op_string[i]
-        # compute the index in the flattened cache of the upper triangular
-        # matrix and load the contraction result
         flattened_idx = (
             2 * left_pos * n_total_operators - left_pos * left_pos
             + 2 * right_pos - 3 * left_pos - 2
@@ -181,6 +185,12 @@ def _contraction(p: FermionicOperator, q: FermionicOperator) -> Expr:
 
     p_idx, q_idx = p.args[0], q.args[0]
     assert isinstance(p_idx, Index) and isinstance(q_idx, Index)
+    # in principle this also works for indices with spin since the
+    # KroneckerDelta handles spin correctly. However, mixed deltas
+    # \delta_{i j_{\alpha}} might not be evaluated by evaluate_deltas,
+    # because the preferred index would be i_{\alpha} - a new index
+    # that is not present in the expression.
+    # To avoid unevaluated deltas this check was introduced
     if p_idx.spin or q_idx.spin:
         raise NotImplementedError("Contraction not implemented for indices "
                                   "with spin.")
