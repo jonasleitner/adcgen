@@ -118,10 +118,14 @@ def _contract_operator_string(
     # 1    x  x
     # 2       x
     # 3
-    # the element (i, j) that is part of the upper triangle
-    # (excluding diagonal elements) of a n x n matrix
+    # the flattened index of the element (i, j) that is part of
+    # the upper triangle (excluding diagonal elements) of a n x n matrix
     # can be computed accoding to
     # idx = (2*i*n - i**2 + 2*j - 3*i - 2) / 2
+    # using row index i, column index j and the number of elements
+    # along each dimension n.
+    # for a derivation see:
+    # math.stackexchange.com/questions/646117/how-to-find-a-function-mapping-matrix-indices
     if contractions is None:
         contractions = tuple(
             _contraction(op1, op2) for (_, op1), (_, op2) in
@@ -148,6 +152,8 @@ def _contract_operator_string(
     left_pos, _ = op_string[0]
     for i in range(1, len(op_string)):
         right_pos, _ = op_string[i]
+        # compute the flattened index for the (left_pos, right_pos)
+        # element of the upper triangular matrix as explained above
         flattened_idx = (
             2 * left_pos * n_total_operators - left_pos * left_pos
             + 2 * right_pos - 3 * left_pos - 2
