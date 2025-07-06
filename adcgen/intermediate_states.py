@@ -5,7 +5,7 @@ from sympy.physics.secondquant import NO, Dagger
 from sympy import Expr, Mul, Rational, S, latex, nsimplify, diff, symbols
 
 from .expression import ExprContainer
-from .func import gen_term_orders, wicks, evaluate_deltas
+from .func import gen_term_orders, evaluate_deltas
 from .groundstate import GroundState
 from .indices import (
     n_ov_from_space, repeated_indices, Indices, generic_indices_from_space
@@ -15,6 +15,7 @@ from .misc import cached_member, Inputerror, transform_to_tuple, validate_input
 from .simplify import simplify
 from .sympy_objects import Amplitude
 from .tensor_names import tensor_names
+from .wicks import wicks
 
 
 class IntermediateStates:

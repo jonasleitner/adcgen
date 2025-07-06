@@ -3,7 +3,7 @@ from .derivative import derivative
 from .eri_orbenergy import EriOrbenergy
 from .expression import ExprContainer, import_from_sympy_latex
 from .factor_intermediates import factor_intermediates
-from .func import evaluate_deltas, wicks
+from .func import evaluate_deltas
 from .generate_code import (generate_code, optimize_contractions, Contraction,
                             unoptimized_contraction)
 from .groundstate import GroundState
@@ -21,6 +21,7 @@ from .sympy_objects import (AntiSymmetricTensor, SymmetricTensor, Amplitude,
                             NonSymmetricTensor, KroneckerDelta, SymbolicTensor)
 from .tensor_names import tensor_names
 from .resolution_of_identity import apply_resolution_of_identity
+from .wicks import wicks
 from . import sort_expr as sort
 
 

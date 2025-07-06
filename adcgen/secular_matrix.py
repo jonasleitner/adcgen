@@ -4,7 +4,7 @@ from math import factorial
 from sympy import Add, Expr, Mul, S, sqrt
 
 from .expression import ExprContainer
-from .func import gen_term_orders, wicks, evaluate_deltas
+from .func import gen_term_orders, evaluate_deltas
 from .groundstate import GroundState
 from .indices import (
     repeated_indices, Indices, generic_indices_from_space, n_ov_from_space
@@ -14,6 +14,7 @@ from .misc import Inputerror, cached_member, transform_to_tuple, validate_input
 from .operators import Operators
 from .rules import Rules
 from .simplify import simplify
+from .wicks import wicks
 
 
 class SecularMatrix:
