@@ -8,7 +8,7 @@ from dataclasses import asdict
 
 class TestContraction:
     def test_indices(self):
-        i, j, k, b, c = get_symbols("ijkbc")
+        i, j, k, b, c, P = get_symbols("ijkbcP")
         indices = ((i, k), (j, k))
         names = ("f_oo", "f_oo")
         target_indices = (i, j)
@@ -30,10 +30,29 @@ class TestContraction:
         assert contr.contracted == (j, k)
         assert contr.target == (i,)
         indices = ((j, b), (j, k, b, c))
+        target_indices = (k, c)
         names = ("ur1", "t2_1")
         contr = Contraction(indices, names, target_indices)
         assert contr.contracted == (j, b)
         assert contr.target == (k, c)
+        # custom contracted indices
+        indices = ((j, b), (j, k, b, c), (P, j, k), (P, b, c))
+        names = ("ur1", "V_oovv", "U_aoo", "U_avv")
+        contr = Contraction(indices, names, term_target_indices=[])
+        assert contr.contracted == (j, k, b, c, P)
+        assert contr.target == tuple()
+        contr = Contraction(indices, names, term_target_indices=[],
+                            contracted=[j, b])
+        assert contr.contracted == (j, b)
+        assert contr.target == (k, c, P)
+        contr = Contraction(indices, names, term_target_indices=[],
+                            contracted=[j, b], target=[P, c, k])
+        assert contr.contracted == (j, b)
+        assert contr.target == (k, c, P)
+        contr = Contraction(indices, names, term_target_indices=[],
+                            target=[j, b, P, c, k])
+        assert contr.contracted == tuple()
+        assert contr.target == (j, k, b, c, P)
 
     def test_scaling(self):
         i, j, k = get_symbols("ijk")
