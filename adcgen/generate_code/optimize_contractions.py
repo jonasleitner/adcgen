@@ -5,7 +5,7 @@ import itertools
 from sympy import Symbol, S
 
 from ..expression import TermContainer
-from ..indices import get_symbols, Index
+from ..indices import get_symbols, Index, sort_idx_canonical
 from ..sympy_objects import SymbolicTensor, KroneckerDelta
 from .contraction import Contraction, Sizes
 
@@ -134,39 +134,60 @@ def _optimize_contractions(relevant_obj_names: Sequence[str],
                            target_indices: Sequence[Index],
                            max_itmd_dim: int | None = None,
                            max_n_simultaneous_contracted: int | None = None,
-                           ) -> Generator[list[Contraction], None, None]:
+                           ) -> Generator[list[Contraction]]:
     """
     Find the optimal contractions for the given relevant objects of a term.
+
+    Parameters
+    ----------
+    relevant_obj_names: Sequence[str]
+        The names of the objects to consider.
+    relevant_obj_indices: Sequence[tuple[Index, ...]]
+        The indices of the objects to consider.
+    target_indices: Sequence[Index]
+        The target indices of the term.
+    max_itmd_dim: int, optional
+        The maximum allowed dimensionality of temporary intermediate results.
+        If not given, the dimensionality is not restricted.
+    max_n_simultaneous_contracted: int, optional
+        The maximum number of tensors allowed in a single contraction, e.g.,
+        2 to prevent any hyper-contractions.
     """
     assert len(relevant_obj_indices) == len(relevant_obj_names)
     if len(relevant_obj_names) < 2:
         raise ValueError("Need at least 2 objects to define a contraction.")
 
     # split the relevant objects into subgroups that share contracted indices
-    # and therefore should be contracted simultaneously
     connected_groups = _group_objects(
         obj_indices=relevant_obj_indices, target_indices=target_indices,
         max_group_size=max_n_simultaneous_contracted
     )
-
-    for group in connected_groups:
-        contr_indices = tuple(relevant_obj_indices[pos] for pos in group)
-        contr_names = tuple(relevant_obj_names[pos] for pos in group)
-        contraction = Contraction(indices=contr_indices, names=contr_names,
-                                  term_target_indices=target_indices)
+    for group, contracted in connected_groups:
+        # build a contraction for the objects and the contracted indices
+        indices = [relevant_obj_indices[pos] for pos in group]
+        names = [relevant_obj_names[pos] for pos in group]
+        contraction = Contraction(
+            indices=indices, names=names, term_target_indices=target_indices,
+            contracted=contracted
+        )
         # if the contraction is not an outer contraction we have to check
         # the dimensionality of the intermediate tensor
         if max_itmd_dim is not None and \
                 contraction.target != target_indices and \
                 len(contraction.target) > max_itmd_dim:
             continue
-        # remove the contracted names and indices
+        # update the data excluding the just contracted objects
+        # and adding the contraction to the pool
         remaining_pos = [pos for pos in range(len(relevant_obj_names))
                          if pos not in group]
-        remaining_names = (contraction.contraction_name,
-                           *(relevant_obj_names[pos] for pos in remaining_pos))
-        remaining_indices = (contraction.target, *(relevant_obj_indices[pos]
-                                                   for pos in remaining_pos))
+        remaining_names = (
+            contraction.contraction_name,
+            *(relevant_obj_names[pos] for pos in remaining_pos)
+        )
+        remaining_indices = (
+            contraction.target,
+            *(relevant_obj_indices[pos] for pos in remaining_pos)
+        )
         # there are no objects left to contract -> we are done
         if len(remaining_names) == 1:
             yield [contraction]
@@ -179,30 +200,29 @@ def _optimize_contractions(relevant_obj_names: Sequence[str],
             max_n_simultaneous_contracted=max_n_simultaneous_contracted
         )
         for contraction_scheme in completed_schemes:
+            # ensure that the contracted indices don't appear in any later
+            # contraction again
+            assert not any(
+                s in idx for s in contraction.contracted
+                for c in contraction_scheme for idx in c.indices
+            )
             contraction_scheme.insert(0, contraction)
             yield contraction_scheme
 
 
-def _group_objects(obj_indices: Sequence[tuple[Index, ...]],
-                   target_indices: Sequence[Index],
-                   max_group_size: int | None = None
-                   ) -> tuple[tuple[int, ...], ...]:
+def _group_objects(
+        obj_indices: Sequence[tuple[Index, ...]],
+        target_indices: Sequence[Index],
+        max_group_size: int | None = None
+        ) -> Generator[tuple[tuple[int, ...], tuple[Index, ...]]]:
     """
-    Split the provided relevant objects into subgroups that share common
-    contracted indices. Thereby, a group can at most contain 'max_group_size'
-    objects. By default, all objects are allowed to be in one group.
+    Split the provided relevant objects defined by their indices
+    (``obj_indices``) into subgroups that share common contracted indices.
+    Thereby, a group can at most contain ``max_group_size``
+    objects and produce a result with ``max_result_dim`` dimensions.
+    By default, all objects are allowed to be in one group and arbitrary
+    result dimensionalities are allowed.
     """
-    # NOTE: the algorithm currently maximizes the number of contracted
-    #       indices, i.e., a contraction runs over all common contracted
-    #       indices. While this is fine in most cases, it might be benefitial
-    #       to not contract all possible indices simultaneously
-    #       in certain cases, since this leads to an increased group size:
-    #             0    1    2
-    #           d_ijk d_ij d_jl
-    #       0 and 1 share i and j. A contraction running only over i can be
-    #       performed for the pair (0, 1). However, if the contraction runs
-    #       runs over i and j, we have to consider the triple (0, 1, 2).
-
     # sanity checks for input
     assert len(obj_indices) > 1  # we need at least 2 objects
     if max_group_size is None:
@@ -211,70 +231,200 @@ def _group_objects(obj_indices: Sequence[tuple[Index, ...]],
 
     # track on which objects the indices appear
     idx_occurences: dict[Index, list[int]] = {}
-    for pos, indices in enumerate(obj_indices):
-        for idx in indices:
-            if idx not in idx_occurences:
-                idx_occurences[idx] = []
-            idx_occurences[idx].append(pos)
+    for pos, idx in enumerate(obj_indices):
+        for s in idx:
+            if s not in idx_occurences:
+                idx_occurences[s] = []
+            if s not in idx_occurences[s]:
+                idx_occurences[s].append(pos)
+        del idx
 
-    # store grouped objects and isolated objects (outer products)
-    # for the groups we are using a dict, since it by default returns
-    # keys in the order they were inserted. A set would need to be sorted
-    # before returning to produce consistent results.
-    groups: dict[tuple[int, ...], None] = {}
-    outer_products: list[tuple[int, int]] = []
+    # cache already encountered valid groups
+    # excluding outer products since they can not appear twice
+    seen_groups: set[tuple[tuple[int, ...], tuple[Index, ...]]] = set()
     # iterate over all pairs of objects (index tuples)
     for (pos1, indices1), (pos2, indices2) in \
             itertools.combinations(enumerate(obj_indices), 2):
         # check if the objects have any common contracted indices
         # -> outer products can be treated as pair
         contracted, _ = Contraction._split_contracted_and_target(
-            (indices1, indices2), target_indices
+            indices=(indices1, indices2), term_target_indices=target_indices
         )
-        if not contracted:
-            outer_products.append((pos1, pos2))
+        if not contracted:  # outer product
+            yield ((pos1, pos2), tuple())
             continue
-        # get all the objects any of the contracted indices appears
-        positions = {pos for idx in contracted for pos in idx_occurences[idx]}
-        # group too large
-        if len(positions) > max_group_size:
-            continue
-        # avoid duplication: 0, 1 and 2 are connected by a common index
-        # -> the pair 0,1 and 0,2 will both give the triple 0,1,2
-        #    which will then grow in the same way independent of the starting
-        #    pair.
-        key = tuple(sorted(positions))
-        if key in groups:
-            continue
-        # store the minimal group
-        groups[key] = None
+        contracted = sorted(contracted, key=sort_idx_canonical)
+        # Starting from the given pair try to explore all sensible
+        # combinations of contracted indices possibly increasing
+        # the group size (also exploring hyper-contractions)
+        groups = _explore_group(
+            seen_groups=seen_groups, obj_indices=obj_indices,
+            target_indices=target_indices, max_group_size=max_group_size,
+            idx_occurences=idx_occurences, contracted=contracted,
+            positions=(pos1, pos2)
+        )
+        for group in groups:
+            yield group
+    return None
 
-        # self-consistently update the contracted indices and the positions
-        # This corresponds to maximizing the group size.
-        # However, it is unclear if growing the group leads to a better
-        # scaling contraction. Therefore, also store smaller groups
-        while True:
-            # update the contracted indices
-            new_contracted, _ = Contraction._split_contracted_and_target(
-                [obj_indices[pos] for pos in positions], target_indices
+
+def _explore_group(
+        seen_groups: set[tuple[tuple[int, ...], tuple[Index, ...]]],
+        obj_indices: Sequence[tuple[Index, ...]],
+        target_indices: Sequence[Index],
+        max_group_size: int,
+        idx_occurences: dict[Index, list[int]],
+        contracted: Sequence[Index],
+        positions: Sequence[int],
+        forbidden_contracted: tuple[Index, ...] = tuple()
+        ) -> Generator[tuple[tuple[int, ...], tuple[Index, ...]]]:
+    """
+    Recursively explores the group by expanding the number of
+    contracted indices and the group size.
+
+    Parameters
+    ----------
+    seen_groups: set[tuple[tuple[int, ...], tuple[Index, ...]]]
+        Cache to store already encountered groups to avoid duplications.
+    obj_indices: Sequence[tuple[Index, ...]]
+        The indices of all objects.
+    target_indices: Sequence[Index]
+        The target indices of the term the objects describe.
+    max_group_size: int
+        Upper limit for the allowed size of groups to consider.
+    idx_occurences: dict[Index, list[int]]
+        Map to connect an index to the objects (by position) it appears on
+    contracted: Sequence[Inde]
+        The common contracted indices the objects at ``positions`` share.
+    positions: Sequence[int]
+        The positions defining the group to further explore and expand.
+    forbidden_contracted: tuple[Index, ...], optional
+        Indices that are not allowed to be considered as contracted indices
+        during the exploration of the given group.
+    """
+    # Iterate over all sensible subsets of contracted indices.
+    # For instance 2 objects might share the indices ijkl.
+    # However, k and l appear on 2 distinct other objects.
+    # Therefore, we should always contract over ij but the
+    # contraction over k and l should be optional since the
+    # group size has to grow for those contractions
+    contracted_variants = _contracted_variants(
+        contracted, positions, idx_occurences
+    )
+    for contracted_indices in contracted_variants:
+        # update the positions including all objects that hold any of the
+        # contracted indices while checking the groups size
+        new_positions = tuple(sorted({
+            pos for idx in contracted_indices
+            for pos in idx_occurences[idx]
+        }))
+        if len(new_positions) > max_group_size:
+            continue
+        # - try to update the contracted indices covering all indices
+        # that only appear on tensors already in the group.
+        # It does not make any sense to not contract over any of them
+        # since we can safely do so using the current group
+        # -> contracted_indices has to be a subset of new_contracted
+        indices = tuple(obj_indices[p] for p in new_positions)
+        new_contracted, _ = Contraction._split_contracted_and_target(
+            indices=indices, term_target_indices=target_indices
+        )
+        new_contracted = [
+            idx for idx in new_contracted
+            if all(pos in new_positions for pos in idx_occurences[idx])
+        ]
+        assert all(s in new_contracted for s in contracted_indices)
+        # - however, if any of the safely contractable indices is marked
+        # as forbidden, we have to skip to avoid duplications
+        # since the combination will then be explored later
+        # -> new_contracted can not contain forbidden indices
+        if any(idx in forbidden_contracted for idx in new_contracted):
+            continue
+        new_contracted = tuple(sorted(new_contracted, key=sort_idx_canonical))
+        # - avoid duplications. For instance:
+        # 0, 1 and 2 are connected by a common index
+        # -> the pair 0,1 and 0,2 will both give the triple 0,1,2
+        # which will then grow in the same way independent of the starting
+        # pair.
+        if (new_positions, new_contracted) in seen_groups:
+            continue
+        # - current group is not a duplicate and can safely be returned while
+        # marking the group as explored.
+        seen_groups.add((new_positions, new_contracted))
+        yield (new_positions, new_contracted)
+        # - To prevent duplications we don't want to contract over indices
+        # that will be covered in another iteration of contracted_variants.
+        # Also we don't want to mark any safely contractable indices
+        # as forbidden to avoid exploring stupid groups.
+        # -> mark missing optionaly contracted indices as forbidden
+        # (all indices in new_contracted not forbidden and safely contractable
+        # for the current group)
+        new_forbidden_contracted = forbidden_contracted + tuple(
+            s for s in contracted if s not in new_contracted
+        )
+        # - See if there are any other contracted indices that repeat
+        # on new_positions that are not forbidden (will be explored later).
+        # -> new_contracted has logically to be a subset of
+        # available_contracted, since it is not possible for any index in
+        # new_contracted to appear in new_forbidden_contracted!!
+        available_contracted, _ = Contraction._split_contracted_and_target(
+            indices=indices, term_target_indices=target_indices
+        )
+        available_contracted = [
+            idx for idx in available_contracted
+            if idx not in new_forbidden_contracted
+        ]
+        available_contracted = sorted(
+            available_contracted, key=sort_idx_canonical
+        )
+        assert all(s in available_contracted for s in new_contracted)
+        if len(available_contracted) > len(new_contracted):
+            child_groups = _explore_group(
+                seen_groups=seen_groups, obj_indices=obj_indices,
+                target_indices=target_indices, max_group_size=max_group_size,
+                idx_occurences=idx_occurences, contracted=available_contracted,
+                positions=new_positions,
+                forbidden_contracted=new_forbidden_contracted
             )
-            # no new contracted indices pulled in -> we are done
-            if contracted == new_contracted:
-                break
-            # update the positions
-            new_positions = {
-                pos for idx in new_contracted for pos in idx_occurences[idx]
-            }
-            # no new positions or the extended group is too large
-            if new_positions == positions or \
-                    len(new_positions) > max_group_size:
-                break
-            # store the current group before trying to further
-            # increase the size
-            groups[tuple(sorted(new_positions))] = None
-            contracted = new_contracted
-            positions = new_positions
-    return (*groups.keys(), *outer_products)
+            for group in child_groups:
+                yield group
+
+
+def _contracted_variants(contracted: Sequence[Index],
+                         positions: Sequence[int],
+                         idx_occurences: dict[Index, list[int]]
+                         ) -> Generator[tuple[Index, ...]]:
+    """
+    Generates all sensible subsets of contracted indices for the
+    given ``contracted`` indices generated by a contraction of objects
+    at ``positions``. Thereby, a map connecting an index
+    to the objects (by position) they appear on is required
+    (``idx_occurences``) to avoid bad subsets.
+    """
+    # we can always safely contract over indices that only appear on the
+    # already included positions (not contracting any of those would be
+    # stupid since the scaling remains the same but the memory scaling
+    # would increase)
+    safe_contracted = []  # those should always be contracted
+    optional_contracted = []  # contracting those will grow the group
+    for idx in contracted:
+        if all(pos in positions for pos in idx_occurences[idx]):
+            safe_contracted.append(idx)
+        else:
+            optional_contracted.append(idx)
+    safe_contracted = tuple(safe_contracted)
+    if safe_contracted:
+        yield safe_contracted
+
+    if not optional_contracted:
+        return
+    # try to form all possible combinations for the optional contracted indices
+    combinations = itertools.chain.from_iterable(
+        itertools.combinations(optional_contracted, n)
+        for n in range(1, len(optional_contracted) + 1)
+    )
+    for addition in combinations:
+        yield safe_contracted + addition
 
 
 def unoptimized_contraction(term: TermContainer,
