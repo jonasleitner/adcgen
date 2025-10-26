@@ -25,12 +25,19 @@ class IndexSpace:
         The parent index space (or its name) the newly created space
         is a subspace of, e.g., the general MO space of which the
         occupied space is a subset.
+    size: int, optional
+        The number of elements that are usually contained in the
+        :py:class:`IndexSpace`, e.g., the number of orbitals in the space
+        for a typical calculation.
+        Used to estimate the arithmetic and memory costs of contractions
+        involving the :py:class:`IndexSpace`.
     """
-    __slots__ = ("_name", "_idx_names", "_subspaces", "_sort_key")
+    __slots__ = ("_name", "_idx_names", "_subspaces", "_sort_key", "_size")
     _name: str
     _idx_names: tuple[IndexName, ...]
     _subspaces: tuple["IndexSpace", ...]
     _sort_key: int
+    _size: int | None
 
     # Cache where IndexSpace instances are stored upon creation.
     # Since we prevent name collisions for space names and their
@@ -40,8 +47,8 @@ class IndexSpace:
     _available_spaces: tuple["IndexSpace", ...] = tuple()
 
     def __init__(self, name: str, idx_names: Sequence[str | IndexName],
-                 sort_key: int, parent: "str | IndexSpace | None" = None
-                 ) -> None:
+                 sort_key: int, parent: "str | IndexSpace | None" = None,
+                 size: int | None = None) -> None:
         self._name = name
 
         if isinstance(idx_names, str):
@@ -61,6 +68,12 @@ class IndexSpace:
         self._idx_names = tuple(sorted(idx_names, key=IndexName.sort_key))
 
         self._sort_key = sort_key
+
+        if size is not None and size < 0:
+            raise ValueError(f"Found negative number {size} for the size "
+                             f"of IndexSpace {self._name}. A space should "
+                             "always have a positive size.")
+        self._size = size
 
         self._subspaces = tuple()
         if parent is not None:
@@ -152,6 +165,10 @@ class IndexSpace:
     @property
     def subspaces(self) -> tuple["IndexSpace", ...]:
         return self._subspaces
+
+    @property
+    def size(self) -> int | None:
+        return self._size
 
     def sort_key(self) -> int:
         return self._sort_key

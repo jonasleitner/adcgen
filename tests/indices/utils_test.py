@@ -1,4 +1,4 @@
-from adcgen.new_indices import split_idx_string
+from adcgen.indices import split_idx_string
 
 import pytest
 

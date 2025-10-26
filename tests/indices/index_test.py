@@ -1,4 +1,4 @@
-from adcgen.new_indices import Index, Spin
+from adcgen.indices import Index, Spin
 
 from . import EnsureClearedSpaces, IsolatedIndexSpace
 

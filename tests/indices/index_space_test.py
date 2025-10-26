@@ -1,4 +1,4 @@
-from adcgen.new_indices import IndexName
+from adcgen.indices import IndexName
 
 from . import EnsureClearedSpaces, IsolatedIndexSpace
 

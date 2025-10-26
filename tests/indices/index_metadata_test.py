@@ -1,4 +1,4 @@
-from adcgen.new_indices import IndexName, Spin
+from adcgen.indices import IndexName, Spin
 
 import pytest
 

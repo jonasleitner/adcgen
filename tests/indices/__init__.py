@@ -1,4 +1,4 @@
-from adcgen.new_indices import IndexSpace, Indices
+from adcgen.indices import IndexSpace, Indices
 
 
 # Inherits from IndexSpace to create an independent cache such that
@@ -19,7 +19,7 @@ class IsolatedIndices(Indices):
     pass
 
 
-# Before running a test (implemented as class method):
+# Before running a test (implemented as method on a class):
 # ensure that no spaces are cached from another test.
 # After running the test: clear the cached spaces.
 class EnsureClearedSpaces:
